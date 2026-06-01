@@ -1,0 +1,59 @@
+/* CafeWorking Admin — estilos globais */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+body {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  background: #F7F4EE;
+  color: #1F1F1C;
+  line-height: 1.55;
+}
+button { cursor: pointer; border: none; background: none; font: inherit; color: inherit; }
+input, select, textarea { font: inherit; color: inherit; }
+a { color: inherit; text-decoration: none; }
+ul { list-style: none; }
+
+::selection { background: #6E4E3B; color: #fff; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(110, 78, 59, 0.25); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(110, 78, 59, 0.4); }
+
+/* Reveal on mount */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.cw-fade { animation: fadeUp .4s cubic-bezier(.25,.46,.45,.94) both; }
+.cw-fade-1 { animation-delay: .04s; }
+.cw-fade-2 { animation-delay: .08s; }
+.cw-fade-3 { animation-delay: .12s; }
+.cw-fade-4 { animation-delay: .16s; }
+
+/* Hover lift */
+.cw-lift { transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
+.cw-lift:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(31,31,28,.06); }
+
+/* Button hover */
+.cw-btn { transition: all .15s ease; }
+.cw-btn:hover { transform: translateY(-1px); filter: brightness(1.05); }
+.cw-btn:active { transform: translateY(0); }
+
+/* Focus ring acessível */
+button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid #0E4B4F;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Pulse para badges de notificação */
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+}
+.cw-pulse { animation: pulse 2s ease-in-out infinite; }
+
+/* Shimmer para loading states (futuro) */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}

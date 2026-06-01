@@ -1,0 +1,9 @@
+node_modules
+dist
+.netlify
+.npm-cache
+.DS_Store
+*.local
+.env
+.env.*
+!.env.example
