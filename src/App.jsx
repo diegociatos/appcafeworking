@@ -1,53 +1,155 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   LayoutDashboard, KanbanSquare, Building2, CalendarDays, Mail, Coffee,
-  Users, Wallet, Mic2, MessageSquare, UserCircle, Sparkles, Settings,
-  Search, Bell, Wifi, Menu, X,
+  Users, Wallet, Mic2, MessageSquare, UserCircle, Settings,
+  Search, Bell, Menu, X, ChevronDown, Check, Store, Eye, LogOut, ShieldCheck, Package, Home, FileText, Barcode,
 } from "lucide-react";
 import { C, sans, serif } from "./lib/theme.js";
-import { Badge } from "./components/ui.jsx";
+import { useStore, PERFIS } from "./lib/store.jsx";
+import { CLIENTES } from "./lib/data.js";
 import Logo from "./components/Logo.jsx";
+import Login from "./pages/Login.jsx";
+import { supabaseConfigured, getSession, onAuthChange, signOut } from "./lib/supabaseAuth.js";
+import { fetchMemberships, fetchTenant } from "./lib/supabaseDb.js";
 
 import Dashboard from "./pages/Dashboard.jsx";
 import CRM from "./pages/CRM.jsx";
 import Unidades from "./pages/Unidades.jsx";
+import Franqueados from "./pages/Franqueados.jsx";
 import Reservas from "./pages/Reservas.jsx";
 import Correspondencias from "./pages/Correspondencias.jsx";
 import PDV from "./pages/PDV.jsx";
 import Clientes from "./pages/Clientes.jsx";
-import Financeiro from "./pages/Financeiro.jsx";
+import Financeiro, { FIN_GRUPOS } from "./pages/Financeiro.jsx";
+import Boletos from "./pages/Boletos.jsx";
 import Eventos from "./pages/Eventos.jsx";
 import Chat from "./pages/Chat.jsx";
 import AreaCliente from "./pages/AreaCliente.jsx";
-import IA from "./pages/IA.jsx";
+import Equipe from "./pages/Equipe.jsx";
+import Catalogo from "./pages/Catalogo.jsx";
 import Configuracoes from "./pages/Configuracoes.jsx";
 
 const NAV = [
   { id: "dash", label: "Dashboard", icon: LayoutDashboard, group: "principal" },
+  { id: "franqueados", label: "Contas", icon: Store, group: "comercial" },
   { id: "crm", label: "CRM · Leads", icon: KanbanSquare, group: "comercial" },
-  { id: "unidades", label: "Unidades", icon: Building2, group: "principal" },
+  { id: "unidades", label: "Unidades", icon: Building2, group: "gestao" },
+  { id: "equipe", label: "Equipe", icon: ShieldCheck, group: "gestao" },
   { id: "reservas", label: "Reservas", icon: CalendarDays, group: "operacao" },
   { id: "corresp", label: "Correspondências", icon: Mail, group: "operacao" },
   { id: "pdv", label: "Cafeteria · PDV", icon: Coffee, group: "operacao" },
+  { id: "catalogo", label: "Produtos e Serviços", icon: Package, group: "operacao" },
+  { id: "eventos", label: "Eventos", icon: Mic2, group: "operacao" },
   { id: "clientes", label: "Clientes", icon: Users, group: "relacionamento" },
   { id: "chat", label: "Chat", icon: MessageSquare, group: "relacionamento", badge: 3 },
   { id: "financeiro", label: "Financeiro", icon: Wallet, group: "financeiro" },
-  { id: "eventos", label: "Eventos", icon: Mic2, group: "operacao" },
+  { id: "boletos", label: "Boletos", icon: Barcode, group: "financeiro" },
   { id: "area", label: "Área Cliente", icon: UserCircle, group: "preview" },
-  { id: "ia", label: "IA CafeWorking", icon: Sparkles, group: "preview" },
+];
+
+// Ordem e rótulo dos assuntos no sidebar (cabeçalhos). Grupos vazios são ocultados.
+const NAV_GRUPOS = [
+  { id: "principal", label: "" },
+  { id: "comercial", label: "Comercial" },
+  { id: "gestao", label: "Gestão" },
+  { id: "operacao", label: "Operação" },
+  { id: "relacionamento", label: "Relacionamento" },
+  { id: "financeiro", label: "Financeiro" },
+  { id: "preview", label: "Visualização" },
 ];
 
 const PAGES = {
-  dash: Dashboard, crm: CRM, unidades: Unidades, reservas: Reservas,
-  corresp: Correspondencias, pdv: PDV, clientes: Clientes,
-  financeiro: Financeiro, eventos: Eventos, chat: Chat,
-  area: AreaCliente, ia: IA, config: Configuracoes,
+  dash: Dashboard, franqueados: Franqueados, crm: CRM, unidades: Unidades,
+  reservas: Reservas, corresp: Correspondencias, pdv: PDV, clientes: Clientes,
+  financeiro: Financeiro, boletos: Boletos, eventos: Eventos, chat: Chat,
+  area: AreaCliente, equipe: Equipe, catalogo: Catalogo, config: Configuracoes,
+  cli_inicio: AreaCliente, cli_reservar: AreaCliente, cli_cafe: AreaCliente,
+  cli_faturas: AreaCliente, cli_docs: AreaCliente, cli_fiscal: AreaCliente, cli_chat: AreaCliente, cli_notif: AreaCliente,
 };
 
 export default function App() {
+  const { viewAs, franqueadoAtivo, perfil, setPerfil, activeUnit, pedidosDe, unidades, correspondenciasDe, conversasDe, reservas, meuPerfil, contratosVencendoDe, notificacaoPrefs, aplicarSessaoUsuario, hydrateFromDb } = useStore();
   const [page, setPage] = useState("dash");
+  const [finTab, setFinTab] = useState("visao");
   const [mobOpen, setMobOpen] = useState(false);
-  const Page = PAGES[page] || Dashboard;
+  const [session, setSession] = useState(getSession());
+  useEffect(() => onAuthChange(setSession), []);
+
+  const cfg = PERFIS[perfil] || PERFIS.franqueador;
+  const ehFranqueador = perfil === "franqueador";
+  const allowed = cfg.modules; // null = vê todos os módulos
+
+  // Ao trocar de perfil, abre a página inicial daquele perfil
+  useEffect(() => {
+    setPage(cfg.landing);
+  }, [perfil]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // No login real: carrega contas/unidades/equipe do banco e define o perfil/
+  // unidade do usuário a partir dos vínculos (unidade_members).
+  useEffect(() => {
+    if (!(supabaseConfigured && session)) return;
+    let vivo = true;
+    fetchTenant().then((dados) => { if (vivo) hydrateFromDb(dados); });
+    fetchMemberships().then((membros) => { if (vivo) aplicarSessaoUsuario(membros); });
+    return () => { vivo = false; };
+  }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const autenticadoReal = supabaseConfigured && !!session;
+
+  // Com Supabase configurado, exige login. Sem configurar (demo), libera direto.
+  if (supabaseConfigured && !session) return <Login />;
+
+  // No perfil cliente, a navegação do portal vai toda para o sidebar
+  const cliUnitId = unidades.find((u) => u.nome === CLIENTES[0].unidade)?.id;
+  const corrNovasCli = correspondenciasDe(cliUnitId || "").filter((c) => c.cliente === CLIENTES[0].nome && c.status === "notificado").length;
+  const novoDocs = CLIENTES[0].docs.filter((d) => d.status === "novo").length + corrNovasCli;
+  const CLIENT_NAV = [
+    { id: "cli_inicio", label: "Início", icon: Home },
+    { id: "cli_reservar", label: "Reservar sala", icon: CalendarDays },
+    { id: "cli_cafe", label: "Cafeteria", icon: Coffee },
+    { id: "cli_faturas", label: "Faturas", icon: Wallet },
+    { id: "cli_docs", label: "Documentos", icon: FileText, badge: novoDocs || undefined },
+    ...(CLIENTES[0].fiscal ? [{ id: "cli_fiscal", label: "Endereço fiscal", icon: Building2 }] : []),
+    { id: "cli_chat", label: "Falar com recepção", icon: MessageSquare },
+    { id: "cli_notif", label: "Notificações", icon: Bell },
+  ];
+
+  let nav;
+  if (perfil === "cliente") {
+    nav = CLIENT_NAV;
+  } else {
+    nav = NAV.filter((n) => !(viewAs && n.id === "franqueados"));
+    if (allowed) nav = nav.filter((n) => allowed.includes(n.id));
+  }
+
+  // Sidebar organizado por assunto. No portal do cliente fica sem cabeçalhos.
+  const navGrupos =
+    perfil === "cliente"
+      ? [{ id: "_cli", label: "", itens: nav }]
+      : NAV_GRUPOS.map((g) => ({ ...g, itens: nav.filter((n) => n.group === g.id) })).filter((g) => g.itens.length);
+
+  // Notifica a recepção de pedidos novos da cafeteria + mensagens não lidas
+  const pedidosNovos = pedidosDe(activeUnit).filter((p) => p.status === "recebido").length;
+  const chatUnread = conversasDe(activeUnit).reduce((s, c) => s + (c.unread || 0), 0);
+  const reservasNovas = reservas.filter((r) => r.unidadeId === activeUnit && r.origem === "app" && !r.vista).length;
+  const correspNovas = correspondenciasDe(activeUnit).filter((c) => c.status === "aguardando").length;
+  const contratosRenovar = contratosVencendoDe(activeUnit).length;
+  // A coluna "Push" das preferências da equipe controla os contadores no app.
+  const pushOn = (ev) => notificacaoPrefs?.[`${ev}.push`] !== false;
+
+  // Página atual precisa ser permitida no perfil
+  const pageAllowed = !allowed || allowed.includes(page) || page === "config";
+  const pageId = pageAllowed ? page : cfg.landing;
+  const Page = PAGES[pageId] || Dashboard;
+
+  // Identidade exibida no rodapé da sidebar
+  const identidade = {
+    franqueador: { nome: "Administrador", papel: "Plataforma CafeWorking" },
+    master: { nome: franqueadoAtivo?.nome || "Master", papel: "Coworking (master)" },
+    recepcao: { nome: "Recepção", papel: "Operador de recepção" },
+    financeiro: { nome: "Financeiro", papel: "Contas a receber" },
+    cliente: { nome: "Cliente", papel: "Membro" },
+  }[perfil] || { nome: "Administrador", papel: "Plataforma" };
 
   return (
     <div
@@ -104,11 +206,24 @@ export default function App() {
           </button>
         </div>
 
-        <nav style={{ display: "flex", flexDirection: "column", gap: 3, flex: 1, overflowY: "auto" }}>
-          {NAV.map((n) => (
+        <nav style={{ display: "flex", flexDirection: "column", flex: 1, overflowY: "auto" }}>
+          {navGrupos.map((grupo, gi) => (
+            <div key={grupo.id} style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: gi === 0 ? 0 : 12 }}>
+              {grupo.label && (
+                <div style={{ fontSize: 10.5, fontWeight: 700, color: C.text4, letterSpacing: 0.6, padding: "2px 14px 5px" }}>
+                  {grupo.label.toUpperCase()}
+                </div>
+              )}
+              {grupo.itens.map((n) => {
+                const badge = n.id === "pdv" ? (pushOn("pedido") ? pedidosNovos : 0)
+                  : n.id === "chat" ? (pushOn("chat") ? chatUnread : 0)
+                  : n.id === "reservas" ? (pushOn("reserva") ? reservasNovas : 0)
+                  : n.id === "corresp" ? (pushOn("corresp") ? correspNovas : 0)
+                  : n.id === "financeiro" ? contratosRenovar : n.badge;
+                return (
+            <React.Fragment key={n.id}>
             <button
-              key={n.id}
-              className={`cw-nav-btn ${page === n.id ? "active" : ""}`}
+              className={`cw-nav-btn ${pageId === n.id ? "active" : ""}`}
               onClick={() => {
                 setPage(n.id);
                 setMobOpen(false);
@@ -122,8 +237,8 @@ export default function App() {
                 fontFamily: sans,
                 fontSize: 14,
                 fontWeight: 500,
-                background: page === n.id ? C.cafe : "transparent",
-                color: page === n.id ? "#fff" : C.text2,
+                background: pageId === n.id ? C.cafe : "transparent",
+                color: pageId === n.id ? "#fff" : C.text2,
                 transition: "all .15s",
                 textAlign: "left",
                 width: "100%",
@@ -131,11 +246,14 @@ export default function App() {
             >
               <n.icon size={18} />
               <span style={{ flex: 1 }}>{n.label}</span>
-              {n.badge && (
+              {n.id === "financeiro" && (
+                <ChevronDown size={15} style={{ transform: pageId === "financeiro" ? "rotate(180deg)" : "none", transition: "transform .15s", opacity: 0.8 }} />
+              )}
+              {badge > 0 && (
                 <span
                   className="cw-pulse"
                   style={{
-                    background: page === n.id ? "rgba(255,255,255,.25)" : C.cafe,
+                    background: pageId === n.id ? "rgba(255,255,255,.25)" : C.cafe,
                     color: "#fff",
                     fontSize: 11,
                     fontWeight: 700,
@@ -146,60 +264,131 @@ export default function App() {
                     placeItems: "center",
                   }}
                 >
-                  {n.badge}
+                  {badge}
                 </span>
               )}
             </button>
+            {n.id === "financeiro" && pageId === "financeiro" && (
+              <div style={{ margin: "2px 0 6px", paddingLeft: 6 }}>
+                {FIN_GRUPOS.map((g) => (
+                  <div key={g.titulo} style={{ marginBottom: 2 }}>
+                    <div style={{ fontSize: 9.5, fontWeight: 700, color: C.text4, letterSpacing: 0.6, padding: "6px 14px 3px 16px" }}>
+                      {g.titulo.toUpperCase()}
+                    </div>
+                    {g.itens.map((s) => {
+                      const ativo = finTab === s.id;
+                      return (
+                        <button
+                          key={s.id}
+                          className="cw-nav-btn"
+                          onClick={() => { setFinTab(s.id); setPage("financeiro"); setMobOpen(false); }}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 10, width: "100%",
+                            padding: "8px 14px 8px 16px", borderRadius: 10, marginBottom: 1,
+                            fontFamily: sans, fontSize: 13, fontWeight: ativo ? 600 : 500, textAlign: "left",
+                            background: ativo ? C.cream2 : "transparent",
+                            color: ativo ? C.cafe : C.text3,
+                            borderLeft: `2px solid ${ativo ? C.cafe : "transparent"}`,
+                          }}
+                        >
+                          <s.icon size={15} style={{ flexShrink: 0 }} />
+                          <span>{s.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            )}
+            </React.Fragment>
+                );
+              })}
+            </div>
           ))}
         </nav>
 
         <div style={{ borderTop: `1px solid ${C.border2}`, paddingTop: 14, marginTop: 14 }}>
-          <button
-            onClick={() => setPage("config")}
-            className={`cw-nav-btn ${page === "config" ? "active" : ""}`}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              padding: "10px 14px",
-              borderRadius: 12,
-              fontSize: 14,
-              color: page === "config" ? "#fff" : C.text2,
-              background: page === "config" ? C.cafe : "transparent",
-              width: "100%",
-              fontWeight: 500,
-            }}
-          >
-            <Settings size={18} /> Configurações
-          </button>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "12px 14px",
-              marginTop: 4,
-            }}
-          >
-            <div
+          {(ehFranqueador || perfil === "master") && (
+            <button
+              onClick={() => setPage("config")}
+              className={`cw-nav-btn ${pageId === "config" ? "active" : ""}`}
               style={{
-                width: 36,
-                height: 36,
-                borderRadius: "50%",
-                background: C.teal,
-                color: "#fff",
-                display: "grid",
-                placeItems: "center",
-                fontFamily: serif,
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                padding: "10px 14px",
+                borderRadius: 12,
+                fontSize: 14,
+                color: pageId === "config" ? "#fff" : C.text2,
+                background: pageId === "config" ? C.cafe : "transparent",
+                width: "100%",
+                fontWeight: 500,
               }}
             >
-              A
-            </div>
-            <div style={{ fontSize: 13 }}>
-              <div style={{ fontWeight: 600 }}>Admin Ciatos</div>
-              <div style={{ color: C.text3, fontSize: 11 }}>Gestor</div>
-            </div>
-          </div>
+              <Settings size={18} /> Configurações
+            </button>
+          )}
+          {(() => {
+            const ehCliente = perfil === "cliente";
+            const footNome = ehCliente ? identidade.nome : (meuPerfil.nome || identidade.nome);
+            const footPapel = ehCliente ? identidade.papel : (meuPerfil.cargo || identidade.papel);
+            const footFoto = ehCliente ? "" : meuPerfil.foto;
+            const podeConfig = ehFranqueador || perfil === "master";
+            return (
+              <div
+                onClick={podeConfig ? () => { setPage("config"); setMobOpen(false); } : undefined}
+                title={podeConfig ? "Editar meu perfil" : undefined}
+                className={podeConfig ? "cw-nav-btn" : ""}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "10px 12px",
+                  marginTop: 4,
+                  borderRadius: 12,
+                  cursor: podeConfig ? "pointer" : "default",
+                }}
+              >
+                {footFoto ? (
+                  <img
+                    src={footFoto}
+                    alt={footNome}
+                    style={{ width: 36, height: 36, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: "50%",
+                      background: cfg.cor,
+                      color: "#fff",
+                      display: "grid",
+                      placeItems: "center",
+                      fontFamily: serif,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {footNome.charAt(0)}
+                  </div>
+                )}
+                <div style={{ fontSize: 13, minWidth: 0, flex: 1 }}>
+                  <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{footNome}</div>
+                  <div style={{ color: C.text3, fontSize: 11 }}>{footPapel}</div>
+                </div>
+                {supabaseConfigured && session && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); signOut(); }}
+                    title="Sair"
+                    className="cw-btn"
+                    style={{ color: C.text3, padding: 6, flexShrink: 0 }}
+                  >
+                    <LogOut size={17} />
+                  </button>
+                )}
+              </div>
+            );
+          })()}
         </div>
       </aside>
 
@@ -268,7 +457,10 @@ export default function App() {
               }}
             />
           </div>
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+            {/* "Ver como" é ferramenta de demonstração — escondida no login real */}
+            {!autenticadoReal && <PerfilSwitcher />}
+            {perfil !== "cliente" && perfil !== "franqueador" && <UnitSwitcher />}
             <button style={{ position: "relative", color: C.text2 }} aria-label="Notificações">
               <Bell size={21} />
               <span
@@ -285,18 +477,226 @@ export default function App() {
                 }}
               />
             </button>
-            <Badge color={C.teal}>
-              <Wifi size={11} style={{ marginRight: 4, verticalAlign: -1 }} />2 unidades online
-            </Badge>
           </div>
         </header>
+        {!ehFranqueador && !autenticadoReal && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "10px 28px",
+              background: cfg.cor,
+              color: "#fff",
+              fontSize: 13,
+              fontWeight: 500,
+            }}
+          >
+            <Eye size={16} />
+            <span style={{ flex: 1 }}>
+              Pré-visualizando como <b>{cfg.label}</b>
+              {perfil === "master" && franqueadoAtivo ? ` — ${franqueadoAtivo.nome}` : ""}. O menu mostra só o que esse perfil acessa.
+            </span>
+            <button
+              onClick={() => setPerfil("franqueador")}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                background: "rgba(255,255,255,.18)",
+                color: "#fff",
+                padding: "6px 12px",
+                borderRadius: 9,
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              <LogOut size={14} /> Voltar à plataforma
+            </button>
+          </div>
+        )}
         <main
           className="cw-content"
           style={{ padding: 28, flex: 1, maxWidth: 1320, width: "100%" }}
         >
-          <Page go={setPage} />
+          <Page go={setPage} section={pageId} finTab={finTab} setFinTab={setFinTab} />
         </main>
       </div>
+    </div>
+  );
+}
+
+function UnitSwitcher() {
+  const { unidadesVisiveis, activeUnit, setActiveUnit, unidadeAtiva } = useStore();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div style={{ position: "relative" }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        onBlur={() => setTimeout(() => setOpen(false), 120)}
+        className="cw-btn"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 9,
+          background: "#fff",
+          border: `1px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "8px 12px",
+          fontFamily: sans,
+          fontSize: 13,
+          fontWeight: 600,
+          color: C.text,
+        }}
+      >
+        <span
+          style={{
+            width: 9,
+            height: 9,
+            borderRadius: "50%",
+            background: unidadeAtiva?.cor || C.cafe,
+            flexShrink: 0,
+          }}
+        />
+        <span style={{ maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {unidadeAtiva?.nome || "Unidade"}
+        </span>
+        <ChevronDown size={15} color={C.text3} style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+      </button>
+
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 6px)",
+            right: 0,
+            minWidth: 230,
+            background: "#fff",
+            border: `1px solid ${C.border2}`,
+            borderRadius: 14,
+            boxShadow: "0 16px 40px rgba(31,31,28,.14)",
+            padding: 6,
+            zIndex: 60,
+          }}
+        >
+          <div style={{ fontSize: 11, color: C.text4, fontWeight: 600, padding: "6px 10px 8px", letterSpacing: 0.4 }}>
+            UNIDADE ATIVA
+          </div>
+          {unidadesVisiveis.map((u) => (
+            <button
+              key={u.id}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setActiveUnit(u.id);
+                setOpen(false);
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                width: "100%",
+                padding: "9px 10px",
+                borderRadius: 10,
+                background: u.id === activeUnit ? C.cream2 : "transparent",
+                textAlign: "left",
+                fontFamily: sans,
+              }}
+            >
+              <span style={{ width: 10, height: 10, borderRadius: "50%", background: u.cor, flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{u.nome}</div>
+                <div style={{ fontSize: 11, color: C.text3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {u.endereco}
+                </div>
+              </div>
+              {u.id === activeUnit && <Check size={16} color={C.cafe} />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PerfilSwitcher() {
+  const { perfil, setPerfil } = useStore();
+  const [open, setOpen] = useState(false);
+  const cfg = PERFIS[perfil] || PERFIS.franqueador;
+  const franqueador = perfil === "franqueador";
+
+  return (
+    <div style={{ position: "relative" }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        onBlur={() => setTimeout(() => setOpen(false), 120)}
+        className="cw-btn"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          background: franqueador ? "#fff" : cfg.cor,
+          border: `1px solid ${franqueador ? C.border : cfg.cor}`,
+          borderRadius: 12,
+          padding: "8px 12px",
+          fontFamily: sans,
+          fontSize: 13,
+          fontWeight: 600,
+          color: franqueador ? C.text : "#fff",
+        }}
+      >
+        <Eye size={14} />
+        <span style={{ maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          Ver como: {cfg.label}
+        </span>
+        <ChevronDown size={15} style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+      </button>
+
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 6px)",
+            right: 0,
+            minWidth: 230,
+            background: "#fff",
+            border: `1px solid ${C.border2}`,
+            borderRadius: 14,
+            boxShadow: "0 16px 40px rgba(31,31,28,.14)",
+            padding: 6,
+            zIndex: 60,
+          }}
+        >
+          <div style={{ fontSize: 11, color: C.text4, fontWeight: 600, padding: "6px 10px 8px", letterSpacing: 0.4 }}>
+            VISUALIZAR PAINEL COMO
+          </div>
+          {Object.entries(PERFIS).map(([id, p]) => (
+            <button
+              key={id}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setPerfil(id);
+                setOpen(false);
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                width: "100%",
+                padding: "9px 10px",
+                borderRadius: 10,
+                background: id === perfil ? C.cream2 : "transparent",
+                textAlign: "left",
+                fontFamily: sans,
+              }}
+            >
+              <span style={{ width: 10, height: 10, borderRadius: "50%", background: p.cor, flexShrink: 0 }} />
+              <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: C.text }}>{p.label}</span>
+              {id === perfil && <Check size={16} color={C.cafe} />}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

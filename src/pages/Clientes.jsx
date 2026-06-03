@@ -4,13 +4,15 @@ import {
   Building, Mail, Phone, Upload, Download, FileCheck, FileClock,
   AlertCircle,
 } from "lucide-react";
-import { Card, Badge, Btn, PageHead, Empty } from "../components/ui.jsx";
-import { C, serif } from "../lib/theme.js";
-import { CLIENTES } from "../lib/data.js";
+import { Card, Badge, Btn, PageHead, Empty, Modal, Field } from "../components/ui.jsx";
+import { C, serif, inp } from "../lib/theme.js";
+import { useStore } from "../lib/store.jsx";
 
 export default function Clientes() {
+  const { clientes, addCliente, unidades } = useStore();
   const [sel, setSel] = useState(null);
-  const cli = CLIENTES.find((c) => c.id === sel);
+  const [novo, setNovo] = useState(false);
+  const cli = clientes.find((c) => c.id === sel);
   if (cli) return <ClienteDetalhe cli={cli} onBack={() => setSel(null)} />;
 
   return (
@@ -19,13 +21,16 @@ export default function Clientes() {
         title="Clientes"
         sub="Contratos, planos, documentos, faturas, reservas e histórico completo."
         action={
-          <Btn>
+          <Btn onClick={() => setNovo(true)}>
             <Plus size={16} /> Novo cliente
           </Btn>
         }
       />
+      {clientes.length === 0 ? (
+        <Card><Empty icon={Users} title="Nenhum cliente" sub="Cadastre o primeiro cliente do coworking." /></Card>
+      ) : (
       <Card style={{ padding: 0, overflow: "hidden" }}>
-        {CLIENTES.map((c, i) => {
+        {clientes.map((c, i) => {
           const novos = c.docs.filter((d) => d.status === "novo").length;
           return (
             <div
@@ -37,7 +42,7 @@ export default function Clientes() {
                 alignItems: "center",
                 gap: 16,
                 padding: 18,
-                borderBottom: i < CLIENTES.length - 1 ? `1px solid ${C.border2}` : "none",
+                borderBottom: i < clientes.length - 1 ? `1px solid ${C.border2}` : "none",
                 cursor: "pointer",
               }}
             >
@@ -83,7 +88,45 @@ export default function Clientes() {
           );
         })}
       </Card>
+      )}
+
+      {novo && (
+        <Modal title="Novo cliente" onClose={() => setNovo(false)} maxWidth={460}>
+          <NovoClienteForm unidades={unidades} onSalvar={(dados) => { addCliente(dados); setNovo(false); }} />
+        </Modal>
+      )}
     </div>
+  );
+}
+
+function NovoClienteForm({ unidades, onSalvar }) {
+  const [f, setF] = useState({ nome: "", cnpj: "", plano: "Sala Privativa", unidade: unidades[0]?.nome || "", fiscal: false, contato: "", email: "", tel: "" });
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const valido = f.nome.trim();
+  return (
+    <>
+      <Field label="Nome / razão social"><input value={f.nome} onChange={set("nome")} style={inp} placeholder="Ex: Mendes Advocacia" /></Field>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <Field label="CPF / CNPJ"><input value={f.cnpj} onChange={set("cnpj")} style={inp} placeholder="00.000.000/0001-00" /></Field>
+        <Field label="Unidade">
+          <select value={f.unidade} onChange={set("unidade")} style={inp}>
+            {unidades.map((u) => <option key={u.id} value={u.nome}>{u.nome}</option>)}
+          </select>
+        </Field>
+      </div>
+      <Field label="Plano / contrato"><input value={f.plano} onChange={set("plano")} style={inp} placeholder="Ex: Sala Privativa, Endereço Fiscal" /></Field>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <Field label="Contato"><input value={f.contato} onChange={set("contato")} style={inp} placeholder="Pessoa de contato" /></Field>
+        <Field label="Telefone"><input value={f.tel} onChange={set("tel")} style={inp} placeholder="(31) 9...." /></Field>
+      </div>
+      <Field label="E-mail"><input value={f.email} onChange={set("email")} style={inp} type="email" placeholder="contato@empresa.com.br" /></Field>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.text2, margin: "4px 0 14px", cursor: "pointer" }}>
+        <input type="checkbox" checked={f.fiscal} onChange={(e) => setF({ ...f, fiscal: e.target.checked })} /> Usa endereço fiscal (recebe correspondências)
+      </label>
+      <Btn style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.5 }} onClick={() => valido && onSalvar({ ...f, desde: String(new Date().getFullYear()) })}>
+        <Plus size={16} /> Cadastrar cliente
+      </Btn>
+    </>
   );
 }
 

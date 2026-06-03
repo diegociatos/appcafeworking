@@ -8,8 +8,8 @@ export const UNIDADES = [
 ];
 
 export const PRODUTOS = [
-  { id: 1, nome: "Espresso", cat: "Café", preco: 7.0, emoji: "☕", cmv: 1.8 },
-  { id: 2, nome: "Cappuccino", cat: "Café", preco: 12.0, emoji: "☕", cmv: 3.5 },
+  { id: 1, nome: "Espresso", cat: "Café", preco: 7.0, emoji: "☕", cmv: 1.8, foto: "https://picsum.photos/seed/espresso/240/240" },
+  { id: 2, nome: "Cappuccino", cat: "Café", preco: 12.0, emoji: "☕", cmv: 3.5, foto: "https://picsum.photos/seed/cappuccino/240/240" },
   { id: 3, nome: "Latte", cat: "Café", preco: 13.5, emoji: "🥛", cmv: 4.0 },
   { id: 4, nome: "Coado Especial", cat: "Café", preco: 11.0, emoji: "☕", cmv: 2.6 },
   { id: 5, nome: "Cold Brew", cat: "Café", preco: 15.0, emoji: "🧊", cmv: 4.2 },
@@ -23,11 +23,12 @@ export const PRODUTOS = [
 ];
 
 export const SALAS = [
-  { id: "s1", nome: "Sala Master", unidade: "Luxemburgo", cap: 12, tipo: "Reunião", valor: "R$ 120/h" },
-  { id: "s2", nome: "Sala Executiva", unidade: "Luxemburgo", cap: 6, tipo: "Reunião", valor: "R$ 80/h" },
-  { id: "s3", nome: "Auditório", unidade: "Luxemburgo", cap: 40, tipo: "Evento", valor: "Evento" },
-  { id: "s4", nome: "Sala Vidro 1", unidade: "Estoril", cap: 8, tipo: "Reunião", valor: "R$ 90/h" },
-  { id: "s5", nome: "Sala Vidro 2", unidade: "Estoril", cap: 4, tipo: "Atendimento", valor: "R$ 60/h" },
+  { id: "s1", nome: "Sala Master", unidade: "Luxemburgo", cap: 12, tipo: "Reunião", valor: "R$ 120/h", valorHora: 120, foto: "https://picsum.photos/seed/salamaster/400/260" },
+  { id: "s2", nome: "Sala Executiva", unidade: "Luxemburgo", cap: 6, tipo: "Reunião", valor: "R$ 80/h", valorHora: 80, foto: "https://picsum.photos/seed/salaexec/400/260" },
+  { id: "s3", nome: "Auditório", unidade: "Luxemburgo", cap: 40, tipo: "Evento", valor: "Evento", valorHora: 0, foto: "https://picsum.photos/seed/auditorio/400/260" },
+  { id: "s4", nome: "Sala Vidro 1", unidade: "Estoril", cap: 8, tipo: "Reunião", valor: "R$ 90/h", valorHora: 90, foto: "https://picsum.photos/seed/vidro1/400/260" },
+  { id: "s5", nome: "Sala Vidro 2", unidade: "Estoril", cap: 4, tipo: "Atendimento", valor: "R$ 60/h", valorHora: 60, foto: "https://picsum.photos/seed/vidro2/400/260" },
+  { id: "s6", nome: "Sala Privativa 1", unidade: "Luxemburgo", cap: 4, tipo: "Privativa", valor: "R$ 2.890/mês", foto: "https://picsum.photos/seed/priv1/400/260", contratada: true, contratante: "Mendes Advocacia", valorMensal: 2890 },
 ];
 
 export const HORARIOS = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00"];
@@ -121,6 +122,9 @@ export const ETAPAS_CRM = [
   { id: "fechado", label: "Fechado", cor: C.green },
 ];
 
+// Origens de leads (editável na tela do CRM)
+export const ORIGENS_INIT = ["Instagram", "Site", "WhatsApp", "Google Ads", "Indicação"];
+
 // === NOVO: Correspondências (operação diária do endereço fiscal) ===
 export const CORRESP_INIT = [
   { id: "co1", cliente: "Mendes Advocacia", remetente: "Receita Federal", tipo: "Notificação", recebido: "Hoje 09:18", status: "aguardando", urgente: true, foto: true },
@@ -135,14 +139,4 @@ export const ALERTAS = [
   { id: "a2", tipo: "corresp", titulo: "Correspondência sensível chegou", sub: "Mendes Adv. · Receita Federal · notificar agora", cor: C.amber },
   { id: "a3", tipo: "sala", titulo: "Sala Master livre amanhã", sub: "Oportunidade para Bruno Lima (visita marcada)", cor: C.teal },
   { id: "a4", tipo: "lead", titulo: "3 novos leads não respondidos", sub: "Instagram · responder em < 1h aumenta conversão 35%", cor: C.cafe },
-];
-
-// === NOVO: Sugestões da IA CafeWorking ===
-export const IA_PROMPTS = [
-  "Quais salas estão livres amanhã às 14h?",
-  "Qual lead está mais perto de fechar?",
-  "Chegou correspondência para Mendes Advocacia?",
-  "Quais clientes estão inadimplentes?",
-  "Resumo financeiro da semana",
-  "Qual é o produto mais vendido na cafeteria hoje?",
 ];

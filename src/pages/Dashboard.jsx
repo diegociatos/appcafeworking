@@ -2,15 +2,21 @@ import React from "react";
 import {
   DollarSign, Users, CalendarDays, Coffee, TrendingUp, CircleDot,
   MapPin, ArrowUpRight, Building2, AlertCircle, Mail, DoorOpen, Target,
-  Sparkles, Receipt, FileCheck, Wallet,
+  Receipt, FileCheck, Wallet,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead } from "../components/ui.jsx";
 import { C, serif, fmt, fmtShort } from "../lib/theme.js";
 import { UNIDADES, ALERTAS } from "../lib/data.js";
+import { useStore } from "../lib/store.jsx";
+import { Store } from "lucide-react";
 
 const ICONS = { fatura: Receipt, corresp: Mail, sala: DoorOpen, lead: Target };
 
 export default function Dashboard({ go }) {
+  const { perfil, franqueados, unidades } = useStore();
+  // O Administrador da plataforma tem um painel próprio (não opera coworking)
+  if (perfil === "franqueador") return <DashboardPlataforma franqueados={franqueados} unidades={unidades} go={go} />;
+
   const totalReceita = UNIDADES.reduce((s, u) => s + u.receita, 0);
   const totalMembros = UNIDADES.reduce((s, u) => s + u.membros, 0);
 
@@ -29,11 +35,6 @@ export default function Dashboard({ go }) {
       <PageHead
         title="Centro de Comando"
         sub="Operação, vendas, cafeteria, reservas e experiência do cliente em uma única visão."
-        action={
-          <Btn variant="teal" onClick={() => go("ia")}>
-            <Sparkles size={16} /> Abrir IA
-          </Btn>
-        }
       />
 
       {/* KPIs */}
@@ -266,6 +267,57 @@ export default function Dashboard({ go }) {
           </Card>
         ))}
       </div>
+    </div>
+  );
+}
+
+// Painel do Administrador da plataforma (vendedor do app) — não opera coworking
+function DashboardPlataforma({ franqueados, unidades, go }) {
+  const mrr = franqueados.reduce((s, f) => s + (f.mensalidade || 0), 0);
+  const kpis = [
+    { label: "Contas (coworkings)", val: franqueados.length, icon: Store, cor: C.cafe },
+    { label: "Unidades na plataforma", val: unidades.length, icon: Building2, cor: C.teal },
+    { label: "MRR da plataforma", val: fmt(mrr), icon: DollarSign, cor: C.green },
+    { label: "ARR estimado", val: fmt(mrr * 12), icon: TrendingUp, cor: C.amber },
+  ];
+  return (
+    <div>
+      <PageHead title="Plataforma CafeWorking" sub="Painel do administrador: contas que assinam o app e faturamento da plataforma. (O admin não opera coworking — use 'Entrar' numa conta.)" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 16, marginBottom: 22 }}>
+        {kpis.map((k, i) => (
+          <Card key={i} className={`cw-fade cw-fade-${i + 1}`}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <div style={{ fontSize: 13, color: C.text3 }}>{k.label}</div>
+                <div style={{ fontFamily: serif, fontSize: 26, color: C.text, marginTop: 6 }}>{k.val}</div>
+              </div>
+              <div style={{ width: 42, height: 42, borderRadius: 12, background: `${k.cor}16`, display: "grid", placeItems: "center" }}>
+                <k.icon size={20} color={k.cor} />
+              </div>
+            </div>
+          </Card>
+        ))}
+      </div>
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border2}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontFamily: serif, fontSize: 19 }}>Contas assinantes</span>
+          <Btn onClick={() => go("franqueados")} style={{ padding: "8px 14px", fontSize: 13 }}>Gerenciar contas</Btn>
+        </div>
+        {franqueados.map((f, i) => {
+          const nUnid = unidades.filter((u) => u.franqueadoId === f.id).length;
+          return (
+            <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: 16, borderBottom: i < franqueados.length - 1 ? `1px solid ${C.border2}` : "none" }}>
+              <div style={{ width: 42, height: 42, borderRadius: "50%", background: "#B8862F", color: "#fff", display: "grid", placeItems: "center", fontFamily: serif, fontSize: 18 }}>{f.nome.charAt(0)}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 600 }}>{f.nome}</div>
+                <div style={{ fontSize: 12, color: C.text3 }}>Master: {f.master || "—"} · {nUnid} unidade{nUnid === 1 ? "" : "s"}</div>
+              </div>
+              <Badge color={C.green}>{f.plano} · {fmt(f.mensalidade || 0)}/mês</Badge>
+            </div>
+          );
+        })}
+        {franqueados.length === 0 && <div style={{ padding: 24, textAlign: "center", color: C.text4, fontSize: 13 }}>Nenhuma conta ainda. Cadastre em "Contas".</div>}
+      </Card>
     </div>
   );
 }

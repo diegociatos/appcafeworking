@@ -44,11 +44,13 @@ export const C = {
   bluePale: "rgba(51,92,129,.1)",
 };
 
-// Book Antiqua é fonte de sistema (Windows); Palatino Linotype/Palatino fazem
-// o mesmo papel em macOS/iOS/Linux. URW Palladio é o equivalente livre.
-export const serif =
+// Todo o app usa Book Antiqua (fonte de sistema no Windows). Palatino Linotype/
+// Palatino fazem o mesmo papel em macOS/iOS/Linux; URW Palladio é o equivalente
+// livre. `serif` e `sans` apontam para a mesma pilha — todas as letras Book Antiqua.
+const bookAntiqua =
   "'Book Antiqua', 'Palatino Linotype', Palatino, 'URW Palladio L', 'Palatino LT STD', Georgia, serif";
-export const sans = "'DM Sans', system-ui, sans-serif";
+export const serif = bookAntiqua;
+export const sans = bookAntiqua;
 
 export const fmt = (n) =>
   "R$ " + n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });

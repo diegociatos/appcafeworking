@@ -1,23 +1,34 @@
-import React, { useState } from "react";
-import { Plus, CheckCircle2 } from "lucide-react";
-import { Card, Btn, PageHead, Modal, Field } from "../components/ui.jsx";
-import { C, serif, inp } from "../lib/theme.js";
-import { SALAS, HORARIOS, RESERVAS_INIT } from "../lib/data.js";
+import React, { useState, useEffect } from "react";
+import { Plus, CheckCircle2, CalendarOff, AlertCircle, Trash2, X, Smartphone, DollarSign } from "lucide-react";
+import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
+import { C, serif, sans, fmt, inp } from "../lib/theme.js";
+import { HORARIOS, CLIENTES } from "../lib/data.js";
+import { useStore } from "../lib/store.jsx";
+
+const DIAS = ["Seg 26", "Ter 27", "Qua 28", "Qui 29", "Sex 30"];
 
 export default function Reservas() {
-  const [reservas, setReservas] = useState(RESERVAS_INIT);
+  const { activeUnit, unidadeAtiva, salasDe, reservas, addReserva, removeReserva, marcarReservasVistas, addLancamento } = useStore();
   const [diaSel, setDiaSel] = useState(0);
   const [modal, setModal] = useState(null);
-  const dias = ["Seg 26", "Ter 27", "Qua 28", "Qui 29", "Sex 30"];
-  const reservasDoDia = reservas.filter((r) => r.dia === diaSel);
+  const [detalhe, setDetalhe] = useState(null);
+  const dias = DIAS;
+
+  // Ao abrir a agenda, marca as reservas novas (feitas pelo cliente) como vistas
+  useEffect(() => { marcarReservasVistas(activeUnit); }, [activeUnit]); // eslint-disable-line
+
+  const salasUnidade = salasDe(activeUnit);
+  const salasReservaveis = salasUnidade.filter((s) => !s.contratada);
+  const salaIds = new Set(salasUnidade.map((s) => s.id));
+  const reservasDoDia = reservas.filter((r) => r.dia === diaSel && salaIds.has(r.sala));
 
   return (
     <div>
       <PageHead
-        title="Reserva de Salas"
-        sub="Agenda visual por sala, com bloqueios e disponibilidade em tempo real."
+        title="Agenda de Salas"
+        sub={`Agenda da unidade ${unidadeAtiva?.nome || ""} · disponibilidade por sala e horário.`}
         action={
-          <Btn variant="teal" onClick={() => setModal({})}>
+          <Btn variant="teal" onClick={() => setModal({})} disabled={salasReservaveis.length === 0}>
             <Plus size={16} /> Nova reserva
           </Btn>
         }
@@ -73,7 +84,7 @@ export default function Reservas() {
                 </div>
               ))}
             </div>
-            {SALAS.map((s) => (
+            {salasUnidade.map((s) => (
               <div
                 key={s.id}
                 style={{
@@ -84,21 +95,44 @@ export default function Reservas() {
                   minHeight: 56,
                 }}
               >
-                <div style={{ padding: "10px 14px", borderRight: `1px solid ${C.border2}` }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{s.nome}</div>
-                  <div style={{ fontSize: 11, color: C.text3 }}>
-                    {s.unidade} · {s.cap}p
+                <div style={{ padding: "8px 12px", borderRight: `1px solid ${C.border2}`, display: "flex", gap: 9, alignItems: "center" }}>
+                  {s.foto && (
+                    <img
+                      src={s.foto}
+                      alt={s.nome}
+                      onError={(e) => (e.currentTarget.style.display = "none")}
+                      style={{ width: 34, height: 34, borderRadius: 7, objectFit: "cover", flexShrink: 0, background: C.cream2 }}
+                    />
+                  )}
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{s.nome}</div>
+                    <div style={{ fontSize: 11, color: C.text3 }}>
+                      {s.tipo} · {s.cap}p
+                    </div>
                   </div>
                 </div>
                 {HORARIOS.map((_, hi) => (
                   <div key={hi} style={{ borderLeft: `1px solid ${C.border2}` }} />
                 ))}
-                {reservasDoDia
+                {s.contratada && (
+                  <div
+                    style={{
+                      position: "absolute", top: 6, bottom: 6, left: 154, right: 6,
+                      background: `${C.red}12`, border: `1px dashed ${C.red}66`, borderRadius: 8,
+                      display: "flex", alignItems: "center", gap: 8, padding: "0 14px",
+                      color: C.red, fontSize: 12, fontWeight: 600,
+                    }}
+                  >
+                    🔒 Contratada · locação mensal{s.contratante ? ` · ${s.contratante}` : ""}
+                  </div>
+                )}
+                {!s.contratada && reservasDoDia
                   .filter((r) => r.sala === s.id)
                   .map((r) => (
                     <div
                       key={r.id}
-                      title={r.cliente}
+                      title={`${r.cliente} — clique para ver detalhes`}
+                      onClick={() => setDetalhe(r)}
                       style={{
                         position: "absolute",
                         top: 6,
@@ -126,7 +160,7 @@ export default function Reservas() {
                           textOverflow: "ellipsis",
                         }}
                       >
-                        {r.cliente}
+                        {r.origem === "app" ? "📱 " : ""}{r.cliente}
                       </span>
                       <span style={{ fontSize: 10, opacity: 0.85 }}>
                         {HORARIOS[r.inicio]}–{HORARIOS[r.inicio + r.dur] || "18:00"}
@@ -135,70 +169,204 @@ export default function Reservas() {
                   ))}
               </div>
             ))}
+            {salasUnidade.length === 0 && (
+              <Empty
+                icon={CalendarOff}
+                title="Nenhuma sala nesta unidade"
+                sub={`Cadastre salas da unidade ${unidadeAtiva?.nome || ""} em Unidades → Gerenciar → Salas.`}
+              />
+            )}
           </div>
         </div>
       </Card>
+      <div style={{ marginTop: 10, fontSize: 12, color: C.text3, fontStyle: "italic" }}>
+        💡 Clique numa reserva para ver detalhes, lançar valor complementar ou cancelar. 📱 = feita pelo cliente no app.
+      </div>
+
       {modal && (
         <NovaReservaModal
+          salas={salasReservaveis}
+          clientes={CLIENTES.filter((c) => c.unidade === unidadeAtiva?.nome)}
+          dias={dias}
+          diaInicial={diaSel}
+          reservas={reservas}
           onClose={() => setModal(null)}
           onSave={(nr) => {
-            setReservas((rs) => [
-              ...rs,
-              { ...nr, id: "r" + Date.now(), dia: diaSel, cor: C.teal2 },
-            ]);
+            addReserva({ ...nr, cor: C.teal2 });
+            setDiaSel(nr.dia);
             setModal(null);
           }}
         />
+      )}
+
+      {detalhe && (
+        <Modal title="Detalhes da reserva" onClose={() => setDetalhe(null)}>
+          <ReservaDetalhe
+            reserva={detalhe}
+            sala={salasUnidade.find((s) => s.id === detalhe.sala)}
+            dias={dias}
+            onComplemento={({ valor, horas }) => {
+              const sala = salasUnidade.find((s) => s.id === detalhe.sala);
+              const sub = sala?.tipo === "Privativa" ? "Aluguel de Salas Privativas" : "Aluguel de Sala de Reunião";
+              addLancamento(activeUnit, {
+                tipo: "entrada",
+                descricao: `Complemento · ${sala?.nome || ""} · ${detalhe.cliente}${horas ? ` (+${horas}h)` : ""}`,
+                categoria: "Receita Operacional Bruta", subcategoria: sub, valor, status: "previsto",
+              });
+              setDetalhe(null);
+            }}
+            onCancelar={() => { removeReserva(detalhe.id); setDetalhe(null); }}
+          />
+        </Modal>
       )}
     </div>
   );
 }
 
-function NovaReservaModal({ onClose, onSave }) {
-  const [f, setF] = useState({ sala: SALAS[0].id, cliente: "", inicio: 2, dur: 1 });
+function ReservaDetalhe({ reserva, sala, dias, onComplemento, onCancelar }) {
+  const vh = sala?.valorHora || 0;
+  const [horas, setHoras] = useState(1);
+  const [valor, setValor] = useState(vh);
+  const setH = (h) => { const n = Math.max(0, h); setHoras(n); setValor(n * vh); };
+
+  return (
+    <>
+      <div style={{ background: C.cream, borderRadius: 12, padding: 14, marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+          <div style={{ fontFamily: serif, fontSize: 18 }}>{reserva.cliente}</div>
+          {reserva.origem === "app" && <Badge color={C.teal}><Smartphone size={11} /> Reservou pelo app</Badge>}
+        </div>
+        <div style={{ fontSize: 13, color: C.text3, marginTop: 4 }}>
+          {sala?.nome} · {dias[reserva.dia]} · {HORARIOS[reserva.inicio]}–{HORARIOS[reserva.inicio + reserva.dur] || "18:00"} ({reserva.dur}h)
+        </div>
+        <div style={{ fontSize: 13, color: C.text2, marginTop: 6 }}>
+          Valor da reserva: <b style={{ color: C.cafe }}>{fmt(reserva.valor || 0)}</b> · já lançado no financeiro (a receber)
+        </div>
+      </div>
+
+      <div style={{ background: C.tealPale, border: `1px solid ${C.tealLine}`, borderRadius: 12, padding: 14, marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: C.teal, marginBottom: 4 }}>Usou mais que o contratado?</div>
+        <div style={{ fontSize: 12, color: C.teal2, marginBottom: 12 }}>Lance um valor complementar — ele entra no financeiro como a receber.</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Field label="Horas adicionais" style={{ marginBottom: 0 }}>
+            <input type="number" min="0" value={horas} onChange={(e) => setH(+e.target.value)} style={inp} />
+          </Field>
+          <Field label="Valor complementar (R$)" style={{ marginBottom: 0 }}>
+            <input type="number" min="0" step="0.01" value={valor} onChange={(e) => setValor(+e.target.value)} style={inp} />
+          </Field>
+        </div>
+        {vh > 0 && <div style={{ fontSize: 11, color: C.teal2, marginTop: 6 }}>Sugestão: {horas}h × {fmt(vh)} = {fmt(horas * vh)}</div>}
+        <Btn variant="teal" style={{ width: "100%", justifyContent: "center", marginTop: 12 }} disabled={!(valor > 0)} onClick={() => valor > 0 && onComplemento({ valor, horas })}>
+          <DollarSign size={16} /> Lançar complemento no financeiro
+        </Btn>
+      </div>
+
+      <Btn variant="ghost" style={{ width: "100%", justifyContent: "center", color: C.red, borderColor: C.redPale }} onClick={onCancelar}>
+        <Trash2 size={16} /> Cancelar reserva
+      </Btn>
+    </>
+  );
+}
+
+function NovaReservaModal({ salas, clientes, dias, diaInicial, reservas, onClose, onSave }) {
+  const [f, setF] = useState({
+    sala: salas[0]?.id || "",
+    modo: clientes.length ? "cadastrado" : "avulso",
+    clienteId: clientes[0]?.id || "",
+    nome: "", telefone: "", email: "",
+    dia: diaInicial || 0, inicio: 2, dur: 1,
+  });
+  const salaSel = salas.find((s) => s.id === f.sala);
+  const clienteNome = f.modo === "cadastrado" ? (clientes.find((c) => c.id === f.clienteId)?.nome || "") : f.nome.trim();
+  const conflito = reservas.find(
+    (r) => r.sala === f.sala && r.dia === f.dia && f.inicio < r.inicio + r.dur && r.inicio < f.inicio + f.dur
+  );
+  const podeSalvar = clienteNome && f.sala && !conflito;
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+
   return (
     <Modal onClose={onClose} title="Nova reserva">
       <Field label="Sala">
         <select value={f.sala} onChange={(e) => setF({ ...f, sala: e.target.value })} style={inp}>
-          {SALAS.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.nome} — {s.unidade}
-            </option>
+          {salas.map((s) => (
+            <option key={s.id} value={s.id}>{s.nome} — {s.tipo}</option>
           ))}
         </select>
       </Field>
-      <Field label="Cliente / Empresa">
-        <input
-          value={f.cliente}
-          onChange={(e) => setF({ ...f, cliente: e.target.value })}
-          placeholder="Ex: Ciatos Log"
-          style={inp}
-        />
+      {salaSel?.foto && (
+        <img src={salaSel.foto} alt={salaSel.nome} onError={(e) => (e.currentTarget.style.display = "none")} style={{ width: "100%", height: 140, objectFit: "cover", borderRadius: 12, marginBottom: 14, background: C.cream2 }} />
+      )}
+
+      <Field label="Para quem é a reserva">
+        <div style={{ display: "flex", gap: 8 }}>
+          {[["cadastrado", "Cliente cadastrado"], ["avulso", "Não é cliente"]].map(([v, lb]) => (
+            <button key={v} type="button" onClick={() => setF({ ...f, modo: v })}
+              style={{ flex: 1, padding: "10px 0", borderRadius: 10, fontFamily: sans, fontSize: 13.5, fontWeight: 600, border: `1px solid ${f.modo === v ? C.teal : C.border}`, background: f.modo === v ? C.teal : C.white, color: f.modo === v ? "#fff" : C.text2 }}>
+              {lb}
+            </button>
+          ))}
+        </div>
       </Field>
-      <div style={{ display: "flex", gap: 12 }}>
-        <Field label="Início" style={{ flex: 1 }}>
-          <select value={f.inicio} onChange={(e) => setF({ ...f, inicio: +e.target.value })} style={inp}>
-            {HORARIOS.map((h, i) => (
-              <option key={i} value={i}>
-                {h}
-              </option>
-            ))}
+
+      {f.modo === "cadastrado" ? (
+        clientes.length > 0 ? (
+          <Field label="Cliente (da base)">
+            <select value={f.clienteId} onChange={set("clienteId")} style={inp}>
+              {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}{c.plano ? ` · ${c.plano}` : ""}</option>)}
+            </select>
+          </Field>
+        ) : (
+          <div style={{ fontSize: 13, color: C.amber, marginBottom: 14 }}>Nenhum cliente cadastrado nesta unidade — use "Não é cliente".</div>
+        )
+      ) : (
+        <>
+          <Field label="Nome do cliente / empresa">
+            <input value={f.nome} onChange={set("nome")} style={inp} placeholder="Nome de quem vai usar a sala" />
+          </Field>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Field label="Telefone">
+              <input value={f.telefone} onChange={set("telefone")} style={inp} placeholder="(31) 99999-9999" />
+            </Field>
+            <Field label="E-mail">
+              <input type="email" value={f.email} onChange={set("email")} style={inp} placeholder="email@exemplo.com" />
+            </Field>
+          </div>
+        </>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr", gap: 12 }}>
+        <Field label="Dia">
+          <select value={f.dia} onChange={(e) => setF({ ...f, dia: +e.target.value })} style={inp}>
+            {dias.map((d, i) => <option key={i} value={i}>{d}</option>)}
           </select>
         </Field>
-        <Field label="Duração" style={{ flex: 1 }}>
+        <Field label="Início">
+          <select value={f.inicio} onChange={(e) => setF({ ...f, inicio: +e.target.value })} style={inp}>
+            {HORARIOS.map((h, i) => <option key={i} value={i}>{h}</option>)}
+          </select>
+        </Field>
+        <Field label="Duração">
           <select value={f.dur} onChange={(e) => setF({ ...f, dur: +e.target.value })} style={inp}>
-            {[1, 2, 3, 4].map((d) => (
-              <option key={d} value={d}>
-                {d}h
-              </option>
-            ))}
+            {[1, 2, 3, 4].map((d) => <option key={d} value={d}>{d}h</option>)}
           </select>
         </Field>
       </div>
+
+      {conflito ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.redPale, color: C.red, borderRadius: 10, padding: "10px 12px", fontSize: 13, marginBottom: 12 }}>
+          <AlertCircle size={16} /> Conflito: <b>{salaSel?.nome}</b> já está reservada nesse horário para <b>{conflito.cliente}</b>.
+        </div>
+      ) : (
+        <div style={{ fontSize: 12.5, color: C.green, marginBottom: 12 }}>
+          ✓ Horário livre: {HORARIOS[f.inicio]}–{HORARIOS[f.inicio + f.dur] || "18:00"} · {dias[f.dia]}
+        </div>
+      )}
+
       <Btn
         variant="teal"
-        style={{ width: "100%", justifyContent: "center", marginTop: 8 }}
-        onClick={() => f.cliente && onSave(f)}
+        disabled={!podeSalvar}
+        style={{ width: "100%", justifyContent: "center", opacity: podeSalvar ? 1 : 0.5 }}
+        onClick={() => podeSalvar && onSave({ sala: f.sala, dia: f.dia, inicio: f.inicio, dur: f.dur, cliente: clienteNome, avulso: f.modo === "avulso", telefone: f.telefone, email: f.email })}
       >
         <CheckCircle2 size={17} /> Confirmar reserva
       </Btn>

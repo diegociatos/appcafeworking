@@ -1,18 +1,38 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Coffee, Plus, Minus, ShoppingCart, QrCode, CreditCard, Banknote,
-  CheckCircle2, TrendingUp, Percent, Box,
+  CheckCircle2, TrendingUp, Percent, Box, Bell, Clock, Smartphone, ArrowRight,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Empty } from "../components/ui.jsx";
 import { C, serif, fmt } from "../lib/theme.js";
-import { PRODUTOS } from "../lib/data.js";
+import { useStore } from "../lib/store.jsx";
+
+// fluxo de status do pedido recebido do app
+const PROX_STATUS = { recebido: "preparo", preparo: "pronto", pronto: "entregue" };
+const STATUS_INFO = {
+  recebido: { label: "Novo pedido", cor: C.blue, acao: "Aceitar e preparar" },
+  preparo: { label: "Em preparo", cor: C.amber, acao: "Marcar como pronto" },
+  pronto: { label: "Pronto p/ retirada", cor: C.green, acao: "Entregar" },
+};
 
 export default function PDV() {
+  const { activeUnit, unidadeAtiva, produtosDe, pedidosDe, updatePedido } = useStore();
   const [cart, setCart] = useState([]);
   const [cat, setCat] = useState("Todos");
   const [pago, setPago] = useState(null);
-  const cats = ["Todos", ...new Set(PRODUTOS.map((p) => p.cat))];
-  const prods = cat === "Todos" ? PRODUTOS : PRODUTOS.filter((p) => p.cat === cat);
+
+  const produtosUnidade = produtosDe(activeUnit).filter((p) => p.ativo !== false);
+  const pedidosAtivos = pedidosDe(activeUnit).filter((p) => p.status !== "entregue");
+  const novos = pedidosAtivos.filter((p) => p.status === "recebido").length;
+  const cats = ["Todos", ...new Set(produtosUnidade.map((p) => p.cat))];
+  const prods = cat === "Todos" ? produtosUnidade : produtosUnidade.filter((p) => p.cat === cat);
+
+  // Trocar de unidade zera a comanda (não se mistura venda entre unidades)
+  useEffect(() => {
+    setCart([]);
+    setPago(null);
+    setCat("Todos");
+  }, [activeUnit]);
 
   const add = (p) =>
     setCart((c) => {
@@ -28,7 +48,10 @@ export default function PDV() {
 
   return (
     <div>
-      <PageHead title="Cafeteria · PDV" sub="Ponto de venda da cafeteria, com gestão de margem em tempo real." />
+      <PageHead
+        title="Cafeteria · PDV"
+        sub={`Cafeteria da unidade ${unidadeAtiva?.nome || ""} · gestão de margem em tempo real.`}
+      />
 
       {/* KPIs operacionais (vindo da GPT) */}
       <div
@@ -69,6 +92,56 @@ export default function PDV() {
         ))}
       </div>
 
+      {/* Pedidos recebidos do app (chegam na recepção) */}
+      <Card style={{ padding: 0, overflow: "hidden", marginBottom: 20 }}>
+        <div style={{ padding: "14px 20px", borderBottom: `1px solid ${C.border2}`, display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ position: "relative" }}>
+            <Smartphone size={20} color={C.cafe} />
+            {novos > 0 && <span className="cw-pulse" style={{ position: "absolute", top: -4, right: -5, width: 9, height: 9, borderRadius: "50%", background: C.red, border: "2px solid #fff" }} />}
+          </div>
+          <span style={{ fontFamily: serif, fontSize: 18 }}>Pedidos recebidos do app</span>
+          {pedidosAtivos.length > 0 && <Badge color={C.cafe}>{pedidosAtivos.length} em aberto</Badge>}
+          {novos > 0 && <Badge color={C.red} bg={C.redPale}>{novos} novo{novos > 1 ? "s" : ""}</Badge>}
+        </div>
+        {pedidosAtivos.length === 0 ? (
+          <Empty icon={Bell} title="Nenhum pedido na fila" sub="Pedidos feitos pelos clientes no app aparecem aqui." />
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 12, padding: 14 }}>
+            {pedidosAtivos.map((p) => {
+              const si = STATUS_INFO[p.status] || STATUS_INFO.recebido;
+              return (
+                <div key={p.id} style={{ border: `1px solid ${p.status === "recebido" ? si.cor : C.border2}`, borderRadius: 14, padding: 14, background: p.status === "recebido" ? `${si.cor}0d` : "#fff" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700 }}>{p.cliente}</div>
+                      <div style={{ fontSize: 11, color: C.text3, display: "flex", alignItems: "center", gap: 4 }}><Clock size={11} /> {p.hora} · app</div>
+                    </div>
+                    <Badge color={si.cor} bg={`${si.cor}1a`}>{si.label}</Badge>
+                  </div>
+                  <div style={{ fontSize: 13, color: C.text2, marginBottom: 10 }}>
+                    {p.itens.map((i, k) => (
+                      <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
+                        <span>{i.emoji} {i.q}× {i.nome}</span>
+                        <span style={{ color: C.text3 }}>{fmt(i.preco * i.q)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: `1px solid ${C.border2}`, paddingTop: 10 }}>
+                    <span style={{ fontFamily: serif, fontSize: 17, color: C.cafe }}>{fmt(p.total)}</span>
+                    <Btn
+                      onClick={() => updatePedido(p.id, { status: PROX_STATUS[p.status] })}
+                      style={{ padding: "8px 12px", fontSize: 13, background: si.cor }}
+                    >
+                      {si.acao} <ArrowRight size={14} />
+                    </Btn>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+
       <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 16 }} className="cw-grid-stack">
         <div>
           <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
@@ -91,6 +164,13 @@ export default function PDV() {
               </button>
             ))}
           </div>
+          {produtosUnidade.length === 0 && (
+            <Empty
+              icon={Coffee}
+              title="Cafeteria sem produtos"
+              sub={`Cadastre os produtos da unidade ${unidadeAtiva?.nome || ""} em Unidades → Gerenciar → Cafeteria.`}
+            />
+          )}
           <div
             style={{
               display: "grid",
@@ -111,7 +191,16 @@ export default function PDV() {
                   textAlign: "left",
                 }}
               >
-                <div style={{ fontSize: 32, marginBottom: 8 }}>{p.emoji}</div>
+                {p.foto ? (
+                  <img
+                    src={p.foto}
+                    alt={p.nome}
+                    onError={(e) => (e.currentTarget.style.display = "none")}
+                    style={{ width: "100%", height: 92, objectFit: "cover", borderRadius: 10, marginBottom: 8, background: C.cream2 }}
+                  />
+                ) : (
+                  <div style={{ fontSize: 32, marginBottom: 8 }}>{p.emoji}</div>
+                )}
                 <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{p.nome}</div>
                 <div style={{ fontSize: 12, color: C.text3, marginBottom: 6 }}>{p.cat}</div>
                 <div style={{ fontFamily: serif, fontSize: 17, color: C.cafe }}>{fmt(p.preco)}</div>
@@ -151,7 +240,16 @@ export default function PDV() {
                     borderBottom: `1px solid ${C.border2}`,
                   }}
                 >
-                  <span style={{ fontSize: 22 }}>{i.emoji}</span>
+                  {i.foto ? (
+                    <img
+                      src={i.foto}
+                      alt={i.nome}
+                      onError={(e) => (e.currentTarget.style.display = "none")}
+                      style={{ width: 30, height: 30, borderRadius: 7, objectFit: "cover", background: C.cream2 }}
+                    />
+                  ) : (
+                    <span style={{ fontSize: 22 }}>{i.emoji}</span>
+                  )}
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 14, fontWeight: 600 }}>{i.nome}</div>
                     <div style={{ fontSize: 12, color: C.text3 }}>{fmt(i.preco)}</div>

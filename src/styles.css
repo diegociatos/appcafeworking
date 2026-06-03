@@ -2,7 +2,7 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
 body {
-  font-family: 'DM Sans', system-ui, sans-serif;
+  font-family: 'Book Antiqua', 'Palatino Linotype', Palatino, 'URW Palladio L', 'Palatino LT STD', Georgia, serif;
   background: #F7F4EE;
   color: #1F1F1C;
   line-height: 1.55;
@@ -52,8 +52,24 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 .cw-pulse { animation: pulse 2s ease-in-out infinite; }
 
+@keyframes cwspin { to { transform: rotate(360deg); } }
+.cw-spin { animation: cwspin .8s linear infinite; }
+
 /* Shimmer para loading states (futuro) */
 @keyframes shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
+}
+
+/* Layout do Financeiro: menu sempre lateral (vira faixa de ícones no estreito) */
+.cw-fin-layout {
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 720px) {
+  .cw-fin-layout { grid-template-columns: 56px minmax(0, 1fr); }
+  .cw-fin-layout .cw-fin-label { display: none; }
+  .cw-fin-layout .cw-fin-btn { justify-content: center; }
 }
