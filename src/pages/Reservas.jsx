@@ -2,10 +2,17 @@ import React, { useState, useEffect } from "react";
 import { Plus, CheckCircle2, CalendarOff, AlertCircle, Trash2, X, Smartphone, DollarSign } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
-import { HORARIOS, CLIENTES } from "../lib/data.js";
+import { HORARIOS, CLIENTES, DIAS } from "../lib/data.js";
+
+// Fim de um bloco: próximo horário, ou +1h após o último (ex.: 22:00 → 23:00).
+const horaFim = (inicio, dur) => {
+  const h = HORARIOS[inicio + dur];
+  if (h) return h;
+  const ult = parseInt(HORARIOS[HORARIOS.length - 1], 10) + 1;
+  return `${String(ult).padStart(2, "0")}:00`;
+};
 import { useStore } from "../lib/store.jsx";
 
-const DIAS = ["Seg 26", "Ter 27", "Qua 28", "Qui 29", "Sex 30"];
 
 export default function Reservas() {
   const { activeUnit, unidadeAtiva, salasDe, reservas, addReserva, removeReserva, marcarReservasVistas, addLancamento } = useStore();
@@ -61,7 +68,7 @@ export default function Reservas() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "150px repeat(10,1fr)",
+                gridTemplateColumns: `150px repeat(${HORARIOS.length},1fr)`,
                 borderBottom: `1px solid ${C.border}`,
                 background: C.cream,
               }}
@@ -89,7 +96,7 @@ export default function Reservas() {
                 key={s.id}
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "150px repeat(10,1fr)",
+                  gridTemplateColumns: `150px repeat(${HORARIOS.length},1fr)`,
                   borderBottom: `1px solid ${C.border2}`,
                   position: "relative",
                   minHeight: 56,
@@ -137,8 +144,8 @@ export default function Reservas() {
                         position: "absolute",
                         top: 6,
                         bottom: 6,
-                        left: `calc(150px + (100% - 150px) / 10 * ${r.inicio})`,
-                        width: `calc((100% - 150px) / 10 * ${r.dur} - 4px)`,
+                        left: `calc(150px + (100% - 150px) / ${HORARIOS.length} * ${r.inicio})`,
+                        width: `calc((100% - 150px) / ${HORARIOS.length} * ${r.dur} - 4px)`,
                         background: r.cor,
                         borderRadius: 8,
                         padding: "6px 10px",
@@ -163,7 +170,7 @@ export default function Reservas() {
                         {r.origem === "app" ? "📱 " : ""}{r.cliente}
                       </span>
                       <span style={{ fontSize: 10, opacity: 0.85 }}>
-                        {HORARIOS[r.inicio]}–{HORARIOS[r.inicio + r.dur] || "18:00"}
+                        {HORARIOS[r.inicio]}–{horaFim(r.inicio, r.dur)}
                       </span>
                     </div>
                   ))}
@@ -237,7 +244,7 @@ function ReservaDetalhe({ reserva, sala, dias, onComplemento, onCancelar }) {
           {reserva.origem === "app" && <Badge color={C.teal}><Smartphone size={11} /> Reservou pelo app</Badge>}
         </div>
         <div style={{ fontSize: 13, color: C.text3, marginTop: 4 }}>
-          {sala?.nome} · {dias[reserva.dia]} · {HORARIOS[reserva.inicio]}–{HORARIOS[reserva.inicio + reserva.dur] || "18:00"} ({reserva.dur}h)
+          {sala?.nome} · {dias[reserva.dia]} · {HORARIOS[reserva.inicio]}–{horaFim(reserva.inicio, reserva.dur)} ({reserva.dur}h)
         </div>
         <div style={{ fontSize: 13, color: C.text2, marginTop: 6 }}>
           Valor da reserva: <b style={{ color: C.cafe }}>{fmt(reserva.valor || 0)}</b> · já lançado no financeiro (a receber)
@@ -358,7 +365,7 @@ function NovaReservaModal({ salas, clientes, dias, diaInicial, reservas, onClose
         </div>
       ) : (
         <div style={{ fontSize: 12.5, color: C.green, marginBottom: 12 }}>
-          ✓ Horário livre: {HORARIOS[f.inicio]}–{HORARIOS[f.inicio + f.dur] || "18:00"} · {dias[f.dia]}
+          ✓ Horário livre: {HORARIOS[f.inicio]}–{horaFim(f.inicio, f.dur)} · {dias[f.dia]}
         </div>
       )}
 

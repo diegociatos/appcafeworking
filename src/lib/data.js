@@ -55,14 +55,26 @@ export const SALAS = [
     contratada: true, contratante: "Mendes Advocacia", valorMensal: 2890 },
 ];
 
-export const HORARIOS = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00"];
+// Grade de horários da agenda — vai de manhã cedo até a noite (coworking pode
+// funcionar à noite). Cada item é o início de um bloco de 1h.
+export const HORARIOS = [
+  "07:00", "08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00",
+  "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00",
+];
 
+// Dias da semana da agenda — TODOS os dias (coworking pode abrir sáb/dom).
+export const DIAS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+
+// inicio = índice em HORARIOS (07:00 = 0). dia = índice em DIAS (Seg = 0).
 export const RESERVAS_INIT = [
-  { id: "r1", sala: "s1", dia: 0, inicio: 2, dur: 2, cliente: "Ciatos Log", cor: C.cafe },
-  { id: "r2", sala: "s2", dia: 0, inicio: 5, dur: 1, cliente: "Mendes Adv.", cor: C.teal },
-  { id: "r3", sala: "s4", dia: 1, inicio: 3, dur: 3, cliente: "TechBH", cor: C.teal2 },
-  { id: "r4", sala: "s1", dia: 2, inicio: 6, dur: 2, cliente: "Consultoria RM", cor: C.cafe2 },
-  { id: "r5", sala: "s3", dia: 3, inicio: 1, dur: 4, cliente: "Workshop Vendas", cor: C.amber },
+  { id: "r1", sala: "s1", dia: 0, inicio: 3, dur: 2, cliente: "Ciatos Log", cor: C.cafe },
+  { id: "r2", sala: "s2", dia: 0, inicio: 6, dur: 1, cliente: "Mendes Adv.", cor: C.teal },
+  { id: "r3", sala: "s4", dia: 1, inicio: 4, dur: 3, cliente: "TechBH", cor: C.teal2 },
+  { id: "r4", sala: "s1", dia: 2, inicio: 7, dur: 2, cliente: "Consultoria RM", cor: C.cafe2 },
+  { id: "r5", sala: "s3", dia: 3, inicio: 2, dur: 4, cliente: "Workshop Vendas", cor: C.amber },
+  // exemplos de fim de semana / noite (coworking 7 dias / noturno)
+  { id: "r6", sala: "s1", dia: 5, inicio: 13, dur: 3, cliente: "Evento Noturno", cor: C.blue },
+  { id: "r7", sala: "s2", dia: 6, inicio: 4, dur: 2, cliente: "Reunião Domingo", cor: C.teal3 },
 ];
 
 export const CLIENTES = [

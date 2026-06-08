@@ -6,10 +6,9 @@ import {
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
 import { C, serif, fmt, inp } from "../lib/theme.js";
-import { CLIENTES, HORARIOS } from "../lib/data.js";
+import { CLIENTES, HORARIOS, DIAS } from "../lib/data.js";
 import { useStore } from "../lib/store.jsx";
 
-const DIAS = ["Seg 26", "Ter 27", "Qua 28", "Qui 29", "Sex 30"];
 
 const FATURAS_CLIENTE = [
   { id: "cf1", desc: "Mensalidade · Junho/2026", valor: 2890, venc: "05/06/2026", status: "aberto" },
@@ -233,7 +232,7 @@ export default function AreaCliente({ section, go }) {
                   <div style={{ width: 40, height: 40, borderRadius: 10, background: C.cafePale, display: "grid", placeItems: "center" }}><CalendarDays size={18} color={C.cafe} /></div>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 14, fontWeight: 600 }}>{nomeSala(r.sala)}</div>
-                    <div style={{ fontSize: 12, color: C.text3 }}>{DIAS[r.dia] || "—"} · {HORARIOS[r.inicio]}–{HORARIOS[r.inicio + r.dur] || "18:00"}</div>
+                    <div style={{ fontSize: 12, color: C.text3 }}>{DIAS[r.dia] || "—"} · {HORARIOS[r.inicio]}–{HORARIOS[r.inicio + r.dur] || "23:00"}</div>
                   </div>
                   <Badge color={C.green}>Confirmada</Badge>
                 </div>
@@ -539,7 +538,7 @@ function ReservaModal({ sala, reservas = [], onClose, onConfirm }) {
         </div>
       ) : (
         <div style={{ fontSize: 12.5, color: C.green, margin: "4px 0 12px" }}>
-          ✓ Horário livre: {HORARIOS[f.inicio]}–{HORARIOS[f.inicio + f.dur] || "18:00"} · {DIAS[f.dia]}
+          ✓ Horário livre: {HORARIOS[f.inicio]}–{HORARIOS[f.inicio + f.dur] || "23:00"} · {DIAS[f.dia]}
         </div>
       )}
       <Btn disabled={!!conflito} style={{ width: "100%", justifyContent: "center", marginTop: 6, opacity: conflito ? 0.5 : 1 }} onClick={() => !conflito && onConfirm(f)}><CheckCircle2 size={17} /> Confirmar reserva</Btn>
