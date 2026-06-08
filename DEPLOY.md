@@ -162,17 +162,18 @@ insert into public.platform_admins (user_id) values ('<uuid-admin>');  -- admin 
 | **Clientes (criar/editar/excluir → DB)** | ✅ | write-through (RLS por unidade) |
 | **Config fiscal por unidade (→ DB)** | ✅ | write-through (`config_fiscal`) |
 | **Nota Fiscal (NFS-e): emitir/cancelar + certificado** | ✅ | SEFIN Nacional/BHISS; A1 no Vault; validar assinatura em prod. restrita |
+| **Entidades operacionais** (salas, reservas, financeiro, estoque, catálogo, patrimônio, contratos, correspondências, pedidos) | ✅ | persistem via `app_state` (motor de sync); em produção partem vazias e hidratam do banco |
 | Boletos: emitir/consultar/cancelar/webhook | ✅ | 4 bancos; Inter testado estruturalmente |
 | E-mail ao cliente (Resend) + opt-in | ✅ | Fase 1+2 |
 | RLS + Vault | ✅ | revisar policies antes do go-live |
-| **Demais entidades** (reservas, salas, catálogo, financeiro, contratos, estoque) | ⏳ | tabelas a criar + write-through (feito por área) |
+| Contas bancárias (cadastro p/ boletos) | ⏳ | hoje seed; credenciais via Vault no go-live |
 | Documentos do cliente (`docs`) | ⏳ | precisa de tabela própria + Storage |
 | Validação dos campos Itaú/BTG/Bradesco | ⏳ | conferir contra o sandbox de cada banco |
 
-**Resumo:** **autenticação, multi-tenancy, cobrança (boleto), nota fiscal,
-clientes e config fiscal** já persistem de verdade. Falta o *write-through* das
-demais entidades operacionais (reservas, financeiro, estoque, salas, catálogo) —
-feito por área, no mesmo padrão de `upsertConfigFiscal`/`insertCliente`.
+**Resumo:** com o Supabase configurado, o app **sai do demo**: login obrigatório,
+todas as entidades operacionais **partem vazias e persistem no banco**
+(`app_state` + tabelas próprias de clientes/config/boletos/notas). Resta cadastrar
+contas bancárias reais (Vault) e a tabela de documentos do cliente.
 
 ---
 
