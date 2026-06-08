@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead } from "../components/ui.jsx";
 import { C, serif } from "../lib/theme.js";
-import { EVENTOS } from "../lib/data.js";
+import { useStore } from "../lib/store.jsx";
 
 const TIPO_ICONE = {
   Workshop: GraduationCap,
@@ -22,6 +22,8 @@ const TIPO_COR = {
 };
 
 export default function Eventos() {
+  const { activeUnit, eventosDe } = useStore();
+  const EVENTOS = eventosDe(activeUnit);
   return (
     <div>
       <PageHead

@@ -5,7 +5,8 @@ import {
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field } from "../components/ui.jsx";
 import { C, serif, sans, fmt, fmtShort, inp } from "../lib/theme.js";
-import { LEADS_INIT, ETAPAS_CRM, ORIGENS_INIT, UNIDADES } from "../lib/data.js";
+import { UNIDADES } from "../lib/data.js";
+import { useStore } from "../lib/store.jsx";
 
 const ORIGEM_ICON = {
   Instagram: Instagram,
@@ -28,9 +29,9 @@ const origemCor = (o) => ORIGEM_COR[o] || C.cafe2;
 const origemIcon = (o) => ORIGEM_ICON[o] || Tag;
 
 export default function CRM() {
-  const [leads, setLeads] = useState(LEADS_INIT);
-  const [etapas, setEtapas] = useState(ETAPAS_CRM);
-  const [origens, setOrigens] = useState(ORIGENS_INIT);
+  const { activeUnit, leads: leadsAll, setLeads, crmEtapas: etapas, setCrmEtapas: setEtapas, crmOrigens: origens, setCrmOrigens: setOrigens } = useStore();
+  // Funil por unidade: cada coworking tem seus próprios leads.
+  const leads = leadsAll.filter((l) => l.unidadeId === activeUnit);
   const [modal, setModal] = useState(null);
   const [etapaModal, setEtapaModal] = useState(null); // {} = nova | objeto = editar
   const [drag, setDrag] = useState(null);
@@ -300,7 +301,7 @@ export default function CRM() {
             onSave={(novo) => {
               setLeads((ls) => [
                 ...ls,
-                { id: "l" + Date.now(), ...novo, desde: "Agora" },
+                { id: "l" + Date.now(), unidadeId: activeUnit, ...novo, desde: "Agora" },
               ]);
               setModal(null);
             }}

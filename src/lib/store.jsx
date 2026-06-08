@@ -14,7 +14,7 @@
 // 🔌 Quando ligarmos ao banco Neon, as funções add/update/remove daqui
 // passam a fazer as chamadas async — as telas não precisam mudar.
 import React, { createContext, useContext, useMemo, useState, useRef, useEffect } from "react";
-import { UNIDADES, SALAS, PRODUTOS, RESERVAS_INIT, CLIENTES } from "./data.js";
+import { UNIDADES, SALAS, PRODUTOS, RESERVAS_INIT, CLIENTES, LEADS_INIT, ETAPAS_CRM, ORIGENS_INIT, EVENTOS } from "./data.js";
 import { boletosApi } from "./boletosApi.js";
 import { nfseApi } from "./nfseApi.js";
 import {
@@ -304,6 +304,12 @@ export function StoreProvider({ children }) {
   const [configFiscal, setConfigFiscal] = useState(seedOr(seedConfigFiscal));
   const [notasFiscais, setNotasFiscais] = useState(seedOr(seedNotasFiscais));
   const [reservas, setReservas] = useState(seedOr(RESERVAS_INIT));
+  // CRM: leads são dados (por unidade, persistem); etapas/origens são a
+  // estrutura do funil (config padrão, compartilhada — não some no modo real).
+  const [leads, setLeads] = useState(seedOr(LEADS_INIT));
+  const [crmEtapas, setCrmEtapas] = useState(ETAPAS_CRM);
+  const [crmOrigens, setCrmOrigens] = useState(ORIGENS_INIT);
+  const [eventos, setEventos] = useState(seedOr(EVENTOS));
 
   // ---- Sync engine: persiste cada entidade operacional no banco -----------
   // Observa cada lista; quando há backend/sessão, faz upsert do que mudou e
@@ -334,6 +340,8 @@ export function StoreProvider({ children }) {
   useSync("correspondencias", correspondencias);
   useSync("pedidos", pedidos);
   useSync("conversas", conversas);
+  useSync("leads", leads);
+  useSync("eventos", eventos);
 
   const [activeUnit, setActiveUnit] = useState(UNIDADES[0].id);
   const [viewAs, setViewAs] = useState(null); // id do franqueado, ou null = franqueador
@@ -523,6 +531,16 @@ export function StoreProvider({ children }) {
   };
   const removeCorrespondencia = (id) => setCorrespondencias((cs) => cs.filter((c) => c.id !== id));
   const correspondenciasDe = (unidadeId) => correspondencias.filter((c) => c.unidadeId === unidadeId);
+
+  // Eventos & auditório (por unidade) --------------------------------------
+  const eventosDe = (unidadeId) => eventos.filter((e) => e.unidadeId === unidadeId);
+  const addEvento = (unidadeId, e) => {
+    const novo = { id: "ev" + Date.now(), unidadeId, inscritos: 0, ...e };
+    setEventos((es) => [novo, ...es]);
+    return novo;
+  };
+  const updateEvento = (id, patch) => setEventos((es) => es.map((e) => (e.id === id ? { ...e, ...patch } : e)));
+  const removeEvento = (id) => setEventos((es) => es.filter((e) => e.id !== id));
 
   // Chat / conversas (cliente <-> recepção) --------------------------------
   const conversasDe = (unidadeId) => conversas.filter((c) => c.unidadeId === unidadeId);
@@ -974,7 +992,7 @@ export function StoreProvider({ children }) {
       apply("contas", setContas); apply("catalogo", setCatalogo); apply("estoque", setEstoque);
       apply("patrimonio", setPatrimonio); apply("contratos", setContratos);
       apply("correspondencias", setCorrespondencias); apply("pedidos", setPedidos);
-      apply("conversas", setConversas);
+      apply("conversas", setConversas); apply("leads", setLeads); apply("eventos", setEventos);
     }
     if (bs?.length) setBoletos(bs.map((b) => _mapApiBoleto(b, b.unidade_id)));
     if (notas?.length) setNotasFiscais(notas.map(_mapApiNota));
@@ -988,6 +1006,8 @@ export function StoreProvider({ children }) {
   const value = useMemo(
     () => ({
       unidades, franqueados, usuarios, salas, produtos, reservas,
+      leads, setLeads, crmEtapas, setCrmEtapas, crmOrigens, setCrmOrigens,
+      eventos, eventosDe, addEvento, updateEvento, removeEvento,
       activeUnit, setActiveUnit,
       unidadeAtiva: unidades.find((u) => u.id === activeUnit) || unidadesVisiveis[0] || unidades[0],
       unidadesVisiveis,
@@ -1022,7 +1042,7 @@ export function StoreProvider({ children }) {
       patrimonio, patrimonioDe, addAtivo, updateAtivo, removeAtivo,
       configFiscal, configFiscalDe, updateConfigFiscal, salvarConfigFiscal, notasFiscais, notasFiscaisDe, emitirNFSe, cancelarNF, salvarCertificadoFiscal,
     }),
-    [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, configFiscal, notasFiscais, reservas, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail, clienteNotifPrefs]
+    [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, configFiscal, notasFiscais, reservas, leads, crmEtapas, crmOrigens, eventos, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail, clienteNotifPrefs]
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

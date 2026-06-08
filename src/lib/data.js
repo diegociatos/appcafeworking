@@ -134,20 +134,20 @@ export const FATURAS = [
 ];
 
 export const EVENTOS = [
-  { id: "e1", nome: "Workshop de Vendas B2B", tipo: "Workshop", sala: "Auditório", unidade: "Luxemburgo", data: "29/05", hora: "09:00–13:00", inscritos: 28, cap: 40, formato: "Escolar" },
-  { id: "e2", nome: "Café com Networking", tipo: "Networking", sala: "Área Comum", unidade: "Luxemburgo", data: "30/05", hora: "18:00–20:00", inscritos: 45, cap: 60, formato: "Livre" },
-  { id: "e3", nome: "Treinamento Tributário", tipo: "Treinamento", sala: "Sala Master", unidade: "Luxemburgo", data: "03/06", hora: "14:00–17:00", inscritos: 12, cap: 12, formato: "U" },
-  { id: "e4", nome: "Pitch Day Startups", tipo: "Evento", sala: "Auditório", unidade: "Estoril", data: "05/06", hora: "19:00–22:00", inscritos: 33, cap: 40, formato: "Auditório" },
+  { id: "e1", unidadeId: "lux", nome: "Workshop de Vendas B2B", tipo: "Workshop", sala: "Auditório", unidade: "Luxemburgo", data: "29/05", hora: "09:00–13:00", inscritos: 28, cap: 40, formato: "Escolar" },
+  { id: "e2", unidadeId: "lux", nome: "Café com Networking", tipo: "Networking", sala: "Área Comum", unidade: "Luxemburgo", data: "30/05", hora: "18:00–20:00", inscritos: 45, cap: 60, formato: "Livre" },
+  { id: "e3", unidadeId: "lux", nome: "Treinamento Tributário", tipo: "Treinamento", sala: "Sala Master", unidade: "Luxemburgo", data: "03/06", hora: "14:00–17:00", inscritos: 12, cap: 12, formato: "U" },
+  { id: "e4", unidadeId: "est", nome: "Pitch Day Startups", tipo: "Evento", sala: "Auditório", unidade: "Estoril", data: "05/06", hora: "19:00–22:00", inscritos: 33, cap: 40, formato: "Auditório" },
 ];
 
 // === NOVO: CRM de leads (Instagram, WhatsApp, Site, Google) ===
 export const LEADS_INIT = [
-  { id: "l1", nome: "Ana Paula Ribeiro", origem: "Instagram", interesse: "Endereço Fiscal", etapa: "novo", valor: 119, prob: 20, tel: "(31) 99876-1234", desde: "27/05" },
-  { id: "l2", nome: "Bruno Lima", origem: "Site", interesse: "Sala Privativa", etapa: "visita", valor: 2890, prob: 65, tel: "(31) 98123-4567", desde: "25/05" },
-  { id: "l3", nome: "Marina Costa", origem: "WhatsApp", interesse: "Auditório (evento)", etapa: "proposta", valor: 1800, prob: 55, tel: "(31) 97654-3210", desde: "23/05" },
-  { id: "l4", nome: "Renato Alves", origem: "Google Ads", interesse: "Coworking Mensal", etapa: "fechado", valor: 390, prob: 100, tel: "(31) 96543-2109", desde: "20/05" },
-  { id: "l5", nome: "Studio Fernanda", origem: "Instagram", interesse: "Sala Compartilhada", etapa: "contato", valor: 590, prob: 35, tel: "(31) 95432-1098", desde: "26/05" },
-  { id: "l6", nome: "Patrick Souza", origem: "Site", interesse: "Endereço Fiscal + Contabilidade", etapa: "contato", valor: 449, prob: 40, tel: "(31) 94321-0987", desde: "26/05" },
+  { id: "l1", unidadeId: "lux", nome: "Ana Paula Ribeiro", origem: "Instagram", interesse: "Endereço Fiscal", etapa: "novo", valor: 119, prob: 20, tel: "(31) 99876-1234", desde: "27/05" },
+  { id: "l2", unidadeId: "lux", nome: "Bruno Lima", origem: "Site", interesse: "Sala Privativa", etapa: "visita", valor: 2890, prob: 65, tel: "(31) 98123-4567", desde: "25/05" },
+  { id: "l3", unidadeId: "lux", nome: "Marina Costa", origem: "WhatsApp", interesse: "Auditório (evento)", etapa: "proposta", valor: 1800, prob: 55, tel: "(31) 97654-3210", desde: "23/05" },
+  { id: "l4", unidadeId: "lux", nome: "Renato Alves", origem: "Google Ads", interesse: "Coworking Mensal", etapa: "fechado", valor: 390, prob: 100, tel: "(31) 96543-2109", desde: "20/05" },
+  { id: "l5", unidadeId: "lux", nome: "Studio Fernanda", origem: "Instagram", interesse: "Sala Compartilhada", etapa: "contato", valor: 590, prob: 35, tel: "(31) 95432-1098", desde: "26/05" },
+  { id: "l6", unidadeId: "lux", nome: "Patrick Souza", origem: "Site", interesse: "Endereço Fiscal + Contabilidade", etapa: "contato", valor: 449, prob: 40, tel: "(31) 94321-0987", desde: "26/05" },
 ];
 
 export const ETAPAS_CRM = [
