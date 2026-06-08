@@ -242,21 +242,44 @@ function SalasTab({ unidade, salas, store }) {
       {salas.length === 0 ? (
         <Empty icon={DoorOpen} title="Nenhuma sala" sub="Cadastre a primeira sala desta unidade." />
       ) : (
-        salas.map((s) => (
-          <LinhaItem
-            key={s.id}
-            foto={s.foto}
-            titulo={s.nome}
-            badge={s.contratada
-              ? <Badge color={C.red} bg={C.redPale}>Contratada{s.contratante ? ` · ${s.contratante}` : ""}</Badge>
-              : <Badge color={C.green}>Disponível</Badge>}
-            sub={s.contratada
-              ? `${s.tipo} · ${s.cap} lugares · locação mensal ${s.valorMensal ? fmt(s.valorMensal) : s.valor || ""}`
-              : `${s.tipo} · ${s.cap} lugares · ${s.valor || "—"}`}
-            onEdit={() => setModal(s)}
-            onDelete={() => store.removeSala(s.id)}
-          />
-        ))
+        salas.map((s, i) => {
+          const tipoCor = { Privativa: C.cafe, Reunião: C.teal, Compartilhada: C.blue, Auditório: C.amber, Atendimento: C.text3 }[s.tipo] || C.text3;
+          return (
+            <div key={s.id} style={{ display: "flex", gap: 14, padding: "14px 20px", borderBottom: i < salas.length - 1 ? `1px solid ${C.border2}` : "none", alignItems: "flex-start" }}>
+              {s.foto ? (
+                <div style={{ position: "relative", flexShrink: 0 }}>
+                  <img src={s.foto} alt={s.nome} onError={(e) => (e.currentTarget.style.display = "none")} style={{ width: 92, height: 66, borderRadius: 10, objectFit: "cover", background: C.cream2 }} />
+                  {s.fotos?.length > 1 && <span style={{ position: "absolute", bottom: 4, right: 4, background: "rgba(0,0,0,.6)", color: "#fff", fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 6 }}>+{s.fotos.length - 1}</span>}
+                </div>
+              ) : (
+                <div style={{ width: 92, height: 66, borderRadius: 10, background: C.cream2, display: "grid", placeItems: "center", flexShrink: 0 }}><DoorOpen size={22} color={C.text4} /></div>
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 15, fontWeight: 600 }}>{s.nome}</span>
+                  <Badge color={tipoCor}>{s.tipo}</Badge>
+                  {s.contratada
+                    ? <Badge color={C.red} bg={C.redPale}>Contratada{s.contratante ? ` · ${s.contratante}` : ""}</Badge>
+                    : <Badge color={C.green}>Disponível</Badge>}
+                </div>
+                <div style={{ fontSize: 12, color: C.text3, marginTop: 3 }}>
+                  {s.cap} pessoas{s.bases > 0 ? ` · ${s.bases} bases de trabalho` : ""} · {s.contratada && s.valorMensal ? `${fmt(s.valorMensal)}/mês` : (s.valor || "—")}
+                </div>
+                {s.descricao && <div style={{ fontSize: 12, color: C.text3, marginTop: 4, lineHeight: 1.45 }}>{s.descricao}</div>}
+                {s.comodidades?.length > 0 && (
+                  <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 6 }}>
+                    {s.comodidades.slice(0, 6).map((c) => <span key={c} style={{ fontSize: 10.5, color: C.teal, background: C.tealPale, padding: "2px 8px", borderRadius: 12 }}>{c}</span>)}
+                    {s.comodidades.length > 6 && <span style={{ fontSize: 10.5, color: C.text4, alignSelf: "center" }}>+{s.comodidades.length - 6}</span>}
+                  </div>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                <button onClick={() => setModal(s)} title="Editar" className="cw-btn" style={{ color: C.text3, padding: 6 }}><Edit3 size={16} /></button>
+                <button onClick={() => store.removeSala(s.id)} title="Excluir" className="cw-btn" style={{ color: C.red, padding: 6 }}><Trash2 size={16} /></button>
+              </div>
+            </div>
+          );
+        })
       )}
 
       {modal && (
@@ -276,51 +299,118 @@ function SalasTab({ unidade, salas, store }) {
   );
 }
 
+const COMODIDADES_SALA = ["Ar-condicionado", "TV / Monitor", "Projetor", "Lousa branca", "Wi-Fi dedicado", "Café incluso", "Armário", "Cadeira ergonômica", "Videoconferência", "Sistema de som", "Microfone", "Mesa de reunião", "Palco"];
+const TIPOS_SALA = ["Privativa", "Reunião", "Compartilhada", "Auditório", "Atendimento"];
+
+function FotosGaleria({ fotos, onChange }) {
+  return (
+    <div>
+      {fotos.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(92px,1fr))", gap: 8, marginBottom: 8 }}>
+          {fotos.map((src, i) => (
+            <div key={i} style={{ position: "relative", borderRadius: 10, overflow: "hidden", aspectRatio: "4/3", background: C.cream2 }}>
+              <img src={src} alt={"foto " + (i + 1)} onError={(e) => (e.currentTarget.style.display = "none")} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              <button type="button" onClick={() => onChange(fotos.filter((_, j) => j !== i))} title="Remover" style={{ position: "absolute", top: 4, right: 4, width: 22, height: 22, borderRadius: 7, background: "rgba(0,0,0,.55)", color: "#fff", display: "grid", placeItems: "center", fontSize: 14, lineHeight: 1 }}>×</button>
+              {i === 0 && <span style={{ position: "absolute", bottom: 4, left: 4, background: "rgba(0,0,0,.6)", color: "#fff", fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 6 }}>CAPA</span>}
+            </div>
+          ))}
+        </div>
+      )}
+      <ImageInput value="" onChange={(v) => { if (v) onChange([...fotos, v]); }} height={100} />
+      <div style={{ fontSize: 11, color: C.text4, marginTop: 4 }}>Adicione quantas fotos quiser. A 1ª é a capa (o cliente vê ao reservar).</div>
+    </div>
+  );
+}
+
 function SalaForm({ inicial, unidade, onSave }) {
   const [f, setF] = useState({
     nome: inicial.nome || "",
-    tipo: inicial.tipo || "Reunião",
+    tipo: inicial.tipo || "Privativa",
     cap: inicial.cap || 4,
+    bases: inicial.bases || 0,
+    descricao: inicial.descricao || "",
+    comodidades: inicial.comodidades || [],
+    fotos: inicial.fotos || (inicial.foto ? [inicial.foto] : []),
     valor: inicial.valor || "",
     valorHora: inicial.valorHora || 0,
-    foto: inicial.foto || "",
     contratada: inicial.contratada || false,
     contratante: inicial.contratante || "",
     valorMensal: inicial.valorMensal || 0,
   });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const clientesUnidade = CLIENTES.filter((c) => c.unidade === unidade?.nome);
+  const ehMensal = f.tipo === "Privativa" || f.tipo === "Compartilhada";
+  const todasComodidades = Array.from(new Set([...COMODIDADES_SALA, ...f.comodidades]));
+  const toggleCom = (c) => setF({ ...f, comodidades: f.comodidades.includes(c) ? f.comodidades.filter((x) => x !== c) : [...f.comodidades, c] });
+  const salvar = () => { if (f.nome.trim()) onSave({ ...f, foto: f.fotos[0] || "" }); };
+
   return (
     <>
-      <Field label="Foto da sala (o cliente vê ao reservar)">
-        <ImageInput value={f.foto} onChange={(v) => setF({ ...f, foto: v })} />
+      <Field label="Fotos da sala">
+        <FotosGaleria fotos={f.fotos} onChange={(fotos) => setF({ ...f, fotos })} />
       </Field>
       <Field label="Nome da sala">
         <input value={f.nome} onChange={set("nome")} style={inp} placeholder="Ex: Sala Privativa 3" />
       </Field>
+      <Field label="Tipo de espaço">
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {TIPOS_SALA.map((t) => (
+            <button key={t} type="button" onClick={() => setF({ ...f, tipo: t })}
+              style={{ padding: "8px 12px", borderRadius: 9, fontFamily: sans, fontSize: 13, fontWeight: 600, border: `1px solid ${f.tipo === t ? unidade.cor : C.border}`, background: f.tipo === t ? `${unidade.cor}14` : C.white, color: f.tipo === t ? unidade.cor : C.text2 }}>
+              {t}
+            </button>
+          ))}
+        </div>
+      </Field>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <Field label="Tipo">
-          <select value={f.tipo} onChange={set("tipo")} style={inp}>
-            {["Reunião", "Atendimento", "Evento", "Privativa", "Coworking"].map((t) => (
-              <option key={t}>{t}</option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Capacidade">
+        <Field label="Capacidade (pessoas)">
           <input type="number" min="1" value={f.cap} onChange={(e) => setF({ ...f, cap: +e.target.value })} style={inp} />
         </Field>
+        {ehMensal ? (
+          <Field label="Bases de trabalho (estações)">
+            <input type="number" min="0" value={f.bases} onChange={(e) => setF({ ...f, bases: +e.target.value })} style={inp} />
+          </Field>
+        ) : (
+          <Field label="Valor por hora (R$)">
+            <input type="number" min="0" step="0.01" value={f.valorHora} onChange={(e) => setF({ ...f, valorHora: +e.target.value })} style={inp} />
+          </Field>
+        )}
       </div>
+      <Field label="O que tem nesta sala (descrição)">
+        <textarea value={f.descricao} onChange={set("descricao")} rows={3} style={{ ...inp, resize: "vertical", lineHeight: 1.5 }} placeholder="Descreva a sala: mobília, equipamentos, diferenciais..." />
+      </Field>
+      <Field label="Comodidades">
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {todasComodidades.map((c) => {
+            const on = f.comodidades.includes(c);
+            return (
+              <button key={c} type="button" onClick={() => toggleCom(c)}
+                style={{ padding: "6px 11px", borderRadius: 20, fontSize: 12, fontWeight: 600, border: `1px solid ${on ? C.teal : C.border}`, background: on ? C.tealPale : C.white, color: on ? C.teal : C.text3 }}>
+                {on ? "✓ " : ""}{c}
+              </button>
+            );
+          })}
+        </div>
+      </Field>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <Field label="Valor (texto exibido)">
-          <input value={f.valor} onChange={set("valor")} style={inp} placeholder="Ex: R$ 120/h" />
+        <Field label="Preço (texto exibido)">
+          <input value={f.valor} onChange={set("valor")} style={inp} placeholder={ehMensal ? "Ex: R$ 2.890/mês" : "Ex: R$ 120/h"} />
         </Field>
-        <Field label="Valor por hora (R$)">
-          <input type="number" min="0" step="0.01" value={f.valorHora} onChange={(e) => setF({ ...f, valorHora: +e.target.value })} style={inp} />
-        </Field>
+        {ehMensal ? (
+          <Field label="Valor por hora (avulso, opcional)">
+            <input type="number" min="0" step="0.01" value={f.valorHora} onChange={(e) => setF({ ...f, valorHora: +e.target.value })} style={inp} />
+          </Field>
+        ) : (
+          <Field label="Valor mensal (se locada)">
+            <input type="number" min="0" step="0.01" value={f.valorMensal} onChange={(e) => setF({ ...f, valorMensal: +e.target.value })} style={inp} />
+          </Field>
+        )}
       </div>
-      <div style={{ fontSize: 11, color: C.text4, marginTop: -8, marginBottom: 12 }}>
-        O valor por hora é usado para contabilizar a reserva no financeiro automaticamente.
-      </div>
+      {!ehMensal && (
+        <div style={{ fontSize: 11, color: C.text4, marginTop: -8, marginBottom: 12 }}>
+          O valor por hora contabiliza a reserva no financeiro automaticamente.
+        </div>
+      )}
 
       {/* Locação / contrato mensal */}
       <div style={{ background: C.cream2, borderRadius: 12, padding: 14, marginBottom: 14 }}>
@@ -346,7 +436,7 @@ function SalaForm({ inicial, unidade, onSave }) {
         )}
       </div>
 
-      <Btn style={{ width: "100%", justifyContent: "center", marginTop: 2 }} onClick={() => f.nome.trim() && onSave(f)}>
+      <Btn style={{ width: "100%", justifyContent: "center", marginTop: 2 }} onClick={salvar}>
         {inicial.id ? "Salvar sala" : "Adicionar sala"}
       </Btn>
     </>

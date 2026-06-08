@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import {
   LayoutDashboard, KanbanSquare, Building2, CalendarDays, Mail, Coffee,
   Users, Wallet, Mic2, MessageSquare, UserCircle, Settings,
-  Search, Bell, Menu, X, ChevronDown, Check, Store, Eye, LogOut, ShieldCheck, Package, Home, FileText, Barcode,
+  Search, Bell, Menu, X, ChevronDown, Check, Store, Eye, LogOut, ShieldCheck, Package, Home, FileText, Barcode, Boxes, Landmark,
 } from "lucide-react";
 import { C, sans, serif } from "./lib/theme.js";
 import { useStore, PERFIS } from "./lib/store.jsx";
@@ -22,6 +22,8 @@ import PDV from "./pages/PDV.jsx";
 import Clientes from "./pages/Clientes.jsx";
 import Financeiro, { FIN_GRUPOS } from "./pages/Financeiro.jsx";
 import Boletos from "./pages/Boletos.jsx";
+import Estoque from "./pages/Estoque.jsx";
+import Patrimonio from "./pages/Patrimonio.jsx";
 import Eventos from "./pages/Eventos.jsx";
 import Chat from "./pages/Chat.jsx";
 import AreaCliente from "./pages/AreaCliente.jsx";
@@ -35,10 +37,12 @@ const NAV = [
   { id: "crm", label: "CRM · Leads", icon: KanbanSquare, group: "comercial" },
   { id: "unidades", label: "Unidades", icon: Building2, group: "gestao" },
   { id: "equipe", label: "Equipe", icon: ShieldCheck, group: "gestao" },
+  { id: "patrimonio", label: "Patrimônio", icon: Landmark, group: "gestao" },
   { id: "reservas", label: "Reservas", icon: CalendarDays, group: "operacao" },
   { id: "corresp", label: "Correspondências", icon: Mail, group: "operacao" },
   { id: "pdv", label: "Cafeteria · PDV", icon: Coffee, group: "operacao" },
   { id: "catalogo", label: "Produtos e Serviços", icon: Package, group: "operacao" },
+  { id: "estoque", label: "Estoque", icon: Boxes, group: "operacao" },
   { id: "eventos", label: "Eventos", icon: Mic2, group: "operacao" },
   { id: "clientes", label: "Clientes", icon: Users, group: "relacionamento" },
   { id: "chat", label: "Chat", icon: MessageSquare, group: "relacionamento", badge: 3 },
@@ -61,14 +65,14 @@ const NAV_GRUPOS = [
 const PAGES = {
   dash: Dashboard, franqueados: Franqueados, crm: CRM, unidades: Unidades,
   reservas: Reservas, corresp: Correspondencias, pdv: PDV, clientes: Clientes,
-  financeiro: Financeiro, boletos: Boletos, eventos: Eventos, chat: Chat,
+  financeiro: Financeiro, boletos: Boletos, estoque: Estoque, patrimonio: Patrimonio, eventos: Eventos, chat: Chat,
   area: AreaCliente, equipe: Equipe, catalogo: Catalogo, config: Configuracoes,
   cli_inicio: AreaCliente, cli_reservar: AreaCliente, cli_cafe: AreaCliente,
   cli_faturas: AreaCliente, cli_docs: AreaCliente, cli_fiscal: AreaCliente, cli_chat: AreaCliente, cli_notif: AreaCliente,
 };
 
 export default function App() {
-  const { viewAs, franqueadoAtivo, perfil, setPerfil, activeUnit, pedidosDe, unidades, correspondenciasDe, conversasDe, reservas, meuPerfil, contratosVencendoDe, notificacaoPrefs, aplicarSessaoUsuario, hydrateFromDb } = useStore();
+  const { viewAs, franqueadoAtivo, perfil, setPerfil, activeUnit, pedidosDe, unidades, correspondenciasDe, conversasDe, reservas, meuPerfil, contratosVencendoDe, notificacaoPrefs, aplicarSessaoUsuario, hydrateFromDb, estoqueBaixoDe } = useStore();
   const [page, setPage] = useState("dash");
   const [finTab, setFinTab] = useState("visao");
   const [mobOpen, setMobOpen] = useState(false);
@@ -134,6 +138,7 @@ export default function App() {
   const reservasNovas = reservas.filter((r) => r.unidadeId === activeUnit && r.origem === "app" && !r.vista).length;
   const correspNovas = correspondenciasDe(activeUnit).filter((c) => c.status === "aguardando").length;
   const contratosRenovar = contratosVencendoDe(activeUnit).length;
+  const estoqueBaixo = estoqueBaixoDe(activeUnit).length;
   // A coluna "Push" das preferências da equipe controla os contadores no app.
   const pushOn = (ev) => notificacaoPrefs?.[`${ev}.push`] !== false;
 
@@ -181,10 +186,10 @@ export default function App() {
       <aside
         className={`cw-sidebar ${mobOpen ? "open" : ""}`}
         style={{
-          width: 268,
+          width: 244,
           background: "#fff",
           borderRight: `1px solid ${C.border2}`,
-          padding: "26px 16px",
+          padding: "16px 12px",
           display: "flex",
           flexDirection: "column",
           position: "sticky",
@@ -195,8 +200,8 @@ export default function App() {
           left: 0,
         }}
       >
-        <div style={{ padding: "0 6px 22px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <Logo size={36} />
+        <div style={{ padding: "2px 6px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <Logo size={32} />
           <button
             onClick={() => setMobOpen(false)}
             style={{ display: "none", color: C.text3 }}
@@ -208,9 +213,9 @@ export default function App() {
 
         <nav style={{ display: "flex", flexDirection: "column", flex: 1, overflowY: "auto" }}>
           {navGrupos.map((grupo, gi) => (
-            <div key={grupo.id} style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: gi === 0 ? 0 : 12 }}>
+            <div key={grupo.id} style={{ display: "flex", flexDirection: "column", gap: 1, marginTop: gi === 0 ? 0 : 4 }}>
               {grupo.label && (
-                <div style={{ fontSize: 10.5, fontWeight: 700, color: C.text4, letterSpacing: 0.6, padding: "2px 14px 5px" }}>
+                <div style={{ fontSize: 9.5, fontWeight: 700, color: C.text4, letterSpacing: 0.8, padding: "10px 12px 4px" }}>
                   {grupo.label.toUpperCase()}
                 </div>
               )}
@@ -219,6 +224,7 @@ export default function App() {
                   : n.id === "chat" ? (pushOn("chat") ? chatUnread : 0)
                   : n.id === "reservas" ? (pushOn("reserva") ? reservasNovas : 0)
                   : n.id === "corresp" ? (pushOn("corresp") ? correspNovas : 0)
+                  : n.id === "estoque" ? estoqueBaixo
                   : n.id === "financeiro" ? contratosRenovar : n.badge;
                 return (
             <React.Fragment key={n.id}>
@@ -231,12 +237,12 @@ export default function App() {
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 12,
-                padding: "11px 14px",
-                borderRadius: 12,
+                gap: 11,
+                padding: "7px 11px",
+                borderRadius: 9,
                 fontFamily: sans,
-                fontSize: 14,
-                fontWeight: 500,
+                fontSize: 13.5,
+                fontWeight: pageId === n.id ? 600 : 500,
                 background: pageId === n.id ? C.cafe : "transparent",
                 color: pageId === n.id ? "#fff" : C.text2,
                 transition: "all .15s",
@@ -244,7 +250,7 @@ export default function App() {
                 width: "100%",
               }}
             >
-              <n.icon size={18} />
+              <n.icon size={17} style={{ flexShrink: 0, opacity: pageId === n.id ? 1 : 0.8 }} />
               <span style={{ flex: 1 }}>{n.label}</span>
               {n.id === "financeiro" && (
                 <ChevronDown size={15} style={{ transform: pageId === "financeiro" ? "rotate(180deg)" : "none", transition: "transform .15s", opacity: 0.8 }} />
@@ -269,10 +275,10 @@ export default function App() {
               )}
             </button>
             {n.id === "financeiro" && pageId === "financeiro" && (
-              <div style={{ margin: "2px 0 6px", paddingLeft: 6 }}>
+              <div style={{ margin: "1px 0 4px 13px", paddingLeft: 8, borderLeft: `1px solid ${C.border2}` }}>
                 {FIN_GRUPOS.map((g) => (
-                  <div key={g.titulo} style={{ marginBottom: 2 }}>
-                    <div style={{ fontSize: 9.5, fontWeight: 700, color: C.text4, letterSpacing: 0.6, padding: "6px 14px 3px 16px" }}>
+                  <div key={g.titulo} style={{ marginBottom: 1 }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, color: C.text4, letterSpacing: 0.7, padding: "7px 10px 3px" }}>
                       {g.titulo.toUpperCase()}
                     </div>
                     {g.itens.map((s) => {
@@ -283,15 +289,14 @@ export default function App() {
                           className="cw-nav-btn"
                           onClick={() => { setFinTab(s.id); setPage("financeiro"); setMobOpen(false); }}
                           style={{
-                            display: "flex", alignItems: "center", gap: 10, width: "100%",
-                            padding: "8px 14px 8px 16px", borderRadius: 10, marginBottom: 1,
-                            fontFamily: sans, fontSize: 13, fontWeight: ativo ? 600 : 500, textAlign: "left",
-                            background: ativo ? C.cream2 : "transparent",
+                            display: "flex", alignItems: "center", gap: 9, width: "100%",
+                            padding: "6px 10px", borderRadius: 8, marginBottom: 1,
+                            fontFamily: sans, fontSize: 12.5, fontWeight: ativo ? 600 : 500, textAlign: "left",
+                            background: ativo ? C.cafePale : "transparent",
                             color: ativo ? C.cafe : C.text3,
-                            borderLeft: `2px solid ${ativo ? C.cafe : "transparent"}`,
                           }}
                         >
-                          <s.icon size={15} style={{ flexShrink: 0 }} />
+                          <s.icon size={14} style={{ flexShrink: 0, opacity: ativo ? 1 : 0.75 }} />
                           <span>{s.label}</span>
                         </button>
                       );
@@ -307,7 +312,7 @@ export default function App() {
           ))}
         </nav>
 
-        <div style={{ borderTop: `1px solid ${C.border2}`, paddingTop: 14, marginTop: 14 }}>
+        <div style={{ borderTop: `1px solid ${C.border2}`, paddingTop: 8, marginTop: 8 }}>
           {(ehFranqueador || perfil === "master") && (
             <button
               onClick={() => setPage("config")}
@@ -315,17 +320,17 @@ export default function App() {
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 12,
-                padding: "10px 14px",
-                borderRadius: 12,
-                fontSize: 14,
+                gap: 11,
+                padding: "7px 11px",
+                borderRadius: 9,
+                fontSize: 13.5,
                 color: pageId === "config" ? "#fff" : C.text2,
                 background: pageId === "config" ? C.cafe : "transparent",
                 width: "100%",
                 fontWeight: 500,
               }}
             >
-              <Settings size={18} /> Configurações
+              <Settings size={17} style={{ opacity: pageId === "config" ? 1 : 0.8 }} /> Configurações
             </button>
           )}
           {(() => {
@@ -343,8 +348,8 @@ export default function App() {
                   display: "flex",
                   alignItems: "center",
                   gap: 10,
-                  padding: "10px 12px",
-                  marginTop: 4,
+                  padding: "8px 11px",
+                  marginTop: 2,
                   borderRadius: 12,
                   cursor: podeConfig ? "pointer" : "default",
                 }}

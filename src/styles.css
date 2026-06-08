@@ -31,7 +31,11 @@ ul { list-style: none; }
 
 /* Hover lift */
 .cw-lift { transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
-.cw-lift:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(31,31,28,.06); }
+.cw-lift:hover { transform: translateY(-2px); }
+
+/* Profundidade dos cards (só Cards, não as linhas de lista) */
+.cw-card { box-shadow: 0 1px 2px rgba(31,31,28,.05), 0 6px 18px rgba(31,31,28,.04); }
+.cw-card:hover { box-shadow: 0 10px 30px rgba(31,31,28,.08); }
 
 /* Button hover */
 .cw-btn { transition: all .15s ease; }

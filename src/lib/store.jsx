@@ -27,19 +27,19 @@ export const PERFIS = {
   master: {
     label: "Master (coworking)",
     cor: "#B8862F",
-    modules: ["dash", "equipe", "crm", "unidades", "reservas", "corresp", "pdv", "catalogo", "clientes", "chat", "financeiro", "boletos", "eventos"],
+    modules: ["dash", "equipe", "crm", "unidades", "patrimonio", "reservas", "corresp", "pdv", "catalogo", "estoque", "clientes", "chat", "financeiro", "boletos", "eventos"],
     landing: "dash",
   },
   recepcao: {
     label: "Recepção",
     cor: "#335C81",
-    modules: ["reservas", "pdv", "catalogo", "crm", "corresp", "clientes", "chat"],
+    modules: ["reservas", "pdv", "catalogo", "estoque", "crm", "corresp", "clientes", "chat"],
     landing: "reservas",
   },
   financeiro: {
     label: "Financeiro",
     cor: "#3D7A5A",
-    modules: ["dash", "financeiro", "boletos", "catalogo", "clientes", "crm"],
+    modules: ["dash", "financeiro", "boletos", "patrimonio", "estoque", "catalogo", "clientes", "crm"],
     landing: "financeiro",
   },
   cliente: {
@@ -233,6 +233,27 @@ const seedContratos = [
   { id: "ct_rm", unidadeId: "lux", cliente: "Consultoria RM", documento: "55.666.777/0001-88", plano: "Endereço Fiscal", valorMensal: 119, bankAccountId: "ba_inter_ciatos", diaVencimento: "05", mesInicial: 0, meses: 6, status: "ativo", criadoEm: "2026-01" },
 ];
 
+// Estoque do coworking (cafeteria, insumos, suprimentos, limpeza).
+// Cada item tem estoqueMinimo; quando quantidade <= mínimo, dispara alerta.
+const seedEstoque = [
+  { id: "es1", unidadeId: "lux", nome: "Espresso", categoria: "Cafeteria", quantidade: 120, estoqueMinimo: 40, unidade: "un", custo: 1.8 },
+  { id: "es2", unidadeId: "lux", nome: "Cappuccino", categoria: "Cafeteria", quantidade: 12, estoqueMinimo: 20, unidade: "un", custo: 3.5 },
+  { id: "es3", unidadeId: "lux", nome: "Pão de Queijo", categoria: "Cafeteria", quantidade: 64, estoqueMinimo: 24, unidade: "un", custo: 1.9 },
+  { id: "es4", unidadeId: "lux", nome: "Café em grãos", categoria: "Insumo", quantidade: 9, estoqueMinimo: 5, unidade: "kg", custo: 42 },
+  { id: "es5", unidadeId: "lux", nome: "Leite integral", categoria: "Insumo", quantidade: 6, estoqueMinimo: 12, unidade: "L", custo: 5.2 },
+  { id: "es6", unidadeId: "lux", nome: "Copos descartáveis", categoria: "Suprimento", quantidade: 380, estoqueMinimo: 200, unidade: "un", custo: 0.12 },
+  { id: "es7", unidadeId: "lux", nome: "Papel higiênico", categoria: "Limpeza", quantidade: 18, estoqueMinimo: 24, unidade: "rolo", custo: 1.4 },
+];
+
+// Patrimônio: ativos mobilizados (mobília/equipamentos) com contrato/NF.
+const seedPatrimonio = [
+  { id: "pt1", unidadeId: "lux", nome: "Mesa de reunião 8 lugares", categoria: "Mobiliário", quantidade: 3, valorUnitario: 2400, aquisicao: "2024-02", fornecedor: "Marcenaria BH", anexo: null },
+  { id: "pt2", unidadeId: "lux", nome: "Cadeira ergonômica", categoria: "Mobiliário", quantidade: 40, valorUnitario: 890, aquisicao: "2024-01", fornecedor: "Flexform", anexo: null },
+  { id: "pt3", unidadeId: "lux", nome: "Projetor 4K", categoria: "Equipamento", quantidade: 4, valorUnitario: 3200, aquisicao: "2024-03", fornecedor: "Epson", anexo: null },
+  { id: "pt4", unidadeId: "lux", nome: "Ar-condicionado split", categoria: "Equipamento", quantidade: 6, valorUnitario: 2800, aquisicao: "2023-11", fornecedor: "LG", anexo: null },
+  { id: "pt5", unidadeId: "lux", nome: "Notebook recepção", categoria: "TI", quantidade: 2, valorUnitario: 4500, aquisicao: "2024-04", fornecedor: "Dell", anexo: null },
+];
+
 export function StoreProvider({ children }) {
   const [unidades, setUnidades] = useState(seedUnidades);
   const [franqueados, setFranqueados] = useState(seedFranqueados);
@@ -250,6 +271,8 @@ export function StoreProvider({ children }) {
   const [bankAccounts, setBankAccounts] = useState(seedBankAccounts);
   const [boletos, setBoletos] = useState(seedBoletos);
   const [contratos, setContratos] = useState(seedContratos);
+  const [estoque, setEstoque] = useState(seedEstoque);
+  const [patrimonio, setPatrimonio] = useState(seedPatrimonio);
   const [reservas, setReservas] = useState(RESERVAS_INIT);
   const [activeUnit, setActiveUnit] = useState(UNIDADES[0].id);
   const [viewAs, setViewAs] = useState(null); // id do franqueado, ou null = franqueador
@@ -388,6 +411,16 @@ export function StoreProvider({ children }) {
   const addPedido = (unidadeId, p) => {
     const id = "pd" + Date.now();
     setPedidos((ps) => [{ id, unidadeId, status: "recebido", origem: "app", ...p }, ...ps]);
+    // Baixa automática de estoque: para cada item vendido, abate a quantidade
+    // do item de mesmo nome na mesma unidade (casamento por nome).
+    if (p.itens?.length) {
+      setEstoque((es) => es.map((it) => {
+        if (it.unidadeId !== unidadeId) return it;
+        const vendido = p.itens.find((x) => x.nome === it.nome);
+        if (!vendido) return it;
+        return { ...it, quantidade: Math.max(0, it.quantidade - (vendido.q || 1)) };
+      }));
+    }
     enfileirarEmail(unidadeId, { cliente: p.cliente, evento: "cafe_pedido", dados: { total: p.total } });
     return id;
   };
@@ -502,6 +535,27 @@ export function StoreProvider({ children }) {
   const addCliente = (c) => setClientes((cs) => [{ id: "c" + Date.now(), status: "ativo", docs: [], ...c }, ...cs]);
   const updateCliente = (id, patch) => setClientes((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } : c)));
   const removeCliente = (id) => setClientes((cs) => cs.filter((c) => c.id !== id));
+
+  // Estoque -----------------------------------------------------------------
+  const estoqueDe = (unidadeId) => estoque.filter((e) => e.unidadeId === unidadeId);
+  const estoqueBaixoDe = (unidadeId) =>
+    estoque.filter((e) => e.unidadeId === unidadeId && e.quantidade <= e.estoqueMinimo);
+  const addItemEstoque = (unidadeId, it) =>
+    setEstoque((es) => [...es, { id: "es" + Date.now(), unidadeId, quantidade: 0, estoqueMinimo: 0, unidade: "un", custo: 0, ...it }]);
+  const updateItemEstoque = (id, patch) =>
+    setEstoque((es) => es.map((e) => (e.id === id ? { ...e, ...patch } : e)));
+  const removeItemEstoque = (id) => setEstoque((es) => es.filter((e) => e.id !== id));
+  // Entrada (+) ou baixa (−) de estoque; nunca abaixo de zero.
+  const ajustarEstoque = (id, delta) =>
+    setEstoque((es) => es.map((e) => (e.id === id ? { ...e, quantidade: Math.max(0, e.quantidade + delta) } : e)));
+
+  // Patrimônio (ativos mobilizados) -----------------------------------------
+  const patrimonioDe = (unidadeId) => patrimonio.filter((a) => a.unidadeId === unidadeId);
+  const addAtivo = (unidadeId, a) =>
+    setPatrimonio((ps) => [...ps, { id: "pt" + Date.now(), unidadeId, quantidade: 1, valorUnitario: 0, anexo: null, ...a }]);
+  const updateAtivo = (id, patch) =>
+    setPatrimonio((ps) => ps.map((a) => (a.id === id ? { ...a, ...patch } : a)));
+  const removeAtivo = (id) => setPatrimonio((ps) => ps.filter((a) => a.id !== id));
 
   // Boletos / contas bancárias --------------------------------------------
   // ⚠️ Demonstração: em produção, addBankAccount manda a credencial pro Vault
@@ -728,8 +782,10 @@ export function StoreProvider({ children }) {
       boletosDe, emitirBoleto, cancelarBoleto, baixarBoleto, sincronizarBoleto,
       contratos, contratosDe, contratosVencendoDe, mesFimContrato,
       addContrato, renovarContrato, encerrarContrato,
+      estoque, estoqueDe, estoqueBaixoDe, addItemEstoque, updateItemEstoque, removeItemEstoque, ajustarEstoque,
+      patrimonio, patrimonioDe, addAtivo, updateAtivo, removeAtivo,
     }),
-    [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, reservas, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail, clienteNotifPrefs]
+    [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, reservas, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail, clienteNotifPrefs]
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

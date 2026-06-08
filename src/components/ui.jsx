@@ -4,11 +4,11 @@ import { C, sans, serif } from "../lib/theme.js";
 
 export const Card = ({ children, style, className = "", ...p }) => (
   <div
-    className={`cw-lift ${className}`}
+    className={`cw-lift cw-card ${className}`}
     style={{
       background: C.white,
       border: `1px solid ${C.border2}`,
-      borderRadius: 18,
+      borderRadius: 16,
       padding: 22,
       ...style,
     }}
