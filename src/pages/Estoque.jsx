@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import {
-  Boxes, Plus, Edit3, Trash2, Minus, AlertTriangle, PackageSearch, Coins, ArrowDownUp,
+  Boxes, Plus, Edit3, Trash2, Minus, AlertTriangle, PackageSearch, Coins, ArrowDownUp, ShoppingCart,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
@@ -16,6 +16,7 @@ export default function Estoque() {
   const itens = store.estoqueDe(activeUnit);
   const baixos = store.estoqueBaixoDe(activeUnit);
   const [modal, setModal] = useState(null);
+  const [compra, setCompra] = useState(null);
 
   const valorTotal = itens.reduce((s, e) => s + e.quantidade * (e.custo || 0), 0);
 
@@ -72,8 +73,9 @@ export default function Estoque() {
                 </div>
                 <div style={{ textAlign: "right", fontSize: 13, color: C.text2 }}>{fmt(e.quantidade * (e.custo || 0))}</div>
                 <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
-                  <button onClick={() => setModal(e)} className="cw-btn" style={{ color: C.text3, padding: 6 }}><Edit3 size={15} /></button>
-                  <button onClick={() => store.removeItemEstoque(e.id)} className="cw-btn" style={{ color: C.red, padding: 6 }}><Trash2 size={15} /></button>
+                  <button onClick={() => setCompra(e)} title="Comprar / repor" className="cw-btn" style={{ color: C.teal, padding: 6 }}><ShoppingCart size={15} /></button>
+                  <button onClick={() => setModal(e)} title="Editar" className="cw-btn" style={{ color: C.text3, padding: 6 }}><Edit3 size={15} /></button>
+                  <button onClick={() => store.removeItemEstoque(e.id)} title="Excluir" className="cw-btn" style={{ color: C.red, padding: 6 }}><Trash2 size={15} /></button>
                 </div>
               </div>
             );
@@ -90,7 +92,40 @@ export default function Estoque() {
           <ItemForm inicial={modal} onSalvar={(d) => { if (modal.id) store.updateItemEstoque(modal.id, d); else store.addItemEstoque(activeUnit, d); setModal(null); }} />
         </Modal>
       )}
+      {compra && (
+        <Modal title={`Comprar / repor · ${compra.nome}`} onClose={() => setCompra(null)} maxWidth={440}>
+          <CompraForm item={compra} onComprar={(d) => { store.comprarEstoque(activeUnit, compra.id, d); setCompra(null); }} />
+        </Modal>
+      )}
     </div>
+  );
+}
+
+function CompraForm({ item, onComprar }) {
+  const [f, setF] = useState({ quantidade: Math.max(1, item.estoqueMinimo - item.quantidade) || 10, custoUnit: item.custo || 0, fornecedor: "", pago: false });
+  const total = (f.quantidade || 0) * (f.custoUnit || 0);
+  const valido = f.quantidade > 0;
+  return (
+    <>
+      <div style={{ fontSize: 12.5, color: C.text3, marginBottom: 14 }}>
+        Estoque atual: <b>{item.quantidade} {item.unidade}</b> · mínimo {item.estoqueMinimo}. A entrada repõe o estoque e lança a compra no financeiro.
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <Field label={`Quantidade (${item.unidade})`}><input type="number" min="1" value={f.quantidade} onChange={(e) => setF({ ...f, quantidade: +e.target.value })} style={inp} /></Field>
+        <Field label="Custo unitário (R$)"><input type="number" min="0" step="0.01" value={f.custoUnit} onChange={(e) => setF({ ...f, custoUnit: +e.target.value })} style={inp} /></Field>
+      </div>
+      <Field label="Fornecedor (opcional)"><input value={f.fornecedor} onChange={(e) => setF({ ...f, fornecedor: e.target.value })} style={inp} placeholder="Quem vendeu" /></Field>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.text2, margin: "2px 0 12px", cursor: "pointer" }}>
+        <input type="checkbox" checked={f.pago} onChange={(e) => setF({ ...f, pago: e.target.checked })} /> Já paguei (senão entra como conta a pagar)
+      </label>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.cream2, borderRadius: 10, padding: "10px 14px", marginBottom: 14 }}>
+        <span style={{ fontSize: 13, color: C.text2 }}>Total da compra</span>
+        <span style={{ fontFamily: serif, fontSize: 18, color: C.cafe }}>{fmt(total)}</span>
+      </div>
+      <Btn style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.5 }} onClick={() => valido && onComprar({ ...f })}>
+        <ShoppingCart size={16} /> Registrar compra
+      </Btn>
+    </>
   );
 }
 

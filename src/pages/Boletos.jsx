@@ -1,19 +1,20 @@
 import React, { useState } from "react";
 import {
   Barcode, Plus, Landmark, Copy, Check, Download, XCircle, CircleDollarSign,
-  QrCode, Building2, ShieldCheck, Trash2, Info, RefreshCw,
+  QrCode, Building2, ShieldCheck, Trash2, Info, RefreshCw, Plug, CheckCircle2, ExternalLink,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 import { supabaseConfigured } from "../lib/boletosApi.js";
+import { oauthConfigured, conectarNoBanco } from "../lib/bankOauth.js";
 
 // Metadados dos bancos suportados
 export const BANCOS = {
   inter: { label: "Banco Inter", cor: "#FF7A00", pix: true },
-  itau: { label: "Itaú", cor: "#EC7000", pix: false },
-  btg: { label: "BTG", cor: "#1B2A4A", pix: false },
-  bradesco: { label: "Bradesco", cor: "#CC092F", pix: false },
+  itau: { label: "Itaú", cor: "#EC7000", pix: true },
+  btg: { label: "BTG", cor: "#1B2A4A", pix: true },
+  bradesco: { label: "Bradesco", cor: "#CC092F", pix: true },
 };
 
 const STATUS = {
@@ -37,6 +38,7 @@ export default function Boletos() {
   const [contaSel, setContaSel] = useState(contas[0]?.id || "");
   const [emitModal, setEmitModal] = useState(false);
   const [contaModal, setContaModal] = useState(null);
+  const [integracao, setIntegracao] = useState(null);
 
   return (
     <div>
@@ -116,7 +118,7 @@ export default function Boletos() {
         />
       )}
       {aba === "contas" && (
-        <ListaContas contas={contas} onNova={() => setContaModal({})} onRemover={(c) => store.removeBankAccount(c.id)} />
+        <ListaContas contas={contas} onNova={() => setContaModal({})} onRemover={(c) => store.removeBankAccount(c.id)} onIntegracao={(c) => setIntegracao(c)} />
       )}
 
       {emitModal && (
@@ -131,6 +133,16 @@ export default function Boletos() {
       {contaModal && (
         <Modal title="Nova conta bancária" onClose={() => setContaModal(null)} maxWidth={520}>
           <ContaForm onSalvar={(dados) => { store.addBankAccount(activeUnit, dados); setContaModal(null); }} />
+        </Modal>
+      )}
+      {integracao && (
+        <Modal title="Integração com o banco (API)" onClose={() => setIntegracao(null)} maxWidth={540}>
+          <IntegracaoBanco
+            conta={contas.find((c) => c.id === integracao.id) || integracao}
+            onConectar={() => store.conectarBanco(integracao.id)}
+            onDesconectar={() => store.desconectarBanco(integracao.id)}
+            onToggle={(patch) => store.updateBankAccount(integracao.id, patch)}
+          />
         </Modal>
       )}
     </div>
@@ -251,16 +263,17 @@ function BotaoBaixar({ boleto }) {
 }
 
 // ===========================================================================
-function ListaContas({ contas, onNova, onRemover }) {
+function ListaContas({ contas, onNova, onRemover, onIntegracao }) {
   if (!contas.length) {
     return <Card><Empty icon={Landmark} title="Nenhuma conta bancária" sub="Cadastre a conta do franqueado ou do franqueador para emitir boletos." /></Card>;
   }
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 14 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 14 }}>
       {contas.map((c) => {
         const b = BANCOS[c.banco];
+        const conectado = c.conexao?.status === "conectado";
         return (
-          <Card key={c.id}>
+          <Card key={c.id} style={{ display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
               <div style={{ width: 42, height: 42, borderRadius: 11, background: `${b.cor}1a`, display: "grid", placeItems: "center" }}>
                 <Landmark size={20} color={b.cor} />
@@ -270,22 +283,104 @@ function ListaContas({ contas, onNova, onRemover }) {
               </button>
             </div>
             <div style={{ fontSize: 15, fontWeight: 600 }}>{c.apelido}</div>
-            <div style={{ fontSize: 12.5, color: C.text3, marginTop: 2 }}>{b.label}</div>
+            <div style={{ fontSize: 12.5, color: C.text3, marginTop: 2 }}>{b.label}{c.conta ? ` · ag ${c.agencia} · cc ${c.conta}` : ""}</div>
             <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
               <Badge color={c.tipo === "franqueador" ? C.teal : C.cafe}>{c.tipo === "franqueador" ? "Franqueador" : "Franqueado"}</Badge>
               <Badge color={c.ambiente === "prod" ? C.green : C.amber} bg={c.ambiente === "prod" ? C.greenPale : C.amberPale}>{c.ambiente === "prod" ? "Produção" : "Sandbox"}</Badge>
+              <Badge color={conectado ? C.green : C.text3} bg={conectado ? C.greenPale : C.cream2}>
+                {conectado ? "● Conectado" : "○ Não conectado"}
+              </Badge>
             </div>
-            <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border2}`, fontSize: 11.5, color: C.text3 }}>
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border2}`, fontSize: 11.5, color: C.text3, flex: 1 }}>
               <div>{c.beneficiarioNome}</div>
               <div style={{ color: C.text4 }}>{c.beneficiarioDocumento}</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 6, color: C.text4 }}>
-                <ShieldCheck size={12} /> Vault: <code style={{ fontSize: 11 }}>{c.credenciaisRef}</code>
-              </div>
             </div>
+            <Btn variant="ghost" onClick={() => onIntegracao(c)} style={{ width: "100%", justifyContent: "center", marginTop: 12 }}>
+              <Plug size={15} /> Integração com o banco
+            </Btn>
           </Card>
         );
       })}
     </div>
+  );
+}
+
+// ===========================================================================
+function Permissao({ ok, label }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, padding: "3px 0" }}>
+      {ok ? <CheckCircle2 size={15} color={C.green} /> : <XCircle size={15} color={C.amber} />}
+      <span style={{ color: ok ? C.text2 : C.text3 }}>{label}</span>
+      <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 700, letterSpacing: 0.3, color: ok ? C.green : C.amber }}>{ok ? "VALIDADO" : "PENDENTE"}</span>
+    </div>
+  );
+}
+
+function Switch({ on, onClick, label, sub }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "9px 0" }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 13.5, fontWeight: 600 }}>{label}</div>
+        {sub && <div style={{ fontSize: 11.5, color: C.text4 }}>{sub}</div>}
+      </div>
+      <button onClick={onClick} title={on ? "Ativado" : "Desativado"} style={{ width: 42, height: 24, borderRadius: 20, background: on ? C.green : C.gray, position: "relative", flexShrink: 0, transition: "all .2s" }}>
+        <span style={{ position: "absolute", top: 3, left: on ? 21 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "all .2s", boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
+      </button>
+    </div>
+  );
+}
+
+function IntegracaoBanco({ conta, onConectar, onDesconectar, onToggle }) {
+  const b = BANCOS[conta.banco] || { label: "Banco", cor: C.text3, pix: false };
+  const cx = conta.conexao || { status: "desconectado" };
+  const conectado = cx.status === "conectado";
+  const conectar = () => {
+    if (oauthConfigured(conta.banco)) conectarNoBanco(conta.banco, conta.id); // produção: redireciona ao banco
+    else onConectar(); // demo: simula a autorização concedida
+  };
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+        <span style={{ width: 44, height: 44, borderRadius: 11, background: `${b.cor}1a`, display: "grid", placeItems: "center" }}><Landmark size={22} color={b.cor} /></span>
+        <div>
+          <div style={{ fontFamily: serif, fontSize: 18 }}>{conta.apelido}</div>
+          <div style={{ fontSize: 12, color: C.text3 }}>{b.label}{conta.conta ? ` · ag ${conta.agencia} · cc ${conta.conta}` : ""}</div>
+        </div>
+      </div>
+
+      <div style={{ background: C.cream, borderRadius: 12, padding: 14, marginBottom: 14 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: C.text3, letterSpacing: 0.4, marginBottom: 6 }}>PERMISSÕES NO BANCO</div>
+        <Permissao ok={cx.boleto} label="Boletos — consultar e emitir" />
+        {b.pix !== false && <Permissao ok={cx.pix} label="PIX Cobrança — consultar e emitir" />}
+        <div style={{ fontSize: 11.5, color: conectado ? C.green : C.text3, marginTop: 8 }}>
+          {conectado ? `✓ Conta conectada${cx.conectadoEm ? ` em ${cx.conectadoEm.split("-").reverse().join("/")}` : ""}.` : "Conta ainda não autorizada — conecte para emitir cobranças."}
+        </div>
+      </div>
+
+      {conectado ? (
+        <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+          <Btn variant="ghost" onClick={conectar} style={{ flex: 1, justifyContent: "center" }}><RefreshCw size={15} /> Reconectar</Btn>
+          <Btn variant="ghost" onClick={onDesconectar} style={{ color: C.red, borderColor: C.redPale }}>Desconectar</Btn>
+        </div>
+      ) : (
+        <Btn onClick={conectar} style={{ width: "100%", justifyContent: "center", background: b.cor, marginBottom: 6 }}>
+          <ExternalLink size={16} /> Conectar com o {b.label}
+        </Btn>
+      )}
+
+      <div style={{ borderTop: `1px solid ${C.border2}`, marginTop: 12, paddingTop: 4 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: C.text3, letterSpacing: 0.4, margin: "6px 0" }}>INTEGRAÇÕES AUTOMÁTICAS</div>
+        <Switch on={conta.autoRegistrar !== false} onClick={() => onToggle({ autoRegistrar: !(conta.autoRegistrar !== false) })} label="Registrar automaticamente os boletos gerados" sub="Cada boleto é registrado no banco na hora da emissão." />
+        {b.pix !== false && <Switch on={conta.gerarPix !== false} onClick={() => onToggle({ gerarPix: !(conta.gerarPix !== false) })} label="Gerar boletos de cobrança com PIX" sub="Boleto híbrido (boleto + PIX no mesmo documento)." />}
+      </div>
+
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: C.tealPale, borderRadius: 10, padding: "9px 12px", fontSize: 11.5, color: C.teal, marginTop: 14 }}>
+        <Info size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+        <span>{oauthConfigured(conta.banco)
+          ? `Ao conectar, você vai para o ${b.label} autorizar o CafeWorking (Boletos${b.pix !== false ? " + PIX" : ""}) — igual ao consentimento do Open Finance.`
+          : `Demonstração. Em produção, o CafeWorking precisa estar cadastrado como app parceiro no ${b.label} (client_id + redirect aprovados) para abrir a tela de consentimento.`}</span>
+      </div>
+    </>
   );
 }
 

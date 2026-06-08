@@ -203,8 +203,12 @@ const seedProdutos = [];
 // As CREDENCIAIS reais NÃO ficam aqui — em produção vão para o Supabase Vault
 // e estas linhas guardam só `credenciaisRef`. Aqui é seed de demonstração.
 const seedBankAccounts = [
-  { id: "ba_inter_ciatos", unidadeId: "lux", franqueadoId: "fr_ciatos", banco: "inter", tipo: "franqueado", apelido: "Inter · Grupo Ciatos", ambiente: "prod", beneficiarioNome: "Grupo Ciatos Coworking LTDA", beneficiarioDocumento: "20.351.761/0001-03", pixChave: "financeiro@grupociatos.com.br", credenciaisRef: "inter_grupo_ciatos_prod", ativo: true },
-  { id: "ba_itau_plat", unidadeId: "lux", franqueadoId: null, banco: "itau", tipo: "franqueador", apelido: "Itaú · Plataforma CafeWorking", ambiente: "sandbox", beneficiarioNome: "CafeWorking Tecnologia LTDA", beneficiarioDocumento: "48.112.090/0001-55", pixChave: "", credenciaisRef: "itau_plataforma_sandbox", ativo: true },
+  { id: "ba_inter_ciatos", unidadeId: "lux", franqueadoId: "fr_ciatos", banco: "inter", tipo: "franqueado", apelido: "Inter · Grupo Ciatos", ambiente: "prod", beneficiarioNome: "Grupo Ciatos Coworking LTDA", beneficiarioDocumento: "20.351.761/0001-03", agencia: "0001", conta: "12345678-9", pixChave: "financeiro@grupociatos.com.br", credenciaisRef: "inter_grupo_ciatos_prod", ativo: true,
+    conexao: { status: "conectado", boleto: true, pix: true, conectadoEm: "2026-05-20" }, autoRegistrar: true, gerarPix: true },
+  { id: "ba_btg_ciatos", unidadeId: "lux", franqueadoId: "fr_ciatos", banco: "btg", tipo: "franqueado", apelido: "BTG · Grupo Ciatos", ambiente: "prod", beneficiarioNome: "Grupo Ciatos Coworking LTDA", beneficiarioDocumento: "20.351.761/0001-03", agencia: "0050", conta: "809124-0", pixChave: "", credenciaisRef: "btg_grupo_ciatos_prod", ativo: true,
+    conexao: { status: "desconectado", boleto: false, pix: false }, autoRegistrar: true, gerarPix: true },
+  { id: "ba_itau_plat", unidadeId: "lux", franqueadoId: null, banco: "itau", tipo: "franqueador", apelido: "Itaú · Plataforma CafeWorking", ambiente: "sandbox", beneficiarioNome: "CafeWorking Tecnologia LTDA", beneficiarioDocumento: "48.112.090/0001-55", agencia: "", conta: "", pixChave: "", credenciaisRef: "itau_plataforma_sandbox", ativo: true,
+    conexao: { status: "desconectado", boleto: false, pix: false }, autoRegistrar: true, gerarPix: false },
 ];
 
 // Gera dados plausíveis de um boleto (modo demonstração).
@@ -411,8 +415,8 @@ export function StoreProvider({ children }) {
   const addPedido = (unidadeId, p) => {
     const id = "pd" + Date.now();
     setPedidos((ps) => [{ id, unidadeId, status: "recebido", origem: "app", ...p }, ...ps]);
-    // Baixa automática de estoque: para cada item vendido, abate a quantidade
-    // do item de mesmo nome na mesma unidade (casamento por nome).
+    // Baixa automática de estoque + cálculo do CMV (custo do que foi vendido).
+    let cmv = 0;
     if (p.itens?.length) {
       setEstoque((es) => es.map((it) => {
         if (it.unidadeId !== unidadeId) return it;
@@ -420,6 +424,21 @@ export function StoreProvider({ children }) {
         if (!vendido) return it;
         return { ...it, quantidade: Math.max(0, it.quantidade - (vendido.q || 1)) };
       }));
+      cmv = p.itens.reduce((s, x) => {
+        const it = estoque.find((e) => e.unidadeId === unidadeId && e.nome === x.nome);
+        const custo = it ? it.custo : (x.cmv || 0);
+        return s + custo * (x.q || 1);
+      }, 0);
+    }
+    // Integração com o Financeiro: receita da venda (entrada) + CMV (custo direto).
+    const caixa = contas.find((c) => c.unidadeId === unidadeId && /caixa/i.test(c.banco))?.id
+      || contas.find((c) => c.unidadeId === unidadeId)?.id || "";
+    const dataBR = `${String(new Date().getDate()).padStart(2, "0")}/${String(MES_ATUAL + 1).padStart(2, "0")}`;
+    if (p.total > 0) {
+      addLancamento(unidadeId, { tipo: "entrada", descricao: `Venda cafeteria · ${p.cliente || "balcão"}`, categoria: "Receita Operacional Bruta", subcategoria: "Cafeteria", valor: p.total, contaId: caixa, status: "pago", data: dataBR, origem: "cafeteria" });
+    }
+    if (cmv > 0) {
+      addLancamento(unidadeId, { tipo: "saida", descricao: `Custo cafeteria (CMV) · ${p.cliente || "balcão"}`, categoria: "Custo Direto", subcategoria: "Insumos cafeteria", valor: Math.round(cmv * 100) / 100, contaId: caixa, status: "pago", data: dataBR, origem: "cafeteria-cmv" });
     }
     enfileirarEmail(unidadeId, { cliente: p.cliente, evento: "cafe_pedido", dados: { total: p.total } });
     return id;
@@ -548,6 +567,25 @@ export function StoreProvider({ children }) {
   // Entrada (+) ou baixa (−) de estoque; nunca abaixo de zero.
   const ajustarEstoque = (id, delta) =>
     setEstoque((es) => es.map((e) => (e.id === id ? { ...e, quantidade: Math.max(0, e.quantidade + delta) } : e)));
+  // Compra/reposição: dá entrada no estoque, atualiza o custo e lança no
+  // Financeiro como CONTA A PAGAR. A compra é "Conta Movimentação" (estoque é
+  // ativo) — o custo só vira resultado (CMV) quando o item é vendido.
+  const comprarEstoque = (unidadeId, itemId, { quantidade, custoUnit, fornecedor, pago }) => {
+    const item = estoque.find((e) => e.id === itemId);
+    if (quantidade > 0) ajustarEstoque(itemId, quantidade);
+    if (custoUnit > 0) updateItemEstoque(itemId, { custo: custoUnit });
+    const total = (quantidade || 0) * (custoUnit || 0);
+    if (total > 0 && item) {
+      const caixa = contas.find((c) => c.unidadeId === unidadeId)?.id || "";
+      const dataBR = `${String(new Date().getDate()).padStart(2, "0")}/${String(MES_ATUAL + 1).padStart(2, "0")}`;
+      addLancamento(unidadeId, {
+        tipo: "saida", descricao: `Compra · ${item.nome}${fornecedor ? ` · ${fornecedor}` : ""}`,
+        categoria: "Conta Movimentação", subcategoria: "Compra de estoque",
+        valor: Math.round(total * 100) / 100, contaId: caixa,
+        status: pago ? "pago" : "previsto", data: dataBR, origem: "compra-estoque",
+      });
+    }
+  };
 
   // Patrimônio (ativos mobilizados) -----------------------------------------
   const patrimonioDe = (unidadeId) => patrimonio.filter((a) => a.unidadeId === unidadeId);
@@ -566,6 +604,13 @@ export function StoreProvider({ children }) {
   const updateBankAccount = (id, patch) =>
     setBankAccounts((bs) => bs.map((b) => (b.id === id ? { ...b, ...patch } : b)));
   const removeBankAccount = (id) => setBankAccounts((bs) => bs.filter((b) => b.id !== id));
+  // Conexão (consentimento OAuth) com o banco. Em produção, o "Conectar"
+  // redireciona pro consentimento do banco e o callback marca como conectado;
+  // aqui (demo) simulamos a autorização concedida.
+  const conectarBanco = (id) =>
+    setBankAccounts((bs) => bs.map((b) => (b.id === id ? { ...b, conexao: { status: "conectado", boleto: true, pix: true, conectadoEm: new Date().toISOString().slice(0, 10) } } : b)));
+  const desconectarBanco = (id) =>
+    setBankAccounts((bs) => bs.map((b) => (b.id === id ? { ...b, conexao: { status: "desconectado", boleto: false, pix: false } } : b)));
 
   const boletosDe = (unidadeId) =>
     boletos.filter((b) => b.unidadeId === unidadeId).slice().reverse();
@@ -778,11 +823,11 @@ export function StoreProvider({ children }) {
       addItemCatalogo, updateItemCatalogo, removeItemCatalogo, catalogoDe,
       addCategoria, updateCategoria, removeCategoria,
       bankAccounts, boletos,
-      bankAccountsDe, addBankAccount, updateBankAccount, removeBankAccount,
+      bankAccountsDe, addBankAccount, updateBankAccount, removeBankAccount, conectarBanco, desconectarBanco,
       boletosDe, emitirBoleto, cancelarBoleto, baixarBoleto, sincronizarBoleto,
       contratos, contratosDe, contratosVencendoDe, mesFimContrato,
       addContrato, renovarContrato, encerrarContrato,
-      estoque, estoqueDe, estoqueBaixoDe, addItemEstoque, updateItemEstoque, removeItemEstoque, ajustarEstoque,
+      estoque, estoqueDe, estoqueBaixoDe, addItemEstoque, updateItemEstoque, removeItemEstoque, ajustarEstoque, comprarEstoque,
       patrimonio, patrimonioDe, addAtivo, updateAtivo, removeAtivo,
     }),
     [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, reservas, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail, clienteNotifPrefs]
