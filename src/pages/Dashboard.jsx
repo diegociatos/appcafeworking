@@ -6,26 +6,53 @@ import {
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead } from "../components/ui.jsx";
 import { C, serif, fmt, fmtShort } from "../lib/theme.js";
-import { UNIDADES, ALERTAS } from "../lib/data.js";
 import { useStore } from "../lib/store.jsx";
 import { Store } from "lucide-react";
 
-const ICONS = { fatura: Receipt, corresp: Mail, sala: DoorOpen, lead: Target };
+const ICONS = { fatura: Receipt, corresp: Mail, sala: DoorOpen, lead: Target, estoque: AlertCircle };
 
 export default function Dashboard({ go }) {
-  const { perfil, franqueados, unidades } = useStore();
+  const store = useStore();
+  const { perfil, franqueados, unidades } = store;
   // O Administrador da plataforma tem um painel próprio (não opera coworking)
   if (perfil === "franqueador") return <DashboardPlataforma franqueados={franqueados} unidades={unidades} go={go} />;
 
-  const totalReceita = UNIDADES.reduce((s, u) => s + u.receita, 0);
-  const totalMembros = UNIDADES.reduce((s, u) => s + u.membros, 0);
+  // KPIs calculados dos DADOS REAIS do banco (zeram quando não há movimento).
+  const lancs = store.lancamentos || [];
+  const clientes = store.clientes || [];
+  const reservas = store.reservas || [];
+  const pedidos = store.pedidos || [];
+  const boletos = store.boletos || [];
+  const leads = store.leads || [];
+  const ativo = store.activeUnit;
+
+  const totalReceita = lancs.filter((l) => l.tipo === "entrada" && l.status === "pago").reduce((s, l) => s + (l.valor || 0), 0);
+  const totalMembros = clientes.filter((c) => c.status !== "inativo").length;
+  const reservasHoje = reservas.length;
+  const salasEmUso = new Set(reservas.map((r) => r.sala)).size;
+  const cafeteriaHoje = pedidos.reduce((s, p) => s + (p.total || 0), 0);
+  const pedidosHoje = pedidos.length;
 
   const stats = [
-    { label: "Receita do mês", val: fmtShort(totalReceita), delta: "+12,4% no mês", icon: DollarSign, cor: C.green },
-    { label: "Membros ativos", val: totalMembros, delta: "+8 novos", icon: Users, cor: C.teal },
-    { label: "Reservas hoje", val: 18, delta: "5 salas em uso", icon: CalendarDays, cor: C.cafe },
-    { label: "Cafeteria hoje", val: fmtShort(2840), delta: "47 pedidos", icon: Coffee, cor: C.amber },
+    { label: "Receita do mês", val: fmtShort(totalReceita), delta: "lançamentos pagos", icon: DollarSign, cor: C.green },
+    { label: "Membros ativos", val: totalMembros, delta: totalMembros === 1 ? "1 cliente" : `${totalMembros} clientes`, icon: Users, cor: C.teal },
+    { label: "Reservas", val: reservasHoje, delta: `${salasEmUso} sala(s) em uso`, icon: CalendarDays, cor: C.cafe },
+    { label: "Cafeteria", val: fmtShort(cafeteriaHoje), delta: `${pedidosHoje} pedido(s)`, icon: Coffee, cor: C.amber },
   ];
+
+  // Alertas inteligentes derivados do estado real (vazio = tudo em dia).
+  const hoje = new Date();
+  const alertas = [];
+  boletos
+    .filter((b) => b.status !== "pago" && b.status !== "cancelado" && b.vencimento && new Date(b.vencimento) < hoje)
+    .slice(0, 3)
+    .forEach((b) => alertas.push({ id: "fat" + b.id, tipo: "fatura", cor: C.red, titulo: "Fatura vencida", sub: `${b.sacado} · ${fmt(b.valor)} · acionar cobrança` }));
+  const baixo = store.estoqueBaixoDe ? store.estoqueBaixoDe(ativo) : [];
+  if (baixo.length) alertas.push({ id: "estbaixo", tipo: "estoque", cor: C.amber, titulo: `${baixo.length} item(ns) no estoque mínimo`, sub: baixo.slice(0, 3).map((i) => i.nome).join(", ") });
+  const corrAg = store.correspondenciasDe ? store.correspondenciasDe(ativo).filter((c) => c.status === "aguardando") : [];
+  if (corrAg.length) alertas.push({ id: "corr", tipo: "corresp", cor: C.teal2, titulo: `${corrAg.length} correspondência(s) a tratar`, sub: corrAg[0].cliente + (corrAg.length > 1 ? " e outros" : "") });
+  const leadsNovos = leads.filter((l) => l.unidadeId === ativo && l.etapa === "novo");
+  if (leadsNovos.length) alertas.push({ id: "leads", tipo: "lead", cor: C.cafe, titulo: `${leadsNovos.length} novo(s) lead(s)`, sub: "responder em < 1h aumenta a conversão" });
 
   // Sparkline procedural (12 meses)
   const sparkData = [42, 55, 48, 67, 60, 78, 72, 88, 82, 95, 90, 100];
@@ -153,9 +180,14 @@ export default function Dashboard({ go }) {
         <Card className="cw-fade cw-fade-3">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
             <div style={{ fontFamily: serif, fontSize: 20, color: C.text }}>Alertas inteligentes</div>
-            <Badge color={C.amber}>4 ativos</Badge>
+            <Badge color={alertas.length ? C.amber : C.green}>{alertas.length ? `${alertas.length} ativos` : "tudo em dia"}</Badge>
           </div>
-          {ALERTAS.map((a, i) => {
+          {alertas.length === 0 && (
+            <div style={{ fontSize: 13, color: C.text3, padding: "18px 0", textAlign: "center" }}>
+              Nenhum alerta no momento. 🎉
+            </div>
+          )}
+          {alertas.map((a, i) => {
             const Ic = ICONS[a.tipo] || AlertCircle;
             return (
               <div
@@ -164,11 +196,11 @@ export default function Dashboard({ go }) {
                   display: "flex",
                   gap: 12,
                   padding: "11px 0",
-                  borderBottom: i < ALERTAS.length - 1 ? `1px solid ${C.border2}` : "none",
+                  borderBottom: i < alertas.length - 1 ? `1px solid ${C.border2}` : "none",
                   cursor: "pointer",
                 }}
                 onClick={() =>
-                  go(a.tipo === "fatura" ? "financeiro" : a.tipo === "corresp" ? "corresp" : a.tipo === "lead" ? "crm" : "reservas")
+                  go(a.tipo === "fatura" ? "financeiro" : a.tipo === "corresp" ? "corresp" : a.tipo === "lead" ? "crm" : a.tipo === "estoque" ? "estoque" : "reservas")
                 }
               >
                 <div
@@ -197,7 +229,13 @@ export default function Dashboard({ go }) {
 
       {/* Unidades */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 16 }}>
-        {UNIDADES.map((u, i) => (
+        {unidades.map((u, i) => {
+          const salasU = store.salasDe ? store.salasDe(u.id) : [];
+          const uSalas = salasU.length;
+          const uOcup = uSalas ? Math.round((salasU.filter((s) => s.contratada).length / uSalas) * 100) : 0;
+          const uMembros = clientes.filter((c) => c.unidadeId === u.id && c.status !== "inativo").length;
+          const uReceita = lancs.filter((l) => l.unidadeId === u.id && l.tipo === "entrada" && l.status === "pago").reduce((s, l) => s + (l.valor || 0), 0);
+          return (
           <Card
             key={u.id}
             className={`cw-fade cw-fade-${i + 3}`}
@@ -237,12 +275,12 @@ export default function Dashboard({ go }) {
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 8 }}>
               <span style={{ color: C.text3 }}>Ocupação</span>
-              <span style={{ color: C.text, fontWeight: 600 }}>{u.ocupacao}%</span>
+              <span style={{ color: C.text, fontWeight: 600 }}>{uOcup}%</span>
             </div>
             <div style={{ height: 7, background: C.cream2, borderRadius: 10, overflow: "hidden" }}>
               <div
                 style={{
-                  width: `${u.ocupacao}%`,
+                  width: `${uOcup}%`,
                   height: "100%",
                   background: `linear-gradient(90deg,${u.cor},${u.cor}aa)`,
                   borderRadius: 10,
@@ -253,19 +291,20 @@ export default function Dashboard({ go }) {
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14, fontSize: 13 }}>
               <div>
                 <span style={{ color: C.text3 }}>Salas </span>
-                <b>{u.salas}</b>
+                <b>{uSalas}</b>
               </div>
               <div>
                 <span style={{ color: C.text3 }}>Membros </span>
-                <b>{u.membros}</b>
+                <b>{uMembros}</b>
               </div>
               <div>
                 <span style={{ color: C.text3 }}>Receita </span>
-                <b>{fmtShort(u.receita)}</b>
+                <b>{fmtShort(uReceita)}</b>
               </div>
             </div>
           </Card>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

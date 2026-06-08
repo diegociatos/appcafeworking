@@ -24,6 +24,12 @@ delete from public.usuarios where id in ('us1', 'us2', 'us3', 'us4');
 -- delete from public.unidades where id = 'savassi';
 -- delete from public.contas   where id = 'fr1';
 
+-- 3b) Zera os números de vitrine das unidades (receita/membros/ocupação/salas).
+--   Eram valores de demonstração. O Dashboard calcula os reais a partir dos
+--   lançamentos/clientes; estes campos ficam só como referência.
+update public.unidades set receita = 0, membros = 0, ocupacao = 0, salas = 0
+  where id in ('lux', 'est', 'savassi');
+
 -- 4) (Opcional) Boletos e notas de teste ------------------------------------
 --   Se emitiu boletos/notas em PRODUÇÃO RESTRITA só para testar, limpe aqui.
 -- delete from public.notas_fiscais where status <> 'autorizada' or true;  -- cuidado
