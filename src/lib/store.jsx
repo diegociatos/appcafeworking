@@ -27,7 +27,7 @@ export const PERFIS = {
   master: {
     label: "Master (coworking)",
     cor: "#B8862F",
-    modules: ["dash", "equipe", "crm", "unidades", "patrimonio", "reservas", "corresp", "pdv", "catalogo", "estoque", "clientes", "chat", "financeiro", "boletos", "eventos"],
+    modules: ["dash", "equipe", "crm", "unidades", "patrimonio", "reservas", "corresp", "pdv", "catalogo", "estoque", "clientes", "chat", "financeiro", "boletos", "notafiscal", "eventos"],
     landing: "dash",
   },
   recepcao: {
@@ -39,7 +39,7 @@ export const PERFIS = {
   financeiro: {
     label: "Financeiro",
     cor: "#3D7A5A",
-    modules: ["dash", "financeiro", "boletos", "patrimonio", "estoque", "catalogo", "clientes", "crm"],
+    modules: ["dash", "financeiro", "boletos", "notafiscal", "patrimonio", "estoque", "catalogo", "clientes", "crm"],
     landing: "financeiro",
   },
   cliente: {
@@ -258,6 +258,20 @@ const seedPatrimonio = [
   { id: "pt5", unidadeId: "lux", nome: "Notebook recepção", categoria: "TI", quantidade: 2, valorUnitario: 4500, aquisicao: "2024-04", fornecedor: "Dell", anexo: null },
 ];
 
+// Configuração fiscal POR UNIDADE (NFS-e). O certificado digital A1 real vai
+// pro Vault (certificadoRef) — nunca no app. Cada unidade tem a sua (município,
+// inscrição municipal, código de serviço, alíquota ISS, ambiente).
+const seedConfigFiscal = [
+  { unidadeId: "lux", municipio: "Belo Horizonte", uf: "MG", inscricaoMunicipal: "1.234.567/001-8", regime: "Simples Nacional", codigoServico: "08.01", descricaoServico: "Locação de espaço para coworking e salas", aliquotaISS: 2, ambiente: "nacional", certificadoRef: "cert_nfse_lux", emissaoAtiva: true },
+  { unidadeId: "est", municipio: "Belo Horizonte", uf: "MG", inscricaoMunicipal: "1.234.567/002-6", regime: "Simples Nacional", codigoServico: "08.01", descricaoServico: "Locação de espaço para coworking e salas", aliquotaISS: 2, ambiente: "nacional", certificadoRef: "cert_nfse_est", emissaoAtiva: true },
+];
+
+let _nfSeq = 124;
+const seedNotasFiscais = [
+  { id: "nf1", unidadeId: "lux", numero: "000124", tomador: "Mendes Advocacia", tomadorDoc: "31.882.004/0001-77", descricao: "Mensalidade sala privativa · Jun/2026", valor: 2890, iss: 57.8, status: "autorizada", emitidaEm: "2026-06-05", pdfUrl: "", xmlUrl: "" },
+  { id: "nf2", unidadeId: "lux", numero: "000123", tomador: "TechBH Software", tomadorDoc: "33.444.555/0001-22", descricao: "Plano coworking mensal · Jun/2026", valor: 390, iss: 7.8, status: "autorizada", emitidaEm: "2026-06-02", pdfUrl: "", xmlUrl: "" },
+];
+
 export function StoreProvider({ children }) {
   const [unidades, setUnidades] = useState(seedUnidades);
   const [franqueados, setFranqueados] = useState(seedFranqueados);
@@ -277,6 +291,8 @@ export function StoreProvider({ children }) {
   const [contratos, setContratos] = useState(seedContratos);
   const [estoque, setEstoque] = useState(seedEstoque);
   const [patrimonio, setPatrimonio] = useState(seedPatrimonio);
+  const [configFiscal, setConfigFiscal] = useState(seedConfigFiscal);
+  const [notasFiscais, setNotasFiscais] = useState(seedNotasFiscais);
   const [reservas, setReservas] = useState(RESERVAS_INIT);
   const [activeUnit, setActiveUnit] = useState(UNIDADES[0].id);
   const [viewAs, setViewAs] = useState(null); // id do franqueado, ou null = franqueador
@@ -595,6 +611,33 @@ export function StoreProvider({ children }) {
     setPatrimonio((ps) => ps.map((a) => (a.id === id ? { ...a, ...patch } : a)));
   const removeAtivo = (id) => setPatrimonio((ps) => ps.filter((a) => a.id !== id));
 
+  // Nota fiscal (NFS-e) — config por unidade + emissão -----------------------
+  const configFiscalDe = (unidadeId) => configFiscal.find((c) => c.unidadeId === unidadeId);
+  const updateConfigFiscal = (unidadeId, patch) =>
+    setConfigFiscal((cs) => {
+      const existe = cs.some((c) => c.unidadeId === unidadeId);
+      return existe ? cs.map((c) => (c.unidadeId === unidadeId ? { ...c, ...patch } : c))
+        : [...cs, { unidadeId, ambiente: "nacional", emissaoAtiva: true, aliquotaISS: 0, ...patch }];
+    });
+  const notasFiscaisDe = (unidadeId) => notasFiscais.filter((n) => n.unidadeId === unidadeId);
+  // DEMO: gera número/ISS plausíveis. Em produção chama a Edge Function que
+  // assina e transmite ao ambiente (Nacional ou municipal/BHISS).
+  const emitirNFSe = (unidadeId, dados) => {
+    const cfg = configFiscal.find((c) => c.unidadeId === unidadeId);
+    const iss = Math.round(((dados.valor || 0) * (cfg?.aliquotaISS || 0) / 100) * 100) / 100;
+    const nota = {
+      id: "nf" + Date.now(), unidadeId,
+      numero: String(++_nfSeq).padStart(6, "0"),
+      tomador: dados.tomador || "Tomador", tomadorDoc: dados.tomadorDoc || "",
+      descricao: dados.descricao || cfg?.descricaoServico || "Serviço",
+      valor: dados.valor, iss, status: "autorizada",
+      emitidaEm: new Date().toISOString().slice(0, 10), pdfUrl: "", xmlUrl: "", boletoId: dados.boletoId,
+    };
+    setNotasFiscais((ns) => [nota, ...ns]);
+    return nota;
+  };
+  const cancelarNF = (id) => setNotasFiscais((ns) => ns.map((n) => (n.id === id ? { ...n, status: "cancelada" } : n)));
+
   // Boletos / contas bancárias --------------------------------------------
   // ⚠️ Demonstração: em produção, addBankAccount manda a credencial pro Vault
   // e emitirBoleto/cancelarBoleto chamam as Edge Functions (boletosApi.js).
@@ -680,7 +723,14 @@ export function StoreProvider({ children }) {
     const bol = boletos.find((b) => b.id === id);
     setBoletos((bs) => bs.map((b) => (b.id === id ? { ...b, status: "pago", paidAt: new Date().toISOString().slice(0, 10) } : b)));
     if (bol?.lancamentoId) setLancamentos((ls) => ls.map((l) => (l.id === bol.lancamentoId ? { ...l, status: "pago" } : l)));
-    if (bol) enfileirarEmail(bol.unidadeId, { cliente: bol.sacado, evento: "boleto_pago", dados: { valor: bol.valor } });
+    if (bol) {
+      enfileirarEmail(bol.unidadeId, { cliente: bol.sacado, evento: "boleto_pago", dados: { valor: bol.valor } });
+      // NFS-e automática na baixa da cobrança, se a unidade emite nota.
+      const cfg = configFiscal.find((c) => c.unidadeId === bol.unidadeId);
+      if (cfg?.emissaoAtiva && bol.status !== "pago") {
+        emitirNFSe(bol.unidadeId, { tomador: bol.sacado, tomadorDoc: bol.sacadoDocumento, valor: bol.valor, descricao: bol.instrucoes, boletoId: bol.id });
+      }
+    }
   };
 
   // Contratos recorrentes ---------------------------------------------------
@@ -829,8 +879,9 @@ export function StoreProvider({ children }) {
       addContrato, renovarContrato, encerrarContrato,
       estoque, estoqueDe, estoqueBaixoDe, addItemEstoque, updateItemEstoque, removeItemEstoque, ajustarEstoque, comprarEstoque,
       patrimonio, patrimonioDe, addAtivo, updateAtivo, removeAtivo,
+      configFiscal, configFiscalDe, updateConfigFiscal, notasFiscais, notasFiscaisDe, emitirNFSe, cancelarNF,
     }),
-    [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, reservas, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail, clienteNotifPrefs]
+    [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, configFiscal, notasFiscais, reservas, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail, clienteNotifPrefs]
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
