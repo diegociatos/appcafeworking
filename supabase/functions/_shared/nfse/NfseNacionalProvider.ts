@@ -23,6 +23,7 @@
 // ============================================================================
 
 import type { NfseProvider } from "./NfseProvider.ts";
+import { assinarDpsXmlDsig } from "./xmlsign.ts";
 import {
   type ConfigFiscal,
   type FiscalCredentials,
@@ -172,7 +173,7 @@ export class NfseNacionalProvider implements NfseProvider {
     const docTag = (t.documento || "").replace(/\D/g, "").length > 11 ? "CNPJ" : "CPF";
     return `<?xml version="1.0" encoding="UTF-8"?>
 <DPS xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.00">
-  <infDPS>
+  <infDPS Id="dps${input.rpsNumero}">
     <tpAmb>${c.ambiente === "producao" ? 1 : 2}</tpAmb>
     <prest><CNPJ>${(c.cnpj || "").replace(/\D/g, "")}</CNPJ><IM>${c.inscricao_municipal ?? ""}</IM></prest>
     <toma><${docTag}>${(t.documento || "").replace(/\D/g, "")}</${docTag}><xNome>${esc(t.nome)}</xNome></toma>
@@ -198,13 +199,13 @@ export class NfseNacionalProvider implements NfseProvider {
   }
 
   /**
-   * Ponto de extensão: assina o XML (xmldsig enveloped) com o A1 (e-CNPJ).
-   * Plugue aqui uma lib de assinatura XML ou um microserviço de assinatura.
-   * Hoje retorna o XML como está (válido só em modo simulado/homologação).
+   * Assina o XML (xmldsig enveloped, RSA-SHA256) com o A1 (cert_pem/key_pem).
+   * Sem PEM disponível, devolve o XML sem assinatura (modo simulado).
    */
   private async assinarDps(xml: string): Promise<string> {
-    // TODO: assinatura XML com cert_pfx_base64 + cert_senha (xmldsig).
-    return xml;
+    if (!(this.creds.cert_pem && this.creds.key_pem)) return xml;
+    const refId = xml.match(/Id="([^"]+)"/)?.[1] ?? "";
+    return assinarDpsXmlDsig(xml, this.creds.cert_pem, this.creds.key_pem, refId);
   }
 }
 

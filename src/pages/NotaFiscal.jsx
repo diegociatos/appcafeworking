@@ -1,9 +1,9 @@
 import React, { useState } from "react";
 import {
   FileText, Receipt, Plus, Download, XCircle, SlidersHorizontal, CheckCircle2,
-  Building2, Percent, ShieldCheck, Coins,
+  Building2, Percent, ShieldCheck, Coins, KeyRound, UploadCloud, AlertTriangle,
 } from "lucide-react";
-import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
+import { Card, Badge, Btn, PageHead, Modal, Field, Empty, FileInput } from "../components/ui.jsx";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 
@@ -98,7 +98,12 @@ export default function NotaFiscal() {
         </>
       )}
 
-      {aba === "config" && <ConfigFiscal cfg={cfg} unidadeNome={unidadeAtiva?.nome} onSalvar={(d) => store.updateConfigFiscal(activeUnit, d)} />}
+      {aba === "config" && (
+        <div style={{ display: "grid", gap: 16 }}>
+          <CertificadoCard cfg={cfg} unidadeNome={unidadeAtiva?.nome} onEnviar={(d) => store.salvarCertificadoFiscal(activeUnit, d)} />
+          <ConfigFiscal cfg={cfg} unidadeNome={unidadeAtiva?.nome} onSalvar={(d) => store.updateConfigFiscal(activeUnit, d)} />
+        </div>
+      )}
 
       {emitir && (
         <Modal title="Emitir NFS-e" onClose={() => setEmitir(false)} maxWidth={480}>
@@ -158,6 +163,72 @@ function EmitirNotaForm({ cfg, onEmitir }) {
         <FileText size={16} /> Emitir NFS-e
       </Btn>
     </>
+  );
+}
+
+function CertificadoCard({ cfg, unidadeNome, onEnviar }) {
+  const [file, setFile] = useState(null);
+  const [senha, setSenha] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null); // {tipo:'ok'|'erro', texto}
+  const jaTem = Boolean(cfg?.certificadoEnviadoEm);
+
+  const enviar = () => {
+    setMsg(null);
+    if (!file?.url) return setMsg({ tipo: "erro", texto: "Anexe o arquivo .pfx do certificado." });
+    if (!senha) return setMsg({ tipo: "erro", texto: "Informe a senha do certificado." });
+    setBusy(true);
+    Promise.resolve(onEnviar({ pfxBase64: file.url, senha }))
+      .then((r) => {
+        setMsg({ tipo: "ok", texto: r?.demo ? "Certificado recebido (modo demonstração — não foi transmitido)." : "Certificado salvo com segurança no cofre (Vault)." });
+        setFile(null); setSenha("");
+      })
+      .catch((e) => setMsg({ tipo: "erro", texto: e.message || "Falha ao enviar o certificado." }))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <Card style={{ maxWidth: 620 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+        <div style={{ width: 38, height: 38, borderRadius: 10, background: C.tealPale, display: "grid", placeItems: "center" }}><KeyRound size={19} color={C.teal} /></div>
+        <div>
+          <div style={{ fontFamily: serif, fontSize: 18 }}>Certificado digital A1 · {unidadeNome}</div>
+          <div style={{ fontSize: 12, color: C.text3 }}>Necessário para assinar e transmitir as notas (e-CNPJ).</div>
+        </div>
+      </div>
+
+      {jaTem && (
+        <div style={{ display: "flex", alignItems: "center", gap: 9, background: C.greenPale, border: `1px solid ${C.green}33`, borderRadius: 10, padding: "10px 13px", marginBottom: 14, fontSize: 12.5, color: C.text2 }}>
+          <CheckCircle2 size={16} color={C.green} style={{ flexShrink: 0 }} />
+          <span>
+            Certificado ativo{cfg.certificadoTitular ? ` · ${cfg.certificadoTitular}` : ""}
+            {cfg.certificadoValidade ? ` · válido até ${cfg.certificadoValidade.split("-").reverse().join("/")}` : ""}. Envie novamente só para substituir.
+          </span>
+        </div>
+      )}
+
+      <Field label="Arquivo do certificado (.pfx / .p12)">
+        <FileInput value={file} onChange={setFile} accept=".pfx,.p12,application/x-pkcs12" label="Anexar certificado A1" />
+      </Field>
+      <Field label="Senha do certificado">
+        <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} style={inp} placeholder="••••••••" autoComplete="off" />
+      </Field>
+
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: C.cream2, borderRadius: 10, padding: "9px 12px", fontSize: 11.5, color: C.text3, margin: "2px 0 14px" }}>
+        <ShieldCheck size={14} color={C.teal} style={{ flexShrink: 0, marginTop: 1 }} />
+        <span>O arquivo é enviado direto ao backend e guardado <b>criptografado no Vault</b> — não fica no navegador nem no banco comum. A senha trafega apenas nesta gravação.</span>
+      </div>
+
+      {msg && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, marginBottom: 12, color: msg.tipo === "ok" ? C.green : C.red }}>
+          {msg.tipo === "ok" ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />} {msg.texto}
+        </div>
+      )}
+
+      <Btn style={{ width: "100%", justifyContent: "center", opacity: busy ? 0.6 : 1 }} onClick={() => !busy && enviar()}>
+        <UploadCloud size={16} /> {busy ? "Enviando…" : jaTem ? "Substituir certificado" : "Enviar certificado"}
+      </Btn>
+    </Card>
   );
 }
 

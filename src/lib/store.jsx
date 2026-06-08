@@ -16,6 +16,7 @@
 import React, { createContext, useContext, useMemo, useState } from "react";
 import { UNIDADES, SALAS, PRODUTOS, RESERVAS_INIT, CLIENTES } from "./data.js";
 import { boletosApi } from "./boletosApi.js";
+import { nfseApi } from "./nfseApi.js";
 
 const StoreContext = createContext(null);
 
@@ -620,9 +621,27 @@ export function StoreProvider({ children }) {
         : [...cs, { unidadeId, ambiente: "nacional", emissaoAtiva: true, aliquotaISS: 0, ...patch }];
     });
   const notasFiscaisDe = (unidadeId) => notasFiscais.filter((n) => n.unidadeId === unidadeId);
-  // DEMO: gera número/ISS plausíveis. Em produção chama a Edge Function que
-  // assina e transmite ao ambiente (Nacional ou municipal/BHISS).
+
+  const _mapApiNota = (n) => ({
+    id: n.id, unidadeId: n.unidade_id, numero: n.numero,
+    tomador: n.tomador, tomadorDoc: n.tomador_documento, descricao: n.descricao,
+    valor: Number(n.valor), iss: Number(n.iss || 0), status: n.status,
+    emitidaEm: (n.created_at || "").slice(0, 10), pdfUrl: n.pdf_url || "", xmlUrl: n.xml_url || "",
+    boletoId: n.boleto_id || null,
+  });
+
+  // PRODUÇÃO: a Edge Function assina (xmldsig) e transmite ao SEFIN Nacional
+  // (ou BHISS). DEMO: gera número/ISS plausíveis em memória.
   const emitirNFSe = (unidadeId, dados) => {
+    if (nfseApi.configured) {
+      nfseApi.emitir({
+        unidade_id: unidadeId, tomador: dados.tomador, tomador_documento: dados.tomadorDoc,
+        tomador_email: dados.tomadorEmail, valor: dados.valor, descricao: dados.descricao,
+        boleto_id: dados.boletoId,
+      }).then(({ nota }) => setNotasFiscais((ns) => [_mapApiNota(nota), ...ns]))
+        .catch((e) => console.warn("emitir NFS-e:", e.message));
+      return;
+    }
     const cfg = configFiscal.find((c) => c.unidadeId === unidadeId);
     const iss = Math.round(((dados.valor || 0) * (cfg?.aliquotaISS || 0) / 100) * 100) / 100;
     const nota = {
@@ -636,7 +655,28 @@ export function StoreProvider({ children }) {
     setNotasFiscais((ns) => [nota, ...ns]);
     return nota;
   };
-  const cancelarNF = (id) => setNotasFiscais((ns) => ns.map((n) => (n.id === id ? { ...n, status: "cancelada" } : n)));
+  const cancelarNF = (id) => {
+    const aplicar = () => setNotasFiscais((ns) => ns.map((n) => (n.id === id ? { ...n, status: "cancelada" } : n)));
+    if (nfseApi.configured) { nfseApi.cancelar(id).then(aplicar).catch(() => {}); return; }
+    aplicar();
+  };
+
+  // Envia o certificado A1 (.pfx) ao backend (Vault) e marca a config.
+  // Retorna uma Promise para a UI mostrar sucesso/erro. Só em produção.
+  const salvarCertificadoFiscal = (unidadeId, { pfxBase64, senha }) => {
+    if (!nfseApi.configured) {
+      // DEMO: registra que "recebeu" o certificado, sem enviar a lugar nenhum.
+      updateConfigFiscal(unidadeId, { certificadoEnviadoEm: new Date().toISOString().slice(0, 10), certificadoTitular: "Certificado (demo)" });
+      return Promise.resolve({ ok: true, demo: true });
+    }
+    return nfseApi.salvarCertificado({ unidade_id: unidadeId, pfx_base64: pfxBase64, senha }).then((r) => {
+      updateConfigFiscal(unidadeId, {
+        certificadoRef: r.certificado_ref, certificadoTitular: r.titular,
+        certificadoValidade: r.validade, certificadoEnviadoEm: new Date().toISOString().slice(0, 10),
+      });
+      return r;
+    });
+  };
 
   // Boletos / contas bancárias --------------------------------------------
   // ⚠️ Demonstração: em produção, addBankAccount manda a credencial pro Vault
@@ -879,7 +919,7 @@ export function StoreProvider({ children }) {
       addContrato, renovarContrato, encerrarContrato,
       estoque, estoqueDe, estoqueBaixoDe, addItemEstoque, updateItemEstoque, removeItemEstoque, ajustarEstoque, comprarEstoque,
       patrimonio, patrimonioDe, addAtivo, updateAtivo, removeAtivo,
-      configFiscal, configFiscalDe, updateConfigFiscal, notasFiscais, notasFiscaisDe, emitirNFSe, cancelarNF,
+      configFiscal, configFiscalDe, updateConfigFiscal, notasFiscais, notasFiscaisDe, emitirNFSe, cancelarNF, salvarCertificadoFiscal,
     }),
     [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, configFiscal, notasFiscais, reservas, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail, clienteNotifPrefs]
   );

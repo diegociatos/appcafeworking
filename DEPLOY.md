@@ -46,6 +46,7 @@ supabase functions deploy webhook-boletos --no-verify-jwt
 supabase functions deploy enviar-email
 supabase functions deploy emitir-nfse
 supabase functions deploy cancelar-nfse
+supabase functions deploy salvar-certificado
 ```
 
 ## 4. Credenciais dos bancos no Vault
@@ -69,12 +70,26 @@ select vault.create_secret(
 Cada **unidade** tem 1 linha em `config_fiscal` (município, IM, regime, código
 de serviço, alíquota ISS, `emissor` = `nacional`|`bhiss`, `ambiente`,
 `emissao_ativa`) e referencia o certificado A1 (e-CNPJ) pelo **nome** em
-`certificado_ref`. Guarde o certificado no Vault (uma vez por unidade):
+`certificado_ref`.
+
+**Upload do certificado pelo app (recomendado):** na tela *Notas Fiscais →
+Configuração fiscal*, a unidade anexa o `.pfx` + senha. A Edge Function
+`salvar-certificado` (usa `node-forge`) abre o `.pfx`, converte para PEM
+(`cert_pem`/`key_pem` — necessários para o mTLS) e grava tudo no Vault via
+`upsert_fiscal_secret`, preenchendo `certificado_ref`/titular/validade. O
+arquivo **nunca** fica no navegador nem em coluna comum.
+
+Alternativa manual (SQL editor, service_role) — inclua o PEM para o mTLS:
 ```sql
 select vault.create_secret(
-  '{"cert_pfx_base64":"<base64 do .pfx>","cert_senha":"<senha>"}',
+  '{"cert_pfx_base64":"<base64 do .pfx>","cert_senha":"<senha>",
+    "cert_pem":"-----BEGIN CERTIFICATE-----\n...",
+    "key_pem":"-----BEGIN PRIVATE KEY-----\n..."}',
   'cert_nfse_luxemburgo', 'Certificado A1 e-CNPJ — Luxemburgo (NFS-e)'
 );
+-- converter .pfx → PEM (se for cadastrar manualmente):
+--   openssl pkcs12 -in cert.pfx -clcerts -nokeys -out cert.pem
+--   openssl pkcs12 -in cert.pfx -nocerts -nodes -out key.pem
 ```
 - `emissor: "nacional"` → NFS-e Nacional. A **emissão** é no módulo **SEFIN
   Nacional** (não no ADN, que é distribuição):
