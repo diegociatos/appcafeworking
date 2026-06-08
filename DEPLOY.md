@@ -14,6 +14,30 @@ sem mexer no código.
   gerados no portal de cada banco.
 - CLI: `supabase` e `psql` (ou o SQL editor do painel).
 
+### 0.1 Instalar e logar o Supabase CLI
+**Windows (PowerShell, via Scoop — recomendado):**
+```powershell
+# instala o Scoop (se não tiver)
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+iwr -useb get.scoop.sh | iex
+# instala o Supabase CLI
+scoop install supabase
+supabase --version
+```
+Alternativas: `npm i -g supabase` (ou usar `npx supabase ...` sem instalar),
+ou baixar o .exe em github.com/supabase/cli/releases.
+
+**Logar e vincular ao projeto:**
+```powershell
+supabase login                       # abre o navegador p/ autenticar
+supabase link --project-ref lmgbysfrbtgqzbtouzft
+```
+O `project-ref` é o da URL do projeto (`https://<ref>.supabase.co`).
+
+> Sem instalar a CLI dá para fazer **tudo pelo painel**: o SQL (passo 1) no
+> *SQL Editor*, os buckets (passo 2) em *Storage*, e as Edge Functions (passo 3)
+> em *Edge Functions → Deploy*. A CLI só agiliza.
+
 ---
 
 ## 1. Banco de dados (schema + dados)
@@ -135,16 +159,32 @@ insert into public.platform_admins (user_id) values ('<uuid-admin>');  -- admin 
 | Login / sessão / token (Auth) | ✅ | GoTrue REST; token vai às Edge Functions |
 | Perfil/unidade por `unidade_members` | ✅ | hidrata no login |
 | Tenant: contas, unidades, equipe, clientes (leitura) | ✅ | `fetchTenant` + seed/fallback |
+| **Clientes (criar/editar/excluir → DB)** | ✅ | write-through (RLS por unidade) |
+| **Config fiscal por unidade (→ DB)** | ✅ | write-through (`config_fiscal`) |
+| **Nota Fiscal (NFS-e): emitir/cancelar + certificado** | ✅ | SEFIN Nacional/BHISS; A1 no Vault; validar assinatura em prod. restrita |
 | Boletos: emitir/consultar/cancelar/webhook | ✅ | 4 bancos; Inter testado estruturalmente |
 | E-mail ao cliente (Resend) + opt-in | ✅ | Fase 1+2 |
 | RLS + Vault | ✅ | revisar policies antes do go-live |
-| **Escrita no banco** (criar/editar unidade, cliente, lançamento, etc.) | ⏳ | hoje as mutações são locais (sessão). Falta o *write-through* p/ o DB |
-| **Demais entidades** (salas, catálogo, financeiro, contratos) | ⏳ | tabelas a criar + hidratar |
+| **Demais entidades** (reservas, salas, catálogo, financeiro, contratos, estoque) | ⏳ | tabelas a criar + write-through (feito por área) |
 | Documentos do cliente (`docs`) | ⏳ | precisa de tabela própria + Storage |
 | Validação dos campos Itaú/BTG/Bradesco | ⏳ | conferir contra o sandbox de cada banco |
 
-**Resumo:** a malha de **autenticação, multi-tenancy (leitura) e cobrança por
-boleto** está completa e pronta para piloto. O maior trabalho restante para
-operação plena é o **write-through** (persistir as edições no banco) e a
-**hidratação das demais entidades** — feito por área, no mesmo padrão de
-`fetchTenant`/`hydrateFromDb`.
+**Resumo:** **autenticação, multi-tenancy, cobrança (boleto), nota fiscal,
+clientes e config fiscal** já persistem de verdade. Falta o *write-through* das
+demais entidades operacionais (reservas, financeiro, estoque, salas, catálogo) —
+feito por área, no mesmo padrão de `upsertConfigFiscal`/`insertCliente`.
+
+---
+
+## 7. Começar de verdade (sair do demo)
+1. **Variáveis na Netlify** (já feito no piloto): `VITE_SUPABASE_URL` e
+   `VITE_SUPABASE_ANON_KEY`. Com elas, o app **exige login** e usa o banco —
+   não há mais "modo demonstração".
+2. **Rode o banco**: cole `supabase/setup_completo.sql` no SQL Editor (idempotente).
+3. **Limpe os dados de exemplo**: rode `supabase/limpar_demo.sql` (remove os
+   clientes/equipe/Savassi fictícios; mantém Grupo Ciatos + Lux/Estoril + config).
+4. **Cadastre o real pela tela**: clientes já **persistem no banco**. Equipe de
+   login = criar no Auth + `unidade_members` (passo 6).
+5. **Ajuste a config fiscal** (CNPJ/IM/ISS com o contador) e suba o certificado A1.
+6. Demais áreas (reservas, financeiro, estoque…) ainda mostram dados de exemplo
+   até receberem o write-through — me diga a ordem de prioridade.

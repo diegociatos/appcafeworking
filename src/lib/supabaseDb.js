@@ -68,6 +68,50 @@ export async function upsertConfigFiscal(patch) {
   }
 }
 
+// Escrita genérica no PostgREST com o JWT do usuário (RLS aplica).
+async function writeJson(pathQuery, method, body) {
+  if (!URL || !ANON) return null;
+  const token = await getAccessToken();
+  if (!token) return null;
+  try {
+    const res = await fetch(`${URL}/rest/v1/${pathQuery}`, {
+      method,
+      headers: {
+        apikey: ANON, authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+        Prefer: "return=representation",
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) return null;
+    return (await res.json().catch(() => null));
+  } catch {
+    return null;
+  }
+}
+
+// Cliente: front (camelCase) → linha do banco (snake_case). cnpj→documento,
+// tel→telefone, unidade(nome) resolvido para unidade_id pelo chamador.
+function clienteToRow(c) {
+  const row = {
+    id: c.id, unidade_id: c.unidadeId, nome: c.nome, documento: c.cnpj,
+    plano: c.plano, fiscal: c.fiscal, status: c.status, desde: c.desde,
+    contato: c.contato, email: c.email, telefone: c.tel,
+  };
+  Object.keys(row).forEach((k) => row[k] === undefined && delete row[k]);
+  return row;
+}
+
+export async function insertCliente(c) {
+  return (await writeJson("clientes", "POST", clienteToRow(c)))?.[0] || null;
+}
+export async function patchCliente(id, patch) {
+  return (await writeJson(`clientes?id=eq.${encodeURIComponent(id)}`, "PATCH", clienteToRow({ ...patch, id: undefined })))?.[0] || null;
+}
+export async function deleteClienteDb(id) {
+  return await writeJson(`clientes?id=eq.${encodeURIComponent(id)}`, "DELETE");
+}
+
 // Mapeiam as colunas do banco (snake_case) para o formato do store (camelCase).
 const mapConta = (r) => ({ id: r.id, nome: r.nome, master: r.master, email: r.email, documento: r.documento, telefone: r.telefone, plano: r.plano, mensalidade: Number(r.mensalidade || 0), criadoEm: r.criado_em });
 const mapUnidade = (r) => ({ id: r.id, franqueadoId: r.franqueado_id, nome: r.nome, endereco: r.endereco, cor: r.cor, salas: r.salas, ocupacao: r.ocupacao, membros: r.membros, receita: Number(r.receita || 0) });

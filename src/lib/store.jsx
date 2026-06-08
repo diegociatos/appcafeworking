@@ -17,7 +17,7 @@ import React, { createContext, useContext, useMemo, useState } from "react";
 import { UNIDADES, SALAS, PRODUTOS, RESERVAS_INIT, CLIENTES } from "./data.js";
 import { boletosApi } from "./boletosApi.js";
 import { nfseApi } from "./nfseApi.js";
-import { upsertConfigFiscal } from "./supabaseDb.js";
+import { upsertConfigFiscal, insertCliente, patchCliente, deleteClienteDb } from "./supabaseDb.js";
 
 const StoreContext = createContext(null);
 
@@ -569,9 +569,26 @@ export function StoreProvider({ children }) {
 
   // Clientes (membros do coworking) ---------------------------------------
   const clientesDe = (unidadeNome) => clientes.filter((c) => !unidadeNome || c.unidade === unidadeNome);
-  const addCliente = (c) => setClientes((cs) => [{ id: "c" + Date.now(), status: "ativo", docs: [], ...c }, ...cs]);
-  const updateCliente = (id, patch) => setClientes((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } : c)));
-  const removeCliente = (id) => setClientes((cs) => cs.filter((c) => c.id !== id));
+  // Write-through: persiste no banco quando há backend/sessão (RLS por unidade).
+  const addCliente = (c) => {
+    const unidadeId = c.unidadeId || unidades.find((u) => u.nome === c.unidade)?.id || activeUnit;
+    const novo = {
+      id: "c" + Date.now(), status: "ativo", docs: [],
+      desde: c.desde || String(new Date().getFullYear()),
+      ...c, unidadeId,
+    };
+    setClientes((cs) => [novo, ...cs]);
+    if (nfseApi.configured) insertCliente(novo).catch(() => {});
+    return novo;
+  };
+  const updateCliente = (id, patch) => {
+    setClientes((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+    if (nfseApi.configured) patchCliente(id, patch).catch(() => {});
+  };
+  const removeCliente = (id) => {
+    setClientes((cs) => cs.filter((c) => c.id !== id));
+    if (nfseApi.configured) deleteClienteDb(id).catch(() => {});
+  };
 
   // Estoque -----------------------------------------------------------------
   const estoqueDe = (unidadeId) => estoque.filter((e) => e.unidadeId === unidadeId);
