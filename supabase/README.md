@@ -47,7 +47,21 @@ supabase functions deploy emitir-boleto
 supabase functions deploy consultar-boleto
 supabase functions deploy cancelar-boleto
 supabase functions deploy webhook-boletos --no-verify-jwt
+supabase functions deploy bank-oauth-callback --no-verify-jwt
 ```
+
+### Conexão por consentimento (OAuth) — botão "Conectar com o banco" (tipo Omie→BTG)
+Para abrir o consentimento real, o CafeWorking precisa ser **app parceiro** no
+banco (client_id/secret + a redirect_uri abaixo aprovados). Rode a migration
+`..._boletos_oauth.sql` (colunas de conexão + helper `upsert_bank_secret`) e:
+```bash
+supabase secrets set BTG_CLIENT_ID=... BTG_CLIENT_SECRET=...   # secrets do backend
+# front (Netlify): VITE_BTG_CLIENT_ID=...
+```
+Redirect URI a cadastrar no banco:
+`https://<proj>.supabase.co/functions/v1/bank-oauth-callback`
+A function troca o `code` por tokens, guarda no Vault, e o `BtgProvider` usa
+esse access_token (renovando pelo refresh_token).
 
 ## Credenciais no Vault
 

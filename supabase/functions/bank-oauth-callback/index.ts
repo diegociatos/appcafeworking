@@ -81,10 +81,11 @@ Deno.serve(async (req) => {
       oauth: true, access_token: tok.access_token, refresh_token: tok.refresh_token,
       expires_at: Math.floor(Date.now() / 1000) + (tok.expires_in ?? 3600), scope: tok.scope,
     });
-    await admin.rpc("upsert_bank_oauth", { p_ref: ref, p_secret: segredo }).catch(async () => {
-      // fallback: cria o segredo se a função não existir
-      await admin.rpc("vault_create_secret_if_absent", { p_name: ref, p_secret: segredo }).catch(() => {});
-    });
+    const { error: vaultErr } = await admin.rpc("upsert_bank_secret", { p_ref: ref, p_secret: segredo });
+    if (vaultErr) {
+      console.error("vault upsert falhou:", vaultErr.message);
+      return redirect(`${APP_URL}/boletos?conexao=erro&banco=${banco}`);
+    }
 
     // 4) marca a conta como conectada
     await admin.from("bank_accounts").update({

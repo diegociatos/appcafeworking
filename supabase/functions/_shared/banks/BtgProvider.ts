@@ -46,12 +46,35 @@ export class BtgProvider implements BankProvider {
   private async accessToken(): Promise<string> {
     if (this.token && this.token.expiresAt > Date.now() + 30_000) return this.token.accessToken;
     const basic = btoa(`${this.creds.client_id}:${this.creds.client_secret}`);
+
+    // (1) Modelo de CONSENTIMENTO (authorization_code): a conta foi conectada
+    // via bank-oauth-callback e os tokens estão no Vault. Usa o access_token e
+    // renova com o refresh_token quando expira.
+    const accessVault = this.creds.access_token as string | undefined;
+    const refresh = this.creds.refresh_token as string | undefined;
+    const expVault = this.creds.expires_at ? Number(this.creds.expires_at) * 1000 : 0;
+    if (accessVault && expVault > Date.now() + 30_000) {
+      this.token = { accessToken: accessVault, expiresAt: expVault };
+      return accessVault;
+    }
+    if (refresh) {
+      const r = await fetch(`${this.base}${TOKEN_PATH}`, {
+        method: "POST",
+        headers: { authorization: `Basic ${basic}`, "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refresh }),
+      });
+      if (r.ok) {
+        const j = await r.json();
+        this.token = { accessToken: j.access_token, expiresAt: Date.now() + (j.expires_in ?? 3600) * 1000 };
+        return j.access_token;
+      }
+      // refresh falhou → tenta client_credentials abaixo
+    }
+
+    // (2) Fallback: client_credentials (credencial direta, sem consentimento).
     const res = await fetch(`${this.base}${TOKEN_PATH}`, {
       method: "POST",
-      headers: {
-        authorization: `Basic ${basic}`,
-        "content-type": "application/x-www-form-urlencoded",
-      },
+      headers: { authorization: `Basic ${basic}`, "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ grant_type: "client_credentials", scope: "billing" }),
     });
     if (!res.ok) throw new BankError("Falha no OAuth do BTG", "btg", res.status, await safeText(res));
