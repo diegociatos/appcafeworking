@@ -76,12 +76,22 @@ select vault.create_secret(
   'cert_nfse_luxemburgo', 'Certificado A1 e-CNPJ — Luxemburgo (NFS-e)'
 );
 ```
-- `emissor: "nacional"` → NFS-e Nacional (ADN/SERPRO), cobre a maioria dos
-  municípios. `emissor: "bhiss"` → emissão municipal de BH (ABRASF 2.x).
-- Sem certificado no Vault, a emissão roda em **modo simulado** (homologação) —
-  útil para testar o fluxo antes de ter o A1.
-- A assinatura XML (xmldsig) com o A1 é o ponto de extensão `assinarDps()` /
-  `assinar()` nos providers (`_shared/nfse/*`).
+- `emissor: "nacional"` → NFS-e Nacional. A **emissão** é no módulo **SEFIN
+  Nacional** (não no ADN, que é distribuição):
+  - Produção restrita: `https://sefin.producaorestrita.nfse.gov.br/API/SefinNacional`
+  - Produção: `https://sefin.nfse.gov.br/SefinNacional`
+  - Rotas: `POST /nfse` (`{dpsXmlGZipB64}`), `GET /nfse/{chave}`,
+    `GET /danfse/{chave}`, `POST /nfse/{chave}/eventos` (cancelamento).
+- `emissor: "bhiss"` → emissão municipal de BH (ABRASF 2.x).
+- ⚠️ O SEFIN Nacional exige **mTLS** com o A1 (ICP-Brasil) **na conexão** —
+  sem o certificado de cliente o endpoint responde HTTP 496. No Deno isso usa
+  `Deno.createHttpClient({certChain, privateKey})` com o certificado em **PEM**
+  (`cert_pem`+`key_pem` no segredo do Vault). Se só tiver o `.pfx`, converta
+  para PEM antes.
+- Sem certificado no Vault, a emissão roda em **modo simulado** — útil para
+  testar o fluxo antes de ter o A1.
+- A assinatura XML (xmldsig enveloped) com o A1 é o ponto de extensão
+  `assinarDps()` / `assinar()` nos providers (`_shared/nfse/*`).
 
 ## 5. Front-end (Vite)
 Defina as variáveis e faça o build/deploy (Netlify):

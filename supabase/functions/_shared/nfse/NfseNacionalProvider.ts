@@ -1,19 +1,25 @@
 // ============================================================================
-// NfseNacionalProvider — emissor padrão NFS-e Nacional (Ambiente de Dados
-// Nacional / SERPRO). Referência para o app: a maioria dos municípios já
-// aderiu ao padrão nacional, então este provider cobre o caso geral.
+// NfseNacionalProvider — emissor padrão NFS-e Nacional (Sistema Nacional
+// NFS-e). A EMISSÃO pelo contribuinte é feita no módulo SEFIN NACIONAL
+// (sefin.nfse.gov.br/SefinNacional); o ADN (adn.nfse.gov.br) é o ambiente de
+// DISTRIBUIÇÃO (DFe por NSU / DANFSe). Bases oficiais (gov.br/nfse):
+//   - Produção restrita: https://sefin.producaorestrita.nfse.gov.br/API/SefinNacional
+//   - Produção:          https://sefin.nfse.gov.br/SefinNacional
 //
-// Fluxo NFS-e Nacional (resumo):
-//  1. Monta a DPS (Declaração de Prestação de Serviços) no layout nacional.
-//  2. Assina a DPS com o certificado A1 (e-CNPJ) — assinatura XML enveloped.
-//  3. POST /nfse (envia a DPS assinada em gzip+base64).
-//  4. Recebe a NFS-e autorizada (número + chave de acesso) ou erro.
-//  5. GET /danfse/{chave} para o PDF (DANFSe).
+// Requisitos do padrão nacional (confirmados na doc oficial):
+//   1. mTLS com certificado ICP-Brasil A1/A3 (e-CNPJ) NA CONEXÃO — o endpoint
+//      responde HTTP 496 (SSL cert required) sem o certificado de cliente.
+//   2. XML assinado (XMLDSIG enveloped) — assinatura da DPS com o A1.
+//   3. JSON nas rotas; o XML vai como GZip + Base64 no corpo.
 //
-// IMPORTANTE: a assinatura XML com o A1 exige uma etapa de assinatura
-// (xmldsig). Mantemos o ponto de extensão `assinarDps()` isolado para plugar
-// uma lib de assinatura ou um microserviço dedicado. Em ambiente de
-// homologação sem certificado, o provider responde em modo simulado.
+// Fluxo:
+//   POST /nfse                      body { dpsXmlGZipB64 }            → emite
+//   GET  /nfse/{chaveAcesso}                                         → consulta
+//   GET  /danfse/{chaveAcesso}                                       → PDF
+//   POST /nfse/{chaveAcesso}/eventos body { pedidoRegistroEventoXmlGZipB64 } → cancela
+//
+// A assinatura XML (xmldsig) fica no ponto de extensão `assinarDps()`. Sem
+// certificado no Vault, o provider responde em modo simulado (homologação).
 // ============================================================================
 
 import type { NfseProvider } from "./NfseProvider.ts";
@@ -28,8 +34,8 @@ import {
 } from "./types.ts";
 
 const BASE = {
-  homologacao: "https://adn-homologacao.nfse.gov.br/contribuintes",
-  producao: "https://adn.nfse.gov.br/contribuintes",
+  homologacao: "https://sefin.producaorestrita.nfse.gov.br/API/SefinNacional",
+  producao: "https://sefin.nfse.gov.br/SefinNacional",
 } as const;
 
 export class NfseNacionalProvider implements NfseProvider {
@@ -44,9 +50,28 @@ export class NfseNacionalProvider implements NfseProvider {
     return BASE[this.config.ambiente] ?? BASE.homologacao;
   }
 
-  /** Tem certificado A1 disponível para assinar? Sem ele, modo simulado. */
+  /** Tem certificado A1 disponível para assinar/conectar? Sem ele, modo simulado. */
   private get podeAssinar(): boolean {
     return Boolean(this.creds.cert_pfx_base64 || (this.creds.cert_pem && this.creds.key_pem));
+  }
+
+  /**
+   * fetch com mTLS: o ADN/SEFIN exige certificado de cliente na conexão.
+   * No Deno (Supabase Edge) isso é feito com Deno.createHttpClient({certChain,
+   * privateKey}). Requer o certificado em PEM (cert_pem + key_pem). Quando só
+   * houver o .pfx, é preciso convertê-lo para PEM antes (etapa de assinatura).
+   */
+  private async mtlsFetch(url: string, init?: RequestInit): Promise<Response> {
+    const anyDeno = (globalThis as any).Deno;
+    if (this.creds.cert_pem && this.creds.key_pem && anyDeno?.createHttpClient) {
+      const client = anyDeno.createHttpClient({
+        certChain: this.creds.cert_pem,
+        privateKey: this.creds.key_pem,
+      });
+      return await fetch(url, { ...init, client } as RequestInit);
+    }
+    // Sem PEM disponível: tenta sem mTLS (provavelmente 496) — o erro é tratado.
+    return await fetch(url, init);
   }
 
   async emitirNfse(input: EmitirNfseInput): Promise<EmitirNfseResult> {
@@ -69,7 +94,7 @@ export class NfseNacionalProvider implements NfseProvider {
     const dpsAssinada = await this.assinarDps(dpsXml);
     const payload = await gzipBase64(dpsAssinada);
 
-    const res = await fetch(`${this.base}/nfse`, {
+    const res = await this.mtlsFetch(`${this.base}/nfse`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ dpsXmlGZipB64: payload }),
@@ -101,7 +126,7 @@ export class NfseNacionalProvider implements NfseProvider {
     if (nfseId.startsWith("SIM-")) {
       return { nfseId, status: "autorizada", raw: { simulado: true } };
     }
-    const res = await fetch(`${this.base}/nfse/${nfseId}`, {
+    const res = await this.mtlsFetch(`${this.base}/nfse/${nfseId}`, {
       headers: { Accept: "application/json" },
     });
     const body = await safeJson(res);
@@ -126,10 +151,10 @@ export class NfseNacionalProvider implements NfseProvider {
       return { nfseId, status: "cancelada", raw: { simulado: true } };
     }
     const pedido = await this.assinarDps(this.montarCancelamento(nfseId, motivo));
-    const res = await fetch(`${this.base}/nfse/${nfseId}/cancelamento`, {
+    const res = await this.mtlsFetch(`${this.base}/nfse/${nfseId}/eventos`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pedidoXmlGZipB64: await gzipBase64(pedido) }),
+      body: JSON.stringify({ pedidoRegistroEventoXmlGZipB64: await gzipBase64(pedido) }),
     });
     const body = await safeJson(res);
     if (!res.ok) {
