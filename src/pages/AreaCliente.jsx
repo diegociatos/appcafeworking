@@ -10,12 +10,6 @@ import { CLIENTES, HORARIOS, DIAS } from "../lib/data.js";
 import { useStore } from "../lib/store.jsx";
 
 
-const FATURAS_CLIENTE = [
-  { id: "cf1", desc: "Mensalidade · Junho/2026", valor: 2890, venc: "05/06/2026", status: "aberto" },
-  { id: "cf2", desc: "Mensalidade · Maio/2026", valor: 2890, venc: "05/05/2026", status: "pago" },
-  { id: "cf3", desc: "Mensalidade · Abril/2026", valor: 2890, venc: "05/04/2026", status: "pago" },
-];
-
 // Documentos do imóvel liberados a clientes com endereço fiscal
 const DOCS_IMOVEL = [
   { nome: "IPTU 2025.pdf", tipo: "Imposto predial", data: "08/01/2025" },
@@ -37,7 +31,7 @@ function baixarArquivo(nome, conteudo) {
 }
 
 export default function AreaCliente({ section, go }) {
-  const { unidades, salasDe, produtosDe, addReserva, reservas, addPedido, pedidosDe, correspondenciasDe, conversasDe, enviarMensagemCliente, clienteNotifPrefs, updateClienteNotifPrefs, clientes } = useStore();
+  const { unidades, salasDe, produtosDe, addReserva, reservas, addPedido, pedidosDe, correspondenciasDe, conversasDe, enviarMensagemCliente, clienteNotifPrefs, updateClienteNotifPrefs, clientes, boletos, baixarBoleto } = useStore();
   const cli = clientes[0] || CLIENTES[0];
   const unidadeCli = unidades.find((u) => u.nome === cli.unidade) || unidades[0];
   const salas = salasDe(unidadeCli.id);
@@ -54,7 +48,14 @@ export default function AreaCliente({ section, go }) {
   const [reservaSala, setReservaSala] = useState(null);
   const [carrinho, setCarrinho] = useState([]);
   const [pedidoOk, setPedidoOk] = useState(false);
-  const [faturas, setFaturas] = useState(FATURAS_CLIENTE);
+  // Faturas do cliente = boletos reais emitidos para ele (nada fictício).
+  const faturas = (boletos || [])
+    .filter((b) => b.sacado === cli.nome && b.status !== "cancelado")
+    .map((b) => ({
+      id: b.id, desc: b.instrucoes || "Cobrança", valor: b.valor,
+      venc: (b.vencimento || "").split("-").reverse().join("/"),
+      status: b.status === "pago" ? "pago" : "aberto",
+    }));
   const [pagarFatura, setPagarFatura] = useState(null);
   const [docAberto, setDocAberto] = useState(null);
   const [msgInput, setMsgInput] = useState("");
@@ -89,7 +90,7 @@ export default function AreaCliente({ section, go }) {
     setCarrinho([]);
     setPedidoOk(true);
   };
-  const pagar = (id) => { setFaturas((fs) => fs.map((f) => (f.id === id ? { ...f, status: "pago" } : f))); setPagarFatura(null); };
+  const pagar = (id) => { baixarBoleto?.(id); setPagarFatura(null); };
   const nomeSala = (id) => salas.find((s) => s.id === id)?.nome || "Sala";
 
   const enviarMsg = () => {
