@@ -10,7 +10,7 @@ import { CLIENTES } from "./lib/data.js";
 import Logo from "./components/Logo.jsx";
 import Login from "./pages/Login.jsx";
 import { supabaseConfigured, getSession, onAuthChange, signOut } from "./lib/supabaseAuth.js";
-import { fetchMemberships, fetchTenant } from "./lib/supabaseDb.js";
+import { fetchMemberships, fetchTenant, fetchAppState, fetchBoletosDb, fetchNotasDb, fetchConfigFiscalDb } from "./lib/supabaseDb.js";
 
 import Dashboard from "./pages/Dashboard.jsx";
 import CRM from "./pages/CRM.jsx";
@@ -74,7 +74,7 @@ const PAGES = {
 };
 
 export default function App() {
-  const { viewAs, franqueadoAtivo, perfil, setPerfil, activeUnit, pedidosDe, unidades, correspondenciasDe, conversasDe, reservas, meuPerfil, contratosVencendoDe, notificacaoPrefs, aplicarSessaoUsuario, hydrateFromDb, estoqueBaixoDe } = useStore();
+  const { viewAs, franqueadoAtivo, perfil, setPerfil, activeUnit, pedidosDe, unidades, correspondenciasDe, conversasDe, reservas, meuPerfil, contratosVencendoDe, notificacaoPrefs, aplicarSessaoUsuario, hydrateFromDb, hydrateOperacional, estoqueBaixoDe } = useStore();
   const [page, setPage] = useState("dash");
   const [finTab, setFinTab] = useState("visao");
   const [mobOpen, setMobOpen] = useState(false);
@@ -97,6 +97,11 @@ export default function App() {
     let vivo = true;
     fetchTenant().then((dados) => { if (vivo) hydrateFromDb(dados); });
     fetchMemberships().then((membros) => { if (vivo) aplicarSessaoUsuario(membros); });
+    // Estado operacional (salas, reservas, financeiro, estoque…) + tabelas próprias.
+    Promise.all([fetchAppState(), fetchBoletosDb(), fetchNotasDb(), fetchConfigFiscalDb()])
+      .then(([appState, boletos, notas, config]) => {
+        if (vivo) hydrateOperacional({ appState, boletos, notas, config });
+      });
     return () => { vivo = false; };
   }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 

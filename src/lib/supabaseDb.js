@@ -69,7 +69,7 @@ export async function upsertConfigFiscal(patch) {
 }
 
 // Escrita genérica no PostgREST com o JWT do usuário (RLS aplica).
-async function writeJson(pathQuery, method, body) {
+async function writeJson(pathQuery, method, body, prefer = "return=representation") {
   if (!URL || !ANON) return null;
   const token = await getAccessToken();
   if (!token) return null;
@@ -79,7 +79,7 @@ async function writeJson(pathQuery, method, body) {
       headers: {
         apikey: ANON, authorization: `Bearer ${token}`,
         "content-type": "application/json",
-        Prefer: "return=representation",
+        Prefer: prefer,
       },
       body: body ? JSON.stringify(body) : undefined,
     });
@@ -88,6 +88,39 @@ async function writeJson(pathQuery, method, body) {
   } catch {
     return null;
   }
+}
+
+// ---- app_state: persistência genérica das entidades operacionais ----------
+/** Lê todo o estado operacional das unidades do usuário (RLS filtra). */
+export async function fetchAppState() {
+  return (await getJson("app_state?select=unidade_id,entity,item_id,doc")) || [];
+}
+/** Upsert de um item (doc JSON) por (unidade_id, entity, item_id). */
+export async function putAppState(entity, unidadeId, itemId, doc) {
+  return await writeJson(
+    "app_state?on_conflict=unidade_id,entity,item_id",
+    "POST",
+    { unidade_id: unidadeId, entity, item_id: String(itemId), doc },
+    "resolution=merge-duplicates,return=minimal",
+  );
+}
+/** Remove um item. */
+export async function delAppState(entity, unidadeId, itemId) {
+  return await writeJson(
+    `app_state?unidade_id=eq.${encodeURIComponent(unidadeId)}&entity=eq.${encodeURIComponent(entity)}&item_id=eq.${encodeURIComponent(itemId)}`,
+    "DELETE", null, "return=minimal",
+  );
+}
+
+// ---- Leituras das entidades com tabela própria ----------------------------
+export async function fetchConfigFiscalDb() {
+  return (await getJson("config_fiscal?select=*")) || [];
+}
+export async function fetchBoletosDb() {
+  return (await getJson("boletos?select=*")) || [];
+}
+export async function fetchNotasDb() {
+  return (await getJson("notas_fiscais?select=*&order=created_at.desc")) || [];
 }
 
 // Cliente: front (camelCase) → linha do banco (snake_case). cnpj→documento,

@@ -13,11 +13,19 @@
 //
 // 🔌 Quando ligarmos ao banco Neon, as funções add/update/remove daqui
 // passam a fazer as chamadas async — as telas não precisam mudar.
-import React, { createContext, useContext, useMemo, useState } from "react";
+import React, { createContext, useContext, useMemo, useState, useRef, useEffect } from "react";
 import { UNIDADES, SALAS, PRODUTOS, RESERVAS_INIT, CLIENTES } from "./data.js";
 import { boletosApi } from "./boletosApi.js";
 import { nfseApi } from "./nfseApi.js";
-import { upsertConfigFiscal, insertCliente, patchCliente, deleteClienteDb } from "./supabaseDb.js";
+import {
+  upsertConfigFiscal, insertCliente, patchCliente, deleteClienteDb,
+  putAppState, delAppState,
+} from "./supabaseDb.js";
+
+// Backend ligado? Em produção (Supabase configurado) o app não exibe os dados
+// de demonstração — parte vazio e hidrata do banco; mutações persistem.
+const REAL = nfseApi.configured;
+const seedOr = (seed) => (REAL ? [] : seed);
 
 const StoreContext = createContext(null);
 
@@ -278,24 +286,55 @@ export function StoreProvider({ children }) {
   const [unidades, setUnidades] = useState(seedUnidades);
   const [franqueados, setFranqueados] = useState(seedFranqueados);
   const [usuarios, setUsuarios] = useState(seedUsuarios);
-  const [clientes, setClientes] = useState(CLIENTES);
-  const [contas, setContas] = useState(seedContas);
-  const [lancamentos, setLancamentos] = useState(seedLancamentos);
-  const [catalogo, setCatalogo] = useState(seedCatalogo);
-  const [categorias, setCategorias] = useState(seedCategorias);
-  const [pedidos, setPedidos] = useState(seedPedidos);
-  const [correspondencias, setCorrespondencias] = useState(seedCorresp);
-  const [conversas, setConversas] = useState(seedConversas);
-  const [salas, setSalas] = useState(seedSalas);
+  const [clientes, setClientes] = useState(seedOr(CLIENTES));
+  const [contas, setContas] = useState(seedOr(seedContas));
+  const [lancamentos, setLancamentos] = useState(seedOr(seedLancamentos));
+  const [catalogo, setCatalogo] = useState(seedOr(seedCatalogo));
+  const [categorias, setCategorias] = useState(seedCategorias);   // chart of accounts (global) — mantém
+  const [pedidos, setPedidos] = useState(seedOr(seedPedidos));
+  const [correspondencias, setCorrespondencias] = useState(seedOr(seedCorresp));
+  const [conversas, setConversas] = useState(seedOr(seedConversas));
+  const [salas, setSalas] = useState(seedOr(seedSalas));
   const [produtos, setProdutos] = useState(seedProdutos);
-  const [bankAccounts, setBankAccounts] = useState(seedBankAccounts);
-  const [boletos, setBoletos] = useState(seedBoletos);
-  const [contratos, setContratos] = useState(seedContratos);
-  const [estoque, setEstoque] = useState(seedEstoque);
-  const [patrimonio, setPatrimonio] = useState(seedPatrimonio);
-  const [configFiscal, setConfigFiscal] = useState(seedConfigFiscal);
-  const [notasFiscais, setNotasFiscais] = useState(seedNotasFiscais);
-  const [reservas, setReservas] = useState(RESERVAS_INIT);
+  const [bankAccounts, setBankAccounts] = useState(seedOr(seedBankAccounts));
+  const [boletos, setBoletos] = useState(seedOr(seedBoletos));
+  const [contratos, setContratos] = useState(seedOr(seedContratos));
+  const [estoque, setEstoque] = useState(seedOr(seedEstoque));
+  const [patrimonio, setPatrimonio] = useState(seedOr(seedPatrimonio));
+  const [configFiscal, setConfigFiscal] = useState(seedOr(seedConfigFiscal));
+  const [notasFiscais, setNotasFiscais] = useState(seedOr(seedNotasFiscais));
+  const [reservas, setReservas] = useState(seedOr(RESERVAS_INIT));
+
+  // ---- Sync engine: persiste cada entidade operacional no banco -----------
+  // Observa cada lista; quando há backend/sessão, faz upsert do que mudou e
+  // apaga o que saiu (tabela genérica app_state). Demo (REAL=false) = no-op.
+  const syncedRef = useRef({}); // entity -> Map(id -> { unidadeId, json })
+  const useSync = (entity, list) => useEffect(() => {
+    if (!REAL) return;
+    const prev = syncedRef.current[entity] || new Map();
+    const cur = new Map();
+    for (const it of list) {
+      if (!it || it.id == null || !it.unidadeId) continue;
+      const json = JSON.stringify(it);
+      cur.set(it.id, { unidadeId: it.unidadeId, json });
+      const p = prev.get(it.id);
+      if (!p || p.json !== json) putAppState(entity, it.unidadeId, it.id, it).catch(() => {});
+    }
+    for (const [id, v] of prev) if (!cur.has(id)) delAppState(entity, v.unidadeId, id).catch(() => {});
+    syncedRef.current[entity] = cur;
+  }, [list]);
+  useSync("salas", salas);
+  useSync("reservas", reservas);
+  useSync("lancamentos", lancamentos);
+  useSync("contas", contas);
+  useSync("catalogo", catalogo);
+  useSync("estoque", estoque);
+  useSync("patrimonio", patrimonio);
+  useSync("contratos", contratos);
+  useSync("correspondencias", correspondencias);
+  useSync("pedidos", pedidos);
+  useSync("conversas", conversas);
+
   const [activeUnit, setActiveUnit] = useState(UNIDADES[0].id);
   const [viewAs, setViewAs] = useState(null); // id do franqueado, ou null = franqueador
   const [perfil, setPerfilState] = useState("franqueador"); // perfil de acesso previewado
@@ -905,6 +944,43 @@ export function StoreProvider({ children }) {
     if (dados.clientes?.length) setClientes(dados.clientes);
   };
 
+  // config_fiscal (linha do banco, snake) → formato do store (camel).
+  const _mapConfigFiscal = (r) => ({
+    unidadeId: r.unidade_id, municipio: r.municipio, uf: r.uf,
+    inscricaoMunicipal: r.inscricao_municipal, regime: r.regime,
+    codigoServico: r.codigo_servico, descricaoServico: r.descricao_servico,
+    aliquotaISS: Number(r.aliquota_iss || 0), emissor: r.emissor, ambiente: r.ambiente,
+    certificadoRef: r.certificado_ref, certificadoTitular: r.certificado_titular,
+    certificadoValidade: r.certificado_validade, certificadoEnviadoEm: r.certificado_enviado_em,
+    emissaoAtiva: r.emissao_ativa,
+  });
+
+  // Hidrata as entidades operacionais (app_state) + as de tabela própria
+  // (boletos, notas, config fiscal). Chamado pelo App.jsx após o login.
+  const hydrateOperacional = ({ appState, boletos: bs, notas, config } = {}) => {
+    if (appState?.length) {
+      const byEntity = {};
+      for (const r of appState) (byEntity[r.entity] ||= []).push(r.doc);
+      const apply = (entity, setter) => {
+        if (!byEntity[entity]) return;
+        setter(byEntity[entity]);
+        const m = new Map();
+        for (const it of byEntity[entity]) {
+          if (it?.id != null && it?.unidadeId) m.set(it.id, { unidadeId: it.unidadeId, json: JSON.stringify(it) });
+        }
+        syncedRef.current[entity] = m;
+      };
+      apply("salas", setSalas); apply("reservas", setReservas); apply("lancamentos", setLancamentos);
+      apply("contas", setContas); apply("catalogo", setCatalogo); apply("estoque", setEstoque);
+      apply("patrimonio", setPatrimonio); apply("contratos", setContratos);
+      apply("correspondencias", setCorrespondencias); apply("pedidos", setPedidos);
+      apply("conversas", setConversas);
+    }
+    if (bs?.length) setBoletos(bs.map((b) => _mapApiBoleto(b, b.unidade_id)));
+    if (notas?.length) setNotasFiscais(notas.map(_mapApiNota));
+    if (config?.length) setConfigFiscal(config.map(_mapConfigFiscal));
+  };
+
   // Unidades visíveis no modo atual
   const unidadesVisiveis = viewAs ? unidades.filter((u) => u.franqueadoId === viewAs) : unidades;
   const franqueadoAtivo = viewAs ? franqueados.find((f) => f.id === viewAs) : null;
@@ -916,7 +992,7 @@ export function StoreProvider({ children }) {
       unidadeAtiva: unidades.find((u) => u.id === activeUnit) || unidadesVisiveis[0] || unidades[0],
       unidadesVisiveis,
       viewAs, franqueadoAtivo, enterViewAs, exitViewAs,
-      perfil, setPerfil, verComoUsuario, aplicarSessaoUsuario, hydrateFromDb,
+      perfil, setPerfil, verComoUsuario, aplicarSessaoUsuario, hydrateFromDb, hydrateOperacional,
       meuPerfil, updateMeuPerfil,
       notificacaoPrefs, updateNotificacaoPrefs,
       notificacoesEmail, notificacoesEmailDe, enfileirarEmail,
