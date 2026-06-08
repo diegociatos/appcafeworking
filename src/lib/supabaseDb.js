@@ -32,6 +32,42 @@ export async function fetchMemberships() {
   return (await getJson("unidade_members?select=unidade_id,franqueado_id,role")) || [];
 }
 
+/**
+ * Grava (upsert) a configuração fiscal de uma unidade via PostgREST. O RLS
+ * (is_unidade_member) garante que só membros da unidade conseguem. Campos
+ * sensíveis (certificado) NÃO entram aqui — são gravados pela Edge Function.
+ * Retorna a linha salva, ou null se não houver backend/sessão.
+ */
+export async function upsertConfigFiscal(patch) {
+  if (!URL || !ANON) return null;
+  const token = await getAccessToken();
+  if (!token) return null;
+  const row = {
+    unidade_id: patch.unidadeId,
+    municipio: patch.municipio, uf: patch.uf,
+    inscricao_municipal: patch.inscricaoMunicipal, regime: patch.regime,
+    codigo_servico: patch.codigoServico, descricao_servico: patch.descricaoServico,
+    aliquota_iss: patch.aliquotaISS, emissor: patch.emissor, ambiente: patch.ambiente,
+    emissao_ativa: patch.emissaoAtiva,
+  };
+  Object.keys(row).forEach((k) => row[k] === undefined && delete row[k]);
+  try {
+    const res = await fetch(`${URL}/rest/v1/config_fiscal?on_conflict=unidade_id`, {
+      method: "POST",
+      headers: {
+        apikey: ANON, authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+        Prefer: "resolution=merge-duplicates,return=representation",
+      },
+      body: JSON.stringify(row),
+    });
+    if (!res.ok) return null;
+    return (await res.json())?.[0] || null;
+  } catch {
+    return null;
+  }
+}
+
 // Mapeiam as colunas do banco (snake_case) para o formato do store (camelCase).
 const mapConta = (r) => ({ id: r.id, nome: r.nome, master: r.master, email: r.email, documento: r.documento, telefone: r.telefone, plano: r.plano, mensalidade: Number(r.mensalidade || 0), criadoEm: r.criado_em });
 const mapUnidade = (r) => ({ id: r.id, franqueadoId: r.franqueado_id, nome: r.nome, endereco: r.endereco, cor: r.cor, salas: r.salas, ocupacao: r.ocupacao, membros: r.membros, receita: Number(r.receita || 0) });

@@ -17,6 +17,7 @@ import React, { createContext, useContext, useMemo, useState } from "react";
 import { UNIDADES, SALAS, PRODUTOS, RESERVAS_INIT, CLIENTES } from "./data.js";
 import { boletosApi } from "./boletosApi.js";
 import { nfseApi } from "./nfseApi.js";
+import { upsertConfigFiscal } from "./supabaseDb.js";
 
 const StoreContext = createContext(null);
 
@@ -263,8 +264,8 @@ const seedPatrimonio = [
 // pro Vault (certificadoRef) — nunca no app. Cada unidade tem a sua (município,
 // inscrição municipal, código de serviço, alíquota ISS, ambiente).
 const seedConfigFiscal = [
-  { unidadeId: "lux", municipio: "Belo Horizonte", uf: "MG", inscricaoMunicipal: "1.234.567/001-8", regime: "Simples Nacional", codigoServico: "08.01", descricaoServico: "Locação de espaço para coworking e salas", aliquotaISS: 2, ambiente: "nacional", certificadoRef: "cert_nfse_lux", emissaoAtiva: true },
-  { unidadeId: "est", municipio: "Belo Horizonte", uf: "MG", inscricaoMunicipal: "1.234.567/002-6", regime: "Simples Nacional", codigoServico: "08.01", descricaoServico: "Locação de espaço para coworking e salas", aliquotaISS: 2, ambiente: "nacional", certificadoRef: "cert_nfse_est", emissaoAtiva: true },
+  { unidadeId: "lux", municipio: "Belo Horizonte", uf: "MG", inscricaoMunicipal: "1.234.567/001-8", regime: "Simples Nacional", codigoServico: "08.01", descricaoServico: "Locação de espaço para coworking e salas", aliquotaISS: 2, emissor: "nacional", ambiente: "homologacao", certificadoRef: "cert_nfse_lux", emissaoAtiva: true },
+  { unidadeId: "est", municipio: "Belo Horizonte", uf: "MG", inscricaoMunicipal: "1.234.567/002-6", regime: "Simples Nacional", codigoServico: "08.01", descricaoServico: "Locação de espaço para coworking e salas", aliquotaISS: 2, emissor: "nacional", ambiente: "homologacao", certificadoRef: "cert_nfse_est", emissaoAtiva: true },
 ];
 
 let _nfSeq = 124;
@@ -618,8 +619,15 @@ export function StoreProvider({ children }) {
     setConfigFiscal((cs) => {
       const existe = cs.some((c) => c.unidadeId === unidadeId);
       return existe ? cs.map((c) => (c.unidadeId === unidadeId ? { ...c, ...patch } : c))
-        : [...cs, { unidadeId, ambiente: "nacional", emissaoAtiva: true, aliquotaISS: 0, ...patch }];
+        : [...cs, { unidadeId, emissor: "nacional", ambiente: "homologacao", emissaoAtiva: true, aliquotaISS: 0, ...patch }];
     });
+  // Salva a config fiscal: atualiza em memória e persiste no banco (PostgREST)
+  // quando há backend/sessão. Os campos do certificado são gravados à parte
+  // (Edge Function salvar-certificado), por isso não vão neste upsert.
+  const salvarConfigFiscal = (unidadeId, patch) => {
+    updateConfigFiscal(unidadeId, patch);
+    if (nfseApi.configured) upsertConfigFiscal({ unidadeId, ...patch }).catch(() => {});
+  };
   const notasFiscaisDe = (unidadeId) => notasFiscais.filter((n) => n.unidadeId === unidadeId);
 
   const _mapApiNota = (n) => ({
@@ -919,7 +927,7 @@ export function StoreProvider({ children }) {
       addContrato, renovarContrato, encerrarContrato,
       estoque, estoqueDe, estoqueBaixoDe, addItemEstoque, updateItemEstoque, removeItemEstoque, ajustarEstoque, comprarEstoque,
       patrimonio, patrimonioDe, addAtivo, updateAtivo, removeAtivo,
-      configFiscal, configFiscalDe, updateConfigFiscal, notasFiscais, notasFiscaisDe, emitirNFSe, cancelarNF, salvarCertificadoFiscal,
+      configFiscal, configFiscalDe, updateConfigFiscal, salvarConfigFiscal, notasFiscais, notasFiscaisDe, emitirNFSe, cancelarNF, salvarCertificadoFiscal,
     }),
     [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, configFiscal, notasFiscais, reservas, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail, clienteNotifPrefs]
   );

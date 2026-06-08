@@ -734,6 +734,16 @@ insert into public.clientes (id, unidade_id, nome, documento, plano, fiscal, sta
   ('c2', 'lux', 'Mendes Advocacia',       '31.882.004/0001-77', 'Endereço Fiscal', true, 'ativo', '2024', 'Carla Mendes',  'carla@mendesadv.com.br',  '(31) 98822-1140')
 on conflict (id) do nothing;
 
+-- Configuração fiscal por unidade (NFS-e) -----------------------------------
+-- Começa em 'homologacao' (produção restrita): emite só para teste até validar.
+-- Troque o CNPJ/IM/alíquota conforme o contador. O certificado A1 é enviado
+-- depois pela tela (Edge Function salvar-certificado → Vault).
+insert into public.config_fiscal
+  (unidade_id, municipio, uf, cnpj, inscricao_municipal, regime, codigo_servico, descricao_servico, aliquota_iss, emissor, ambiente, certificado_ref, emissao_ativa) values
+  ('lux', 'Belo Horizonte', 'MG', '00.000.000/0001-00', '1.234.567/001-8', 'Simples Nacional', '08.01', 'Locação de espaço para coworking e salas', 2, 'nacional', 'homologacao', 'cert_nfse_lux', true),
+  ('est', 'Belo Horizonte', 'MG', '00.000.000/0002-00', '1.234.567/002-6', 'Simples Nacional', '08.01', 'Locação de espaço para coworking e salas', 2, 'nacional', 'homologacao', 'cert_nfse_est', true)
+on conflict (unidade_id) do nothing;
+
 -- ============================================================================
 -- Vínculos de acesso (preencher COM os ids reais do Supabase Auth)
 -- Depois de criar os usuários no Auth, descubra o uuid e rode:

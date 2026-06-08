@@ -40,7 +40,7 @@ export default function NotaFiscal() {
         <ShieldCheck size={16} color={ativa ? C.green : C.amber} style={{ flexShrink: 0, marginTop: 1 }} />
         <span>
           {ativa
-            ? `Emissão fiscal ativa · ${cfg?.municipio || ""} · ambiente ${cfg?.ambiente === "nacional" ? "Nacional (NFS-e padrão)" : "municipal"}. O certificado digital fica no Vault, nunca no app.`
+            ? <>Emissão ativa · {cfg?.municipio || ""} · {cfg?.emissor === "bhiss" ? "BHISS (municipal)" : "NFS-e Nacional"} · <b style={{ color: cfg?.ambiente === "producao" ? C.amber : C.teal }}>{cfg?.ambiente === "producao" ? "Produção" : "Produção restrita (testes)"}</b>. O certificado fica no Vault, nunca no app.</>
             : "Configure os dados fiscais desta unidade (aba Configuração) e ative a emissão para emitir notas."}
         </span>
       </div>
@@ -101,7 +101,7 @@ export default function NotaFiscal() {
       {aba === "config" && (
         <div style={{ display: "grid", gap: 16 }}>
           <CertificadoCard cfg={cfg} unidadeNome={unidadeAtiva?.nome} onEnviar={(d) => store.salvarCertificadoFiscal(activeUnit, d)} />
-          <ConfigFiscal cfg={cfg} unidadeNome={unidadeAtiva?.nome} onSalvar={(d) => store.updateConfigFiscal(activeUnit, d)} />
+          <ConfigFiscal cfg={cfg} unidadeNome={unidadeAtiva?.nome} onSalvar={(d) => store.salvarConfigFiscal(activeUnit, d)} />
         </div>
       )}
 
@@ -237,8 +237,10 @@ function ConfigFiscal({ cfg, unidadeNome, onSalvar }) {
     municipio: cfg?.municipio || "", uf: cfg?.uf || "MG",
     inscricaoMunicipal: cfg?.inscricaoMunicipal || "", regime: cfg?.regime || "Simples Nacional",
     codigoServico: cfg?.codigoServico || "", descricaoServico: cfg?.descricaoServico || "",
-    aliquotaISS: cfg?.aliquotaISS ?? 0, ambiente: cfg?.ambiente || "nacional",
-    certificadoRef: cfg?.certificadoRef || "", emissaoAtiva: cfg?.emissaoAtiva ?? false,
+    aliquotaISS: cfg?.aliquotaISS ?? 0,
+    emissor: cfg?.emissor || "nacional",          // nacional (SEFIN) | bhiss (BH)
+    ambiente: cfg?.ambiente || "homologacao",      // homologacao (testes) | producao
+    emissaoAtiva: cfg?.emissaoAtiva ?? false,
   });
   const [salvo, setSalvo] = useState(false);
   const set = (k) => (e) => { setF({ ...f, [k]: e.target.value }); setSalvo(false); };
@@ -268,23 +270,33 @@ function ConfigFiscal({ cfg, unidadeNome, onSalvar }) {
         <Field label="Descrição do serviço"><input value={f.descricaoServico} onChange={set("descricaoServico")} style={inp} placeholder="Locação de espaço / coworking" /></Field>
         <Field label="ISS (%)"><input type="number" min="0" step="0.01" value={f.aliquotaISS} onChange={(e) => { setF({ ...f, aliquotaISS: +e.target.value }); setSalvo(false); }} style={inp} /></Field>
       </div>
-      <Field label="Ambiente de emissão">
+      <Field label="Emissor / padrão da nota">
         <div style={{ display: "flex", gap: 8 }}>
-          {[["nacional", "NFS-e Nacional (padrão)"], ["municipal", "Sistema municipal (ex.: BHISS)"]].map(([v, lb]) => (
-            <button key={v} type="button" onClick={() => { setF({ ...f, ambiente: v }); setSalvo(false); }}
-              style={{ flex: 1, padding: "10px 8px", borderRadius: 10, fontFamily: sans, fontSize: 12.5, fontWeight: 600, border: `1px solid ${f.ambiente === v ? C.teal : C.border}`, background: f.ambiente === v ? C.tealPale : C.white, color: f.ambiente === v ? C.teal : C.text2 }}>
+          {[["nacional", "NFS-e Nacional (padrão)"], ["bhiss", "Sistema municipal (BHISS · BH)"]].map(([v, lb]) => (
+            <button key={v} type="button" onClick={() => { setF({ ...f, emissor: v }); setSalvo(false); }}
+              style={{ flex: 1, padding: "10px 8px", borderRadius: 10, fontFamily: sans, fontSize: 12.5, fontWeight: 600, border: `1px solid ${f.emissor === v ? C.teal : C.border}`, background: f.emissor === v ? C.tealPale : C.white, color: f.emissor === v ? C.teal : C.text2 }}>
               {lb}
             </button>
           ))}
         </div>
       </Field>
-      <Field label="Certificado digital (referência no Vault)">
-        <input value={f.certificadoRef} onChange={set("certificadoRef")} style={inp} placeholder="ex: cert_nfse_luxemburgo" />
+
+      <Field label="Ambiente">
+        <div style={{ display: "flex", gap: 8 }}>
+          {[["homologacao", "Produção restrita (testes)", C.teal], ["producao", "Produção (vale fiscalmente)", C.amber]].map(([v, lb, cor]) => (
+            <button key={v} type="button" onClick={() => { setF({ ...f, ambiente: v }); setSalvo(false); }}
+              style={{ flex: 1, padding: "10px 8px", borderRadius: 10, fontFamily: sans, fontSize: 12.5, fontWeight: 600, border: `1px solid ${f.ambiente === v ? cor : C.border}`, background: f.ambiente === v ? `${cor}14` : C.white, color: f.ambiente === v ? cor : C.text2 }}>
+              {lb}
+            </button>
+          ))}
+        </div>
       </Field>
-      <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: C.tealPale, borderRadius: 10, padding: "9px 12px", fontSize: 11.5, color: C.teal, marginBottom: 12 }}>
-        <ShieldCheck size={14} style={{ flexShrink: 0, marginTop: 1 }} />
-        <span>O <b>certificado digital A1 (e-CNPJ)</b> não é enviado aqui — é cadastrado no Vault e referenciado por este nome. A assinatura da nota acontece no backend.</span>
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: f.ambiente === "producao" ? C.amberPale : C.tealPale, border: `1px solid ${(f.ambiente === "producao" ? C.amber : C.teal)}33`, borderRadius: 10, padding: "9px 12px", fontSize: 11.5, color: C.text2, marginBottom: 12 }}>
+        {f.ambiente === "producao"
+          ? <><AlertTriangle size={14} color={C.amber} style={{ flexShrink: 0, marginTop: 1 }} /><span><b>Atenção:</b> em Produção as notas têm <b>valor fiscal real</b> (vão para a Receita/prefeitura). Use <b>Produção restrita</b> para testar antes — as notas de teste não têm validade fiscal.</span></>
+          : <><ShieldCheck size={14} color={C.teal} style={{ flexShrink: 0, marginTop: 1 }} /><span>Em <b>Produção restrita</b> você testa a emissão ponta a ponta (assinatura, transmissão) sem gerar nota com valor fiscal. Comece sempre por aqui.</span></>}
       </div>
+
       <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, fontWeight: 600, color: C.text, margin: "2px 0 14px", cursor: "pointer" }}>
         <input type="checkbox" checked={f.emissaoAtiva} onChange={(e) => { setF({ ...f, emissaoAtiva: e.target.checked }); setSalvo(false); }} />
         Emissão fiscal ativa nesta unidade
