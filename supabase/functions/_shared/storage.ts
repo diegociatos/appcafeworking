@@ -33,3 +33,24 @@ export async function uploadBoletoPdf(
   const { data } = await admin.storage.from(BUCKET).createSignedUrl(path, 60 * 60 * 24 * 7);
   return data?.signedUrl ?? null;
 }
+
+const NFSE_BUCKET = "notas-fiscais";
+
+/** Sobe um arquivo de NFS-e (XML ou PDF) e devolve URL assinada (7 dias). */
+export async function uploadNfseFile(
+  admin: SupabaseClient,
+  path: string,            // ex.: "lux/<nfId>.xml"
+  content: string,
+  contentType = "application/xml",
+): Promise<string | null> {
+  const bytes = contentType === "application/pdf"
+    ? base64ToBytes(content)
+    : new TextEncoder().encode(content);
+  const { error } = await admin.storage.from(NFSE_BUCKET).upload(path, bytes, { contentType, upsert: true });
+  if (error) {
+    console.error("storage.upload (nfse) falhou:", error.message);
+    return null;
+  }
+  const { data } = await admin.storage.from(NFSE_BUCKET).createSignedUrl(path, 60 * 60 * 24 * 7);
+  return data?.signedUrl ?? null;
+}

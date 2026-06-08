@@ -26,9 +26,10 @@ Tabelas criadas: `contas, unidades, usuarios, clientes` (tenant), `bank_accounts
 boletos` (cobrança), `notificacoes, cliente_notif_prefs` (e-mail),
 `unidade_members, platform_admins` (acesso) — todas com **RLS**.
 
-## 2. Storage (PDF dos boletos)
+## 2. Storage (PDF dos boletos e XML/PDF das notas)
 ```bash
 supabase storage create boletos           # bucket privado
+supabase storage create notas-fiscais     # bucket privado (XML/DANFSe)
 ```
 
 ## 3. Edge Functions + secrets
@@ -43,6 +44,8 @@ supabase functions deploy consultar-boleto
 supabase functions deploy cancelar-boleto
 supabase functions deploy webhook-boletos --no-verify-jwt
 supabase functions deploy enviar-email
+supabase functions deploy emitir-nfse
+supabase functions deploy cancelar-nfse
 ```
 
 ## 4. Credenciais dos bancos no Vault
@@ -61,6 +64,24 @@ select vault.create_secret(
 - **BTG**: só `client_id`/`client_secret`.
 - Registre o webhook de baixa apontando para
   `https://<proj>.supabase.co/functions/v1/webhook-boletos?banco=<banco>`.
+
+## 4b. Nota Fiscal (NFS-e) — config por unidade + certificado A1 no Vault
+Cada **unidade** tem 1 linha em `config_fiscal` (município, IM, regime, código
+de serviço, alíquota ISS, `emissor` = `nacional`|`bhiss`, `ambiente`,
+`emissao_ativa`) e referencia o certificado A1 (e-CNPJ) pelo **nome** em
+`certificado_ref`. Guarde o certificado no Vault (uma vez por unidade):
+```sql
+select vault.create_secret(
+  '{"cert_pfx_base64":"<base64 do .pfx>","cert_senha":"<senha>"}',
+  'cert_nfse_luxemburgo', 'Certificado A1 e-CNPJ — Luxemburgo (NFS-e)'
+);
+```
+- `emissor: "nacional"` → NFS-e Nacional (ADN/SERPRO), cobre a maioria dos
+  municípios. `emissor: "bhiss"` → emissão municipal de BH (ABRASF 2.x).
+- Sem certificado no Vault, a emissão roda em **modo simulado** (homologação) —
+  útil para testar o fluxo antes de ter o A1.
+- A assinatura XML (xmldsig) com o A1 é o ponto de extensão `assinarDps()` /
+  `assinar()` nos providers (`_shared/nfse/*`).
 
 ## 5. Front-end (Vite)
 Defina as variáveis e faça o build/deploy (Netlify):
