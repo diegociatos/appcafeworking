@@ -8,6 +8,7 @@ import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/u
 import { C, serif, fmt, inp } from "../lib/theme.js";
 import { HORARIOS, DIAS } from "../lib/data.js";
 import { useStore } from "../lib/store.jsx";
+import { getUser } from "../lib/supabaseAuth.js";
 
 
 // Documentos do imóvel liberados a clientes com endereço fiscal
@@ -32,7 +33,9 @@ function baixarArquivo(nome, conteudo) {
 
 export default function AreaCliente({ section, go }) {
   const { unidades, salasDe, produtosDe, addReserva, reservas, addPedido, pedidosDe, correspondenciasDe, conversasDe, enviarMensagemCliente, clienteNotifPrefs, updateClienteNotifPrefs, clientes, boletos, baixarBoleto } = useStore();
-  const cli = clientes[0] || { nome: "Cliente", unidade: "", plano: "—", fiscal: false, docs: [] };
+  const meuEmail = (getUser()?.email || "").toLowerCase();
+  const cli = clientes.find((c) => meuEmail && (c.email || "").toLowerCase() === meuEmail)
+    || clientes[0] || { nome: "Cliente", unidade: "", plano: "—", fiscal: false, docs: [] };
   const unidadeCli = unidades.find((u) => u.nome === cli.unidade) || unidades[0] || { id: "", nome: "" };
   const salas = salasDe(unidadeCli.id);
   // Salas de locação mensal (contratadas) não entram nas opções de reserva do cliente

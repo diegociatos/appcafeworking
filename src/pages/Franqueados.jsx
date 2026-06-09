@@ -61,6 +61,7 @@ export default function Franqueados({ go }) {
         plano: dados.plano, mensalidade: dados.mensalidade,
         unidade_nome: dados.unidadeNome || dados.nomeFantasia || dados.nome,
         endereco: [dados.endereco, dados.cidade].filter(Boolean).join(" · "),
+        cidade: dados.cidade,
         senha: dados.senha || undefined,
       });
       adicionarCoworking({ conta: res.conta, unidade: res.unidade });

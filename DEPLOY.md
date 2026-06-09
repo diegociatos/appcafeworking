@@ -77,7 +77,17 @@ supabase functions deploy excluir-coworking
 supabase functions deploy asaas-cobranca
 supabase functions deploy asaas-webhook --no-verify-jwt
 supabase functions deploy salvar-integracao
+supabase functions deploy unidades-publicas --no-verify-jwt
+supabase functions deploy cadastrar-cliente --no-verify-jwt
 ```
+
+### Autocadastro do cliente do coworking
+Na tela de login há **"Cadastre-se"**: o cliente escolhe **cidade + unidade**,
+cria login e cai no Portal do Cliente. As funções `unidades-publicas` e
+`cadastrar-cliente` são **públicas** (--no-verify-jwt). Para a unidade aparecer
+no seletor, ela precisa de `cidade` preenchida (Lux/Estoril já vêm com "Belo
+Horizonte"; o onboarding de coworking captura a cidade). Privacidade: o cliente
+vê só o próprio cadastro; a equipe vê todos (RLS `is_unidade_staff`).
 
 > **Integrações cadastradas PELO APP:** a chave Asaas e as credenciais de banco
 > são digitadas na própria tela (Cobranças → Configurar; Boletos → Nova conta).

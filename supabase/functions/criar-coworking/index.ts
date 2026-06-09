@@ -79,7 +79,8 @@ Deno.serve(async (req) => {
 
     const { error: e2 } = await admin.from("unidades").insert({
       id: unidadeId, franqueado_id: contaId, nome: body.unidade_nome,
-      endereco: body.endereco || "", cor: "#6E4E3B", salas: 0, ocupacao: 0, membros: 0, receita: 0,
+      endereco: body.endereco || "", cidade: body.cidade || null,
+      cor: "#6E4E3B", salas: 0, ocupacao: 0, membros: 0, receita: 0,
     });
     if (e2) { await rollback(); return json({ error: `Falha ao criar a unidade: ${e2.message}` }, 500); }
 
