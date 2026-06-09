@@ -80,6 +80,7 @@ supabase functions deploy salvar-integracao
 supabase functions deploy unidades-publicas --no-verify-jwt
 supabase functions deploy cadastrar-cliente --no-verify-jwt
 supabase functions deploy criar-unidade
+supabase functions deploy excluir-unidade
 ```
 
 ### Autocadastro do cliente do coworking

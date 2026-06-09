@@ -28,4 +28,5 @@ export const onboardApi = {
   excluirCoworking: (conta_id) => callFn("excluir-coworking", { conta_id }),
   criarUsuarioEquipe: (dados) => callFn("criar-usuario-equipe", dados),
   criarUnidade: (dados) => callFn("criar-unidade", dados),
+  excluirUnidade: (unidade_id) => callFn("excluir-unidade", { unidade_id }),
 };

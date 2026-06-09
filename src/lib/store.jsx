@@ -232,14 +232,17 @@ const seedContratos = [
 
 // Estoque do coworking (cafeteria, insumos, suprimentos, limpeza).
 // Cada item tem estoqueMinimo; quando quantidade <= mínimo, dispara alerta.
+// tipo: "insumo" (cafeteria/produção) | "revenda" (vender ao cliente) | "uso" (consumo interno)
 const seedEstoque = [
-  { id: "es1", unidadeId: "lux", nome: "Espresso", categoria: "Cafeteria", quantidade: 120, estoqueMinimo: 40, unidade: "un", custo: 1.8 },
-  { id: "es2", unidadeId: "lux", nome: "Cappuccino", categoria: "Cafeteria", quantidade: 12, estoqueMinimo: 20, unidade: "un", custo: 3.5 },
-  { id: "es3", unidadeId: "lux", nome: "Pão de Queijo", categoria: "Cafeteria", quantidade: 64, estoqueMinimo: 24, unidade: "un", custo: 1.9 },
-  { id: "es4", unidadeId: "lux", nome: "Café em grãos", categoria: "Insumo", quantidade: 9, estoqueMinimo: 5, unidade: "kg", custo: 42 },
-  { id: "es5", unidadeId: "lux", nome: "Leite integral", categoria: "Insumo", quantidade: 6, estoqueMinimo: 12, unidade: "L", custo: 5.2 },
-  { id: "es6", unidadeId: "lux", nome: "Copos descartáveis", categoria: "Suprimento", quantidade: 380, estoqueMinimo: 200, unidade: "un", custo: 0.12 },
-  { id: "es7", unidadeId: "lux", nome: "Papel higiênico", categoria: "Limpeza", quantidade: 18, estoqueMinimo: 24, unidade: "rolo", custo: 1.4 },
+  { id: "es1", unidadeId: "lux", nome: "Espresso", tipo: "insumo", categoria: "Cafeteria", quantidade: 120, estoqueMinimo: 40, unidade: "un", custo: 1.8, precoVenda: 7 },
+  { id: "es2", unidadeId: "lux", nome: "Cappuccino", tipo: "insumo", categoria: "Cafeteria", quantidade: 12, estoqueMinimo: 20, unidade: "un", custo: 3.5, precoVenda: 12 },
+  { id: "es3", unidadeId: "lux", nome: "Pão de Queijo", tipo: "insumo", categoria: "Cafeteria", quantidade: 64, estoqueMinimo: 24, unidade: "un", custo: 1.9, precoVenda: 6.5 },
+  { id: "es4", unidadeId: "lux", nome: "Café em grãos", tipo: "insumo", categoria: "Insumo", quantidade: 9, estoqueMinimo: 5, unidade: "kg", custo: 42, precoVenda: 0 },
+  { id: "es5", unidadeId: "lux", nome: "Leite integral", tipo: "insumo", categoria: "Insumo", quantidade: 6, estoqueMinimo: 12, unidade: "L", custo: 5.2, precoVenda: 0 },
+  { id: "es6", unidadeId: "lux", nome: "Copos descartáveis", tipo: "uso", categoria: "Suprimento", quantidade: 380, estoqueMinimo: 200, unidade: "un", custo: 0.12, precoVenda: 0 },
+  { id: "es7", unidadeId: "lux", nome: "Papel higiênico", tipo: "uso", categoria: "Limpeza", quantidade: 18, estoqueMinimo: 24, unidade: "rolo", custo: 1.4, precoVenda: 0 },
+  { id: "es8", unidadeId: "lux", nome: "Caderno A5", tipo: "revenda", categoria: "Escritório", quantidade: 25, estoqueMinimo: 8, unidade: "un", custo: 7.5, precoVenda: 18 },
+  { id: "es9", unidadeId: "lux", nome: "Caneta esferográfica", tipo: "revenda", categoria: "Escritório", quantidade: 60, estoqueMinimo: 20, unidade: "un", custo: 1.2, precoVenda: 4 },
 ];
 
 // Patrimônio: ativos mobilizados (mobília/equipamentos) com contrato/NF.
@@ -664,6 +667,24 @@ export function StoreProvider({ children }) {
     }
   };
 
+  // Venda de item de REVENDA (loja) ao cliente: baixa o estoque e lança no
+  // financeiro a receita (preço de venda) + o custo direto (CMV).
+  const venderEstoque = (unidadeId, itemId, quantidade = 1, cliente = "") => {
+    const item = estoque.find((e) => e.id === itemId);
+    if (!item || quantidade <= 0) return;
+    const qtd = Math.min(quantidade, item.quantidade);
+    if (qtd <= 0) return;
+    ajustarEstoque(itemId, -qtd);
+    const receita = Math.round((item.precoVenda || 0) * qtd * 100) / 100;
+    const cmv = Math.round((item.custo || 0) * qtd * 100) / 100;
+    const caixa = contas.find((c) => c.unidadeId === unidadeId && /caixa/i.test(c.banco))?.id
+      || contas.find((c) => c.unidadeId === unidadeId)?.id || "";
+    const dataBR = `${String(new Date().getDate()).padStart(2, "0")}/${String(MES_ATUAL + 1).padStart(2, "0")}`;
+    if (receita > 0) addLancamento(unidadeId, { tipo: "entrada", descricao: `Venda · ${item.nome}${cliente ? ` · ${cliente}` : ""} (${qtd}x)`, categoria: "Receita Operacional Bruta", subcategoria: "Loja / Revenda", valor: receita, contaId: caixa, status: "pago", data: dataBR, origem: "loja" });
+    if (cmv > 0) addLancamento(unidadeId, { tipo: "saida", descricao: `Custo revenda · ${item.nome} (${qtd}x)`, categoria: "Custo Direto", subcategoria: "Material de consumo", valor: cmv, contaId: caixa, status: "pago", data: dataBR, origem: "loja-cmv" });
+    return { receita, cmv, qtd };
+  };
+
   // Patrimônio (ativos mobilizados) -----------------------------------------
   const patrimonioDe = (unidadeId) => patrimonio.filter((a) => a.unidadeId === unidadeId);
   const addAtivo = (unidadeId, a) =>
@@ -950,6 +971,8 @@ export function StoreProvider({ children }) {
     setFranqueados((fs) => fs.filter((f) => f.id !== contaId));
     setUnidades((us) => us.filter((u) => u.franqueadoId !== contaId));
   };
+  // Remove uma unidade do estado (após excluir no backend).
+  const removerUnidade = (unidadeId) => setUnidades((us) => us.filter((u) => u.id !== unidadeId));
 
   // Substitui o seed pelos dados reais do banco (quando logado/configurado).
   const hydrateFromDb = (dados) => {
@@ -1009,7 +1032,7 @@ export function StoreProvider({ children }) {
       unidades, franqueados, usuarios, salas, produtos, reservas,
       leads, setLeads, crmEtapas, setCrmEtapas, crmOrigens, setCrmOrigens,
       eventos, eventosDe, addEvento, updateEvento, removeEvento,
-      removerCoworking,
+      removerCoworking, removerUnidade,
       activeUnit, setActiveUnit,
       unidadeAtiva: unidades.find((u) => u.id === activeUnit) || unidadesVisiveis[0] || unidades[0],
       unidadesVisiveis,
@@ -1040,7 +1063,7 @@ export function StoreProvider({ children }) {
       boletosDe, emitirBoleto, cancelarBoleto, baixarBoleto, sincronizarBoleto,
       contratos, contratosDe, contratosVencendoDe, mesFimContrato,
       addContrato, renovarContrato, encerrarContrato,
-      estoque, estoqueDe, estoqueBaixoDe, addItemEstoque, updateItemEstoque, removeItemEstoque, ajustarEstoque, comprarEstoque,
+      estoque, estoqueDe, estoqueBaixoDe, addItemEstoque, updateItemEstoque, removeItemEstoque, ajustarEstoque, comprarEstoque, venderEstoque,
       patrimonio, patrimonioDe, addAtivo, updateAtivo, removeAtivo,
       configFiscal, configFiscalDe, updateConfigFiscal, salvarConfigFiscal, notasFiscais, notasFiscaisDe, emitirNFSe, cancelarNF, salvarCertificadoFiscal,
     }),

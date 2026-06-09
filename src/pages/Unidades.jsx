@@ -13,12 +13,30 @@ const PALETA = [C.cafe, C.teal, C.cafe2, C.teal3, C.green, C.amber, C.blue, C.re
 export default function Unidades({ go }) {
   const {
     unidades, unidadesVisiveis, viewAs, franqueados, unidadeAtiva,
-    activeUnit, setActiveUnit, salasDe, produtosDe, addUnidade,
+    activeUnit, setActiveUnit, salasDe, produtosDe, addUnidade, removerUnidade,
   } = useStore();
   const [novaUnidade, setNovaUnidade] = useState(false);
   const [gerenciando, setGerenciando] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const [erroNova, setErroNova] = useState(null);
+  const [excluir, setExcluir] = useState(null);
+  const [excluindo, setExcluindo] = useState(false);
+  const [erroExcluir, setErroExcluir] = useState(null);
+
+  const confirmarExclusao = async () => {
+    if (!excluir) return;
+    if (!onboardApi.configured) { removerUnidade(excluir.id); setExcluir(null); return; }
+    setErroExcluir(null); setExcluindo(true);
+    try {
+      await onboardApi.excluirUnidade(excluir.id);
+      removerUnidade(excluir.id);
+      setExcluir(null);
+    } catch (e) {
+      setErroExcluir(e.message || "Falha ao excluir.");
+    } finally {
+      setExcluindo(false);
+    }
+  };
 
   // Conta (franqueado) a que a nova unidade pertence: a do master logado, ou
   // a do contexto ativo.
@@ -36,7 +54,7 @@ export default function Unidades({ go }) {
     setSalvando(true);
     try {
       const res = await onboardApi.criarUnidade({
-        nome: dados.nome, endereco: dados.endereco, cidade: dados.cidade, cor: dados.cor, franqueado_id: franqueadoId,
+        nome: dados.nome, endereco: dados.endereco, cidade: dados.cidade, cnpj: dados.cnpj, cor: dados.cor, franqueado_id: franqueadoId,
       });
       const id = addUnidade(res.unidade);
       setNovaUnidade(false); setActiveUnit(id); setGerenciando(id);
@@ -117,14 +135,20 @@ export default function Unidades({ go }) {
                   <div style={{ fontSize: 12, color: C.text3 }}>{l}</div>
                 </div>
               ))}
-              <Btn
-                onClick={() => {
-                  setActiveUnit(u.id);
-                  setGerenciando(u.id);
-                }}
-              >
-                <Edit3 size={15} /> Gerenciar
-              </Btn>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn
+                  onClick={() => {
+                    setActiveUnit(u.id);
+                    setGerenciando(u.id);
+                  }}
+                >
+                  <Edit3 size={15} /> Gerenciar
+                </Btn>
+                <Btn variant="ghost" title="Excluir unidade" onClick={() => { setErroExcluir(null); setExcluir(u); }}
+                  style={{ color: C.red, borderColor: C.redPale, padding: "10px 12px" }}>
+                  <Trash2 size={15} />
+                </Btn>
+              </div>
             </div>
           </Card>
         );
@@ -133,6 +157,25 @@ export default function Unidades({ go }) {
       {novaUnidade && (
         <Modal title="Nova unidade" onClose={() => !salvando && setNovaUnidade(false)}>
           <UnidadeForm onSave={salvarUnidade} loading={salvando} erro={erroNova} />
+        </Modal>
+      )}
+
+      {excluir && (
+        <Modal title="Excluir unidade" onClose={() => !excluindo && setExcluir(null)}>
+          <div style={{ fontSize: 14, color: C.text2, marginBottom: 12 }}>
+            Excluir <b>{excluir.nome}</b> e tudo dela (salas, agenda, estoque, clientes, notas, cobranças)?
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: C.redPale, border: `1px solid ${C.red}33`, borderRadius: 10, padding: "9px 12px", fontSize: 12, color: C.text2, marginBottom: 14 }}>
+            <Trash2 size={14} color={C.red} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>Ação <b>irreversível</b>. A conta e as outras unidades permanecem. Para usar um novo CNPJ, depois crie a unidade de novo informando o CNPJ.</span>
+          </div>
+          {erroExcluir && <div style={{ fontSize: 12.5, color: C.red, marginBottom: 12 }}>{erroExcluir}</div>}
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn variant="ghost" onClick={() => !excluindo && setExcluir(null)} style={{ flex: 1, justifyContent: "center" }}>Cancelar</Btn>
+            <Btn onClick={confirmarExclusao} style={{ flex: 1, justifyContent: "center", background: C.red, opacity: excluindo ? 0.6 : 1 }}>
+              {excluindo ? "Excluindo…" : "Excluir definitivamente"}
+            </Btn>
+          </div>
         </Modal>
       )}
     </div>
@@ -643,7 +686,7 @@ function LinhaItem({ emoji, foto, titulo, sub, badge, onEdit, onDelete }) {
 }
 
 function UnidadeForm({ onSave, loading, erro }) {
-  const [f, setF] = useState({ nome: "", endereco: "", cidade: "", cor: PALETA[0] });
+  const [f, setF] = useState({ nome: "", endereco: "", cidade: "", cnpj: "", cor: PALETA[0] });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const valido = f.nome.trim() && f.cidade.trim();
 
@@ -663,6 +706,9 @@ function UnidadeForm({ onSave, loading, erro }) {
           <input value={f.cidade} onChange={set("cidade")} style={inp} placeholder="Ex: Belo Horizonte" />
         </Field>
       </div>
+      <Field label="CNPJ desta unidade (para emissão de nota)">
+        <input value={f.cnpj} onChange={set("cnpj")} style={inp} placeholder="00.000.000/0001-00 (opcional, define depois)" />
+      </Field>
       <Field label="Cor da unidade">
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {PALETA.map((c) => (

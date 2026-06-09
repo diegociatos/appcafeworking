@@ -54,6 +54,16 @@ Deno.serve(async (req) => {
     });
     if (e2) { /* unidade criada; vínculo pode já existir — não bloqueia */ console.warn(e2.message); }
 
+    // config fiscal inicial com o CNPJ da unidade (cada unidade emite com o seu)
+    if (body.cnpj) {
+      try {
+        await admin.from("config_fiscal").upsert({
+          unidade_id: unidadeId, cnpj: String(body.cnpj), municipio: body.cidade || "",
+          regime: "Simples Nacional", emissor: "nacional", ambiente: "homologacao", emissao_ativa: false,
+        }, { onConflict: "unidade_id" });
+      } catch (_) { /* opcional */ }
+    }
+
     return json({
       unidade: { id: unidadeId, franqueadoId: body.franqueado_id, nome: body.nome, endereco: body.endereco || "", cidade: body.cidade || "", cor: body.cor || "#6E4E3B", salas: 0, ocupacao: 0, membros: 0, receita: 0 },
     }, 201);
