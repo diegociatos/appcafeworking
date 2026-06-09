@@ -6,23 +6,20 @@
 
 -- Contas (coworkings assinantes) -------------------------------------------
 insert into public.contas (id, nome, master, email, documento, telefone, plano, mensalidade, criado_em) values
-  ('fr_ciatos', 'Grupo Ciatos',     'Diego Garcia',    'diego.garcia@grupociatos.com.br', '20.351.761/0001-03', '(31) 99712-9789', 'Pro',       597, '2024-01'),
-  ('fr1',       'Franquia Savassi',  'Rafael Nogueira', 'rafael@franquiasavassi.com.br',   '42.518.770/0001-22', '',                'Essencial', 297, '2026-05')
+  ('fr_ciatos', 'Grupo Ciatos',     'Diego Garcia',    'diego.garcia@grupociatos.com.br', '20.351.761/0001-03', '(31) 99712-9789', 'Pro',       597, '2024-01')
 on conflict (id) do nothing;
 
 -- Unidades ------------------------------------------------------------------
 insert into public.unidades (id, franqueado_id, nome, endereco, cor, salas, ocupacao, membros, receita) values
   ('lux',     'fr_ciatos', 'Luxemburgo', 'Rua Guaicuí, 715 · BH/MG',         '#6E4E3B', 14, 86, 92, 184500),
-  ('est',     'fr_ciatos', 'Estoril',    'Av. Raja Gabaglia, 2000 · BH/MG',  '#0E4B4F',  9, 71, 58, 121300),
-  ('savassi', 'fr1',       'Savassi',    'Rua Antônio de Albuquerque, 100 · BH/MG', '#B8862F', 0, 0, 0, 0)
+  ('est',     'fr_ciatos', 'Estoril',    'Av. Raja Gabaglia, 2000 · BH/MG',  '#0E4B4F',  9, 71, 58, 121300)
 on conflict (id) do nothing;
 
 -- Equipe (usuários) ---------------------------------------------------------
 insert into public.usuarios (id, unidade_id, nome, email, perfil, ativo) values
   ('us1', 'lux',     'Marina Souza',    'recepcao.lux@cafeworking.com.br', 'recepcao',   true),
   ('us2', 'lux',     'Paulo Andrade',   'financeiro@ciatos.com.br',        'financeiro', true),
-  ('us3', 'est',     'Júlia Reis',      'recepcao.est@cafeworking.com.br', 'recepcao',   true),
-  ('us4', 'savassi', 'Rafael Nogueira', 'rafael@franquiasavassi.com.br',   'master',     true)
+  ('us3', 'est',     'Júlia Reis',      'recepcao.est@cafeworking.com.br', 'recepcao',   true)
 on conflict (id) do nothing;
 
 -- Clientes ------------------------------------------------------------------

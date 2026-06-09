@@ -65,23 +65,11 @@ export const PERFIS = {
 // não tem unidades — ele vende o app e gerencia as contas.
 const seedUnidades = [
   ...UNIDADES.map((u) => ({ ...u, franqueadoId: "fr_ciatos" })),
-  {
-    id: "savassi",
-    nome: "Savassi",
-    endereco: "Rua Antônio de Albuquerque, 100 · BH/MG",
-    salas: 0,
-    ocupacao: 0,
-    membros: 0,
-    receita: 0,
-    cor: "#B8862F",
-    franqueadoId: "fr1",
-  },
 ];
 
 // Contas (cada coworking que assina o app), com usuário master e plano/assinatura
 const seedFranqueados = [
   { id: "fr_ciatos", nome: "Grupo Ciatos", master: "Diego Garcia", email: "diego.garcia@grupociatos.com.br", documento: "20.351.761/0001-03", telefone: "(31) 99712-9789", plano: "Pro", mensalidade: 597, criadoEm: "2024-01" },
-  { id: "fr1", nome: "Franquia Savassi", master: "Rafael Nogueira", email: "rafael@franquiasavassi.com.br", documento: "42.518.770/0001-22", telefone: "", plano: "Essencial", mensalidade: 297, criadoEm: "2026-05" },
 ];
 
 // Usuários da equipe (cada um com um perfil de acesso e uma unidade)
@@ -89,7 +77,6 @@ const seedUsuarios = [
   { id: "us1", nome: "Marina Souza", email: "recepcao.lux@cafeworking.com.br", perfil: "recepcao", unidadeId: "lux", ativo: true },
   { id: "us2", nome: "Paulo Andrade", email: "financeiro@ciatos.com.br", perfil: "financeiro", unidadeId: "lux", ativo: true },
   { id: "us3", nome: "Júlia Reis", email: "recepcao.est@cafeworking.com.br", perfil: "recepcao", unidadeId: "est", ativo: true },
-  { id: "us4", nome: "Rafael Nogueira", email: "rafael@franquiasavassi.com.br", perfil: "master", unidadeId: "savassi", ativo: true },
 ];
 
 // ===== Financeiro (ERP) — contas bancárias, lançamentos, catálogo =========
