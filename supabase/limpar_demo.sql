@@ -20,9 +20,12 @@ delete from public.usuarios where id in ('us1', 'us2', 'us3', 'us4');
 -- Auth + unidade_members (não nesta tabela, que é só o cadastro da equipe).
 
 -- 3) Conta/unidade de demonstração (Savassi) --------------------------------
---   Descomente se NÃO for usar a unidade Savassi de exemplo.
--- delete from public.unidades where id = 'savassi';
--- delete from public.contas   where id = 'fr1';
+--   Remove a unidade e a conta fictícias "Franquia Savassi". Mantém o
+--   Grupo Ciatos (real) + Luxemburgo + Estoril. Se você QUISER manter a
+--   Savassi de exemplo, comente as 3 linhas abaixo.
+delete from public.unidade_members where unidade_id = 'savassi';
+delete from public.unidades       where id = 'savassi';
+delete from public.contas         where id = 'fr1';
 
 -- 3b) Zera os números de vitrine das unidades (receita/membros/ocupação/salas).
 --   Eram valores de demonstração. O Dashboard calcula os reais a partir dos
