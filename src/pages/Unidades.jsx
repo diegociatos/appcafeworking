@@ -6,16 +6,46 @@ import {
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, ImageInput } from "../components/ui.jsx";
 import { C, serif, sans, fmt, fmtShort, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
+import { onboardApi } from "../lib/onboardApi.js";
 
 const PALETA = [C.cafe, C.teal, C.cafe2, C.teal3, C.green, C.amber, C.blue, C.red];
 
 export default function Unidades({ go }) {
   const {
-    unidades, unidadesVisiveis, viewAs, franqueados,
-    activeUnit, setActiveUnit, salasDe, produtosDe, addUnidade, addFranqueado,
+    unidades, unidadesVisiveis, viewAs, franqueados, unidadeAtiva,
+    activeUnit, setActiveUnit, salasDe, produtosDe, addUnidade,
   } = useStore();
   const [novaUnidade, setNovaUnidade] = useState(false);
   const [gerenciando, setGerenciando] = useState(null);
+  const [salvando, setSalvando] = useState(false);
+  const [erroNova, setErroNova] = useState(null);
+
+  // Conta (franqueado) a que a nova unidade pertence: a do master logado, ou
+  // a do contexto ativo.
+  const contaAlvo = viewAs || unidadeAtiva?.franqueadoId || franqueados[0]?.id || null;
+
+  const salvarUnidade = async (dados) => {
+    setErroNova(null);
+    const franqueadoId = dados.franqueadoId || contaAlvo;
+    if (!onboardApi.configured) {
+      const id = addUnidade({ ...dados, franqueadoId });
+      setNovaUnidade(false); setActiveUnit(id); setGerenciando(id);
+      return;
+    }
+    if (!franqueadoId) { setErroNova("Não foi possível identificar a conta. Entre numa conta primeiro."); return; }
+    setSalvando(true);
+    try {
+      const res = await onboardApi.criarUnidade({
+        nome: dados.nome, endereco: dados.endereco, cidade: dados.cidade, cor: dados.cor, franqueado_id: franqueadoId,
+      });
+      const id = addUnidade(res.unidade);
+      setNovaUnidade(false); setActiveUnit(id); setGerenciando(id);
+    } catch (e) {
+      setErroNova(e.message || "Falha ao criar a unidade.");
+    } finally {
+      setSalvando(false);
+    }
+  };
 
   const unidadeGerida = unidades.find((u) => u.id === gerenciando);
   if (unidadeGerida) {
@@ -25,18 +55,12 @@ export default function Unidades({ go }) {
   return (
     <div>
       <PageHead
-        title="Unidades"
-        sub={
-          viewAs
-            ? "Suas unidades. Selecione uma para gerenciar salas, cafeteria e agenda."
-            : "Próprias e franqueadas. Selecione uma para gerenciar, ou cadastre uma nova."
-        }
+        title="Minhas unidades"
+        sub="Cadastre e configure suas unidades (salas, cafeteria e agenda). Para trocar a unidade que você opera, use o seletor no topo."
         action={
-          !viewAs && (
-            <Btn onClick={() => setNovaUnidade(true)}>
-              <Plus size={16} /> Nova unidade
-            </Btn>
-          )
+          <Btn onClick={() => { setErroNova(null); setNovaUnidade(true); }}>
+            <Plus size={16} /> Nova unidade
+          </Btn>
         }
       />
       {unidadesVisiveis.map((u, i) => {
@@ -62,12 +86,7 @@ export default function Unidades({ go }) {
               <div style={{ flex: 1, minWidth: 200 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                   <span style={{ fontFamily: serif, fontSize: 24, color: C.text }}>{u.nome}</span>
-                  {u.tipo === "franqueada" ? (
-                    <Badge color="#B8862F">Franqueada</Badge>
-                  ) : (
-                    <Badge color={C.teal}>Própria</Badge>
-                  )}
-                  {u.id === activeUnit && <Badge color={C.green}>Ativa</Badge>}
+                  {u.id === activeUnit && <Badge color={C.green}>Operando agora</Badge>}
                 </div>
                 <div
                   style={{
@@ -112,17 +131,8 @@ export default function Unidades({ go }) {
       })}
 
       {novaUnidade && (
-        <Modal title="Nova unidade" onClose={() => setNovaUnidade(false)}>
-          <UnidadeForm
-            franqueados={franqueados}
-            addFranqueado={addFranqueado}
-            onSave={(dados) => {
-              const id = addUnidade(dados);
-              setNovaUnidade(false);
-              setActiveUnit(id);
-              setGerenciando(id);
-            }}
-          />
+        <Modal title="Nova unidade" onClose={() => !salvando && setNovaUnidade(false)}>
+          <UnidadeForm onSave={salvarUnidade} loading={salvando} erro={erroNova} />
         </Modal>
       )}
     </div>
@@ -632,142 +642,40 @@ function LinhaItem({ emoji, foto, titulo, sub, badge, onEdit, onDelete }) {
   );
 }
 
-function UnidadeForm({ franqueados, addFranqueado, onSave }) {
-  const [f, setF] = useState({
-    nome: "",
-    endereco: "",
-    cor: PALETA[0],
-    tipo: "propria",
-    franqueadoId: franqueados[0]?.id || "",
-  });
-  // se não há franqueados, criar nova unidade franqueada exige cadastrar um
-  const [novoFranq, setNovoFranq] = useState(franqueados.length === 0);
-  const [nf, setNf] = useState({ nome: "", documento: "", email: "" });
-  const setN = (k) => (e) => setNf({ ...nf, [k]: e.target.value });
-
-  const submit = () => {
-    if (!f.nome.trim()) return;
-    let franqueadoId = null;
-    if (f.tipo === "franqueada") {
-      if (novoFranq) {
-        if (!nf.nome.trim() || !nf.documento.trim() || !nf.email.trim()) return;
-        franqueadoId = addFranqueado(nf);
-      } else {
-        if (!f.franqueadoId) return;
-        franqueadoId = f.franqueadoId;
-      }
-    }
-    onSave({ nome: f.nome, endereco: f.endereco, cor: f.cor, tipo: f.tipo, franqueadoId });
-  };
+function UnidadeForm({ onSave, loading, erro }) {
+  const [f, setF] = useState({ nome: "", endereco: "", cidade: "", cor: PALETA[0] });
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const valido = f.nome.trim() && f.cidade.trim();
 
   return (
     <>
-      <Field label="Tipo de unidade">
-        <div style={{ display: "flex", gap: 8 }}>
-          {[
-            ["propria", "Própria", C.teal],
-            ["franqueada", "Franqueada", "#B8862F"],
-          ].map(([val, label, cor]) => (
-            <button
-              key={val}
-              type="button"
-              onClick={() => setF({ ...f, tipo: val })}
-              style={{
-                flex: 1,
-                padding: "10px 0",
-                borderRadius: 10,
-                fontFamily: sans,
-                fontSize: 14,
-                fontWeight: 600,
-                border: `1px solid ${f.tipo === val ? cor : C.border}`,
-                background: f.tipo === val ? cor : C.white,
-                color: f.tipo === val ? "#fff" : C.text2,
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </Field>
-
-      {f.tipo === "franqueada" && (
-        <div style={{ background: C.cream2, borderRadius: 12, padding: 14, marginBottom: 14 }}>
-          {!novoFranq && franqueados.length > 0 ? (
-            <>
-              <Field label="Franqueado (usuário master)" style={{ marginBottom: 8 }}>
-                <select value={f.franqueadoId} onChange={(e) => setF({ ...f, franqueadoId: e.target.value })} style={inp}>
-                  {franqueados.map((fr) => (
-                    <option key={fr.id} value={fr.id}>{fr.nome} — {fr.documento}</option>
-                  ))}
-                </select>
-              </Field>
-              <button
-                type="button"
-                onClick={() => setNovoFranq(true)}
-                style={{ fontSize: 13, color: C.cafe, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 5 }}
-              >
-                <Plus size={14} /> Cadastrar novo franqueado
-              </button>
-            </>
-          ) : (
-            <>
-              <div style={{ fontSize: 12, fontWeight: 700, color: C.text3, marginBottom: 10, letterSpacing: 0.3 }}>
-                NOVO FRANQUEADO (USUÁRIO MASTER)
-              </div>
-              <Field label="Nome" style={{ marginBottom: 8 }}>
-                <input value={nf.nome} onChange={setN("nome")} style={inp} placeholder="Responsável pela franquia" />
-              </Field>
-              <Field label="CPF ou CNPJ" style={{ marginBottom: 8 }}>
-                <input value={nf.documento} onChange={setN("documento")} style={inp} placeholder="000.000.000-00 ou 00.000.000/0000-00" />
-              </Field>
-              <Field label="E-mail de acesso" style={{ marginBottom: franqueados.length > 0 ? 8 : 0 }}>
-                <input type="email" value={nf.email} onChange={setN("email")} style={inp} placeholder="email@franquia.com.br" />
-              </Field>
-              {franqueados.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setNovoFranq(false)}
-                  style={{ fontSize: 13, color: C.text3, fontWeight: 600 }}
-                >
-                  ← Escolher um franqueado existente
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
+      <div style={{ fontSize: 12.5, color: C.text3, marginBottom: 14 }}>
+        A nova unidade entra na <b>sua conta</b> e você já pode operá-la. Cadastre as salas e a cafeteria dela em seguida.
+      </div>
       <Field label="Nome da unidade">
-        <input value={f.nome} onChange={(e) => setF({ ...f, nome: e.target.value })} style={inp} placeholder="Ex: Savassi" />
+        <input value={f.nome} onChange={set("nome")} style={inp} placeholder="Ex: Savassi" />
       </Field>
-      <Field label="Endereço">
-        <input value={f.endereco} onChange={(e) => setF({ ...f, endereco: e.target.value })} style={inp} placeholder="Rua, número · Cidade/UF" />
-      </Field>
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
+        <Field label="Endereço">
+          <input value={f.endereco} onChange={set("endereco")} style={inp} placeholder="Rua, número · bairro" />
+        </Field>
+        <Field label="Cidade">
+          <input value={f.cidade} onChange={set("cidade")} style={inp} placeholder="Ex: Belo Horizonte" />
+        </Field>
+      </div>
       <Field label="Cor da unidade">
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {PALETA.map((c) => (
-            <button
-              key={c}
-              type="button"
-              onClick={() => setF({ ...f, cor: c })}
-              aria-label={c}
-              style={{
-                width: 30,
-                height: 30,
-                borderRadius: 8,
-                background: c,
-                border: f.cor === c ? `3px solid ${C.text}` : `1px solid ${C.border}`,
-                display: "grid",
-                placeItems: "center",
-              }}
-            >
+            <button key={c} type="button" onClick={() => setF({ ...f, cor: c })} aria-label={c}
+              style={{ width: 30, height: 30, borderRadius: 8, background: c, border: f.cor === c ? `3px solid ${C.text}` : `1px solid ${C.border}`, display: "grid", placeItems: "center" }}>
               {f.cor === c && <Check size={14} color="#fff" />}
             </button>
           ))}
         </div>
       </Field>
-      <Btn style={{ width: "100%", justifyContent: "center", marginTop: 6 }} onClick={submit}>
-        Criar unidade
+      {erro && <div style={{ fontSize: 12.5, color: C.red, marginBottom: 10 }}>{erro}</div>}
+      <Btn style={{ width: "100%", justifyContent: "center", marginTop: 6, opacity: (valido && !loading) ? 1 : 0.6 }} onClick={() => valido && !loading && onSave(f)}>
+        {loading ? "Criando…" : "Criar unidade"}
       </Btn>
     </>
   );

@@ -79,6 +79,7 @@ supabase functions deploy asaas-webhook --no-verify-jwt
 supabase functions deploy salvar-integracao
 supabase functions deploy unidades-publicas --no-verify-jwt
 supabase functions deploy cadastrar-cliente --no-verify-jwt
+supabase functions deploy criar-unidade
 ```
 
 ### Autocadastro do cliente do coworking
