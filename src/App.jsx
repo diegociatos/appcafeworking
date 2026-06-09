@@ -77,6 +77,7 @@ export default function App() {
   const { viewAs, franqueadoAtivo, perfil, setPerfil, activeUnit, pedidosDe, unidades, correspondenciasDe, conversasDe, reservas, meuPerfil, contratosVencendoDe, notificacaoPrefs, aplicarSessaoUsuario, hydrateFromDb, hydrateOperacional, estoqueBaixoDe } = useStore();
   const [page, setPage] = useState("dash");
   const [finTab, setFinTab] = useState("visao");
+  const [finOpen, setFinOpen] = useState(true); // submenu Financeiro recolhível
   const [mobOpen, setMobOpen] = useState(false);
   const [session, setSession] = useState(getSession());
   useEffect(() => onAuthChange(setSession), []);
@@ -239,6 +240,11 @@ export default function App() {
             <button
               className={`cw-nav-btn ${pageId === n.id ? "active" : ""}`}
               onClick={() => {
+                if (n.id === "financeiro" && pageId === "financeiro") {
+                  setFinOpen((o) => !o); // já está no Financeiro → recolhe/expande
+                  return;
+                }
+                if (n.id === "financeiro") setFinOpen(true);
                 setPage(n.id);
                 setMobOpen(false);
               }}
@@ -261,7 +267,7 @@ export default function App() {
               <n.icon size={17} style={{ flexShrink: 0, opacity: pageId === n.id ? 1 : 0.8 }} />
               <span style={{ flex: 1 }}>{n.label}</span>
               {n.id === "financeiro" && (
-                <ChevronDown size={15} style={{ transform: pageId === "financeiro" ? "rotate(180deg)" : "none", transition: "transform .15s", opacity: 0.8 }} />
+                <ChevronDown size={15} style={{ transform: (pageId === "financeiro" && finOpen) ? "rotate(180deg)" : "none", transition: "transform .15s", opacity: 0.8 }} />
               )}
               {badge > 0 && (
                 <span
@@ -282,7 +288,7 @@ export default function App() {
                 </span>
               )}
             </button>
-            {n.id === "financeiro" && pageId === "financeiro" && (
+            {n.id === "financeiro" && pageId === "financeiro" && finOpen && (
               <div style={{ margin: "1px 0 4px 13px", paddingLeft: 8, borderLeft: `1px solid ${C.border2}` }}>
                 {FIN_GRUPOS.map((g) => (
                   <div key={g.titulo} style={{ marginBottom: 1 }}>

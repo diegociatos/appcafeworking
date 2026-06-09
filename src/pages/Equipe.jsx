@@ -25,8 +25,14 @@ export default function Equipe({ go }) {
   const [modal, setModal] = useState(null);
 
   const visiveis = new Set(unidadesVisiveis.map((u) => u.id));
-  const lista = usuarios.filter((u) => visiveis.has(u.unidadeId));
+  const unidadesDoUsuario = (u) => (u.unidadeIds?.length ? u.unidadeIds : (u.unidadeId ? [u.unidadeId] : []));
+  const lista = usuarios.filter((u) => unidadesDoUsuario(u).some((id) => visiveis.has(id)));
   const nomeUnidade = (id) => unidades.find((u) => u.id === id)?.nome || "—";
+  const rotuloUnidades = (u) => {
+    const ids = unidadesDoUsuario(u);
+    if (ids.length > 1 && ids.length >= unidadesVisiveis.length) return "Todas as unidades";
+    return ids.map(nomeUnidade).join(", ") || "—";
+  };
 
   return (
     <div>
@@ -80,7 +86,7 @@ export default function Equipe({ go }) {
                       <Mail size={13} /> {u.email}
                     </span>
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-                      <Building2 size={13} /> {nomeUnidade(u.unidadeId)}
+                      <Building2 size={13} /> {rotuloUnidades(u)}
                     </span>
                   </div>
                   <div style={{ fontSize: 11.5, color: C.text4, marginTop: 5 }}>
@@ -126,11 +132,18 @@ function UsuarioForm({ inicial, unidades, onSave }) {
     nome: inicial.nome || "",
     email: inicial.email || "",
     perfil: inicial.perfil || "recepcao",
-    unidadeId: inicial.unidadeId || unidades[0]?.id || "",
+    unidadeIds: inicial.unidadeIds?.length ? inicial.unidadeIds : (inicial.unidadeId ? [inicial.unidadeId] : (unidades[0] ? [unidades[0].id] : [])),
     ativo: inicial.ativo !== false,
   });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
-  const valido = f.nome.trim() && f.email.trim() && f.unidadeId;
+  const valido = f.nome.trim() && f.email.trim() && f.unidadeIds.length > 0;
+  const todas = unidades.length > 0 && unidades.every((u) => f.unidadeIds.includes(u.id));
+  const toggleUnidade = (id) =>
+    setF((s) => ({ ...s, unidadeIds: s.unidadeIds.includes(id) ? s.unidadeIds.filter((x) => x !== id) : [...s.unidadeIds, id] }));
+  const toggleTodas = () =>
+    setF((s) => ({ ...s, unidadeIds: todas ? [] : unidades.map((u) => u.id) }));
+
+  const salvar = () => valido && onSave({ ...f, unidadeId: f.unidadeIds[0] });
 
   return (
     <>
@@ -140,12 +153,30 @@ function UsuarioForm({ inicial, unidades, onSave }) {
       <Field label="E-mail de acesso">
         <input type="email" value={f.email} onChange={set("email")} style={inp} placeholder="email@cafeworking.com.br" />
       </Field>
-      <Field label="Unidade">
-        <select value={f.unidadeId} onChange={set("unidadeId")} style={inp}>
-          {unidades.map((u) => (
-            <option key={u.id} value={u.id}>{u.nome}</option>
-          ))}
-        </select>
+      <Field label="Unidades de acesso (uma, várias ou todas)">
+        <div style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: 6 }}>
+          {unidades.length > 1 && (
+            <button type="button" onClick={toggleTodas}
+              style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "9px 10px", borderRadius: 9, background: todas ? `${C.cafe}10` : "transparent", borderBottom: `1px solid ${C.border2}`, marginBottom: 2 }}>
+              <span style={{ width: 18, height: 18, borderRadius: 6, flexShrink: 0, border: `2px solid ${todas ? C.cafe : C.gray}`, background: todas ? C.cafe : "transparent", display: "grid", placeItems: "center" }}>
+                {todas && <Check size={11} color="#fff" />}
+              </span>
+              <span style={{ fontSize: 13.5, fontWeight: 600, color: C.text }}>Todas as unidades</span>
+            </button>
+          )}
+          {unidades.map((u) => {
+            const sel = f.unidadeIds.includes(u.id);
+            return (
+              <button key={u.id} type="button" onClick={() => toggleUnidade(u.id)}
+                style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "8px 10px", borderRadius: 9, background: sel ? `${C.teal}10` : "transparent" }}>
+                <span style={{ width: 18, height: 18, borderRadius: 6, flexShrink: 0, border: `2px solid ${sel ? C.teal : C.gray}`, background: sel ? C.teal : "transparent", display: "grid", placeItems: "center" }}>
+                  {sel && <Check size={11} color="#fff" />}
+                </span>
+                <span style={{ fontSize: 13.5, color: C.text2 }}>{u.nome}</span>
+              </button>
+            );
+          })}
+        </div>
       </Field>
 
       <Field label="Permissão (perfil de acesso)">
@@ -195,7 +226,7 @@ function UsuarioForm({ inicial, unidades, onSave }) {
         Usuário ativo (pode acessar o sistema)
       </label>
 
-      <Btn style={{ width: "100%", justifyContent: "center" }} onClick={() => valido && onSave(f)}>
+      <Btn style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.6 }} onClick={salvar}>
         {inicial.id ? "Salvar usuário" : "Cadastrar usuário"}
       </Btn>
     </>
