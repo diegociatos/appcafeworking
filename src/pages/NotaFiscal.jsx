@@ -234,14 +234,23 @@ function CertificadoCard({ cfg, unidadeNome, onEnviar }) {
 
 function ConfigFiscal({ cfg, unidadeNome, onSalvar }) {
   const [f, setF] = useState({
-    municipio: cfg?.municipio || "", uf: cfg?.uf || "MG",
+    municipio: cfg?.municipio || "", uf: cfg?.uf || "MG", cnpj: cfg?.cnpj || "",
     inscricaoMunicipal: cfg?.inscricaoMunicipal || "", regime: cfg?.regime || "Simples Nacional",
     codigoServico: cfg?.codigoServico || "", descricaoServico: cfg?.descricaoServico || "",
     aliquotaISS: cfg?.aliquotaISS ?? 0,
     emissor: cfg?.emissor || "nacional",          // nacional (SEFIN) | bhiss (BH)
     ambiente: cfg?.ambiente || "homologacao",      // homologacao (testes) | producao
     emissaoAtiva: cfg?.emissaoAtiva ?? false,
+    // NFS-e Nacional (códigos tributários — fixos por unidade)
+    codigoTributacaoNacional: cfg?.codigoTributacaoNacional || "",
+    codigoServicoMunicipal: cfg?.codigoServicoMunicipal || "",
+    nbs: cfg?.nbs || "",
+    regimeEspecial: cfg?.regimeEspecial || "nenhum",
+    aliquotaSimples: cfg?.aliquotaSimples ?? 0,
+    issRetido: cfg?.issRetido ?? false,
+    exigibilidadeIss: cfg?.exigibilidadeIss || "exigivel",
   });
+  const [maisFiscal, setMaisFiscal] = useState(false);
   const [salvo, setSalvo] = useState(false);
   const set = (k) => (e) => { setF({ ...f, [k]: e.target.value }); setSalvo(false); };
 
@@ -259,7 +268,8 @@ function ConfigFiscal({ cfg, unidadeNome, onSalvar }) {
         <Field label="Município"><input value={f.municipio} onChange={set("municipio")} style={inp} placeholder="Ex: Belo Horizonte" /></Field>
         <Field label="UF"><input value={f.uf} onChange={set("uf")} style={inp} maxLength={2} /></Field>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+        <Field label="CNPJ do prestador"><input value={f.cnpj} onChange={set("cnpj")} style={inp} placeholder="00.000.000/0001-00" /></Field>
         <Field label="Inscrição Municipal (CCM)"><input value={f.inscricaoMunicipal} onChange={set("inscricaoMunicipal")} style={inp} placeholder="0000000/000-0" /></Field>
         <Field label="Regime tributário">
           <select value={f.regime} onChange={set("regime")} style={inp}>{REGIMES.map((r) => <option key={r}>{r}</option>)}</select>
@@ -270,6 +280,41 @@ function ConfigFiscal({ cfg, unidadeNome, onSalvar }) {
         <Field label="Descrição do serviço"><input value={f.descricaoServico} onChange={set("descricaoServico")} style={inp} placeholder="Locação de espaço / coworking" /></Field>
         <Field label="ISS (%)"><input type="number" min="0" step="0.01" value={f.aliquotaISS} onChange={(e) => { setF({ ...f, aliquotaISS: +e.target.value }); setSalvo(false); }} style={inp} /></Field>
       </div>
+
+      {/* Códigos do NFS-e Nacional (fixos por unidade) */}
+      <button type="button" onClick={() => setMaisFiscal((v) => !v)}
+        style={{ background: "none", border: "none", color: C.cafe, fontSize: 12.5, fontWeight: 600, cursor: "pointer", padding: "2px 0 8px" }}>
+        {maisFiscal ? "− Ocultar" : "+ Mostrar"} códigos do NFS-e Nacional (com o contador)
+      </button>
+      {maisFiscal && (
+        <div style={{ background: C.cream2, borderRadius: 12, padding: 12, marginBottom: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Field label="Cód. Tributação Nacional"><input value={f.codigoTributacaoNacional} onChange={set("codigoTributacaoNacional")} style={inp} placeholder="ex: 080101" /></Field>
+            <Field label="Cód. Serviço Municipal"><input value={f.codigoServicoMunicipal} onChange={set("codigoServicoMunicipal")} style={inp} placeholder="código da prefeitura" /></Field>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+            <Field label="NBS"><input value={f.nbs} onChange={set("nbs")} style={inp} placeholder="ex: 1.0601" /></Field>
+            <Field label="Alíq. Simples (%)"><input type="number" min="0" step="0.0001" value={f.aliquotaSimples} onChange={(e) => { setF({ ...f, aliquotaSimples: +e.target.value }); setSalvo(false); }} style={inp} /></Field>
+            <Field label="Regime especial">
+              <select value={f.regimeEspecial} onChange={set("regimeEspecial")} style={inp}>
+                {["nenhum", "Microempresa Municipal", "Estimativa", "Sociedade de Profissionais", "Cooperativa", "MEI", "ME/EPP Simples Nacional"].map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </Field>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Field label="Exigibilidade do ISSQN">
+              <select value={f.exigibilidadeIss} onChange={set("exigibilidadeIss")} style={inp}>
+                {[["exigivel", "Exigível"], ["suspensa", "Suspensa"], ["imune", "Imune"], ["exportacao", "Exportação"], ["nao_incidencia", "Não incidência"]].map(([v, lb]) => <option key={v} value={v}>{lb}</option>)}
+              </select>
+            </Field>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.text2, alignSelf: "end", paddingBottom: 12, cursor: "pointer" }}>
+              <input type="checkbox" checked={f.issRetido} onChange={(e) => { setF({ ...f, issRetido: e.target.checked }); setSalvo(false); }} />
+              ISSQN retido pelo tomador
+            </label>
+          </div>
+          <div style={{ fontSize: 11, color: C.text4 }}>Preencha estes códigos com o seu contador — eles são fixos para o serviço de locação/coworking e entram em todas as notas.</div>
+        </div>
+      )}
       <Field label="Emissor / padrão da nota">
         <div style={{ display: "flex", gap: 8 }}>
           {[["nacional", "NFS-e Nacional (padrão)"], ["bhiss", "Sistema municipal (BHISS · BH)"]].map(([v, lb]) => (

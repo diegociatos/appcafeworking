@@ -50,11 +50,16 @@ export async function upsertConfigFiscal(patch) {
   if (!token) return null;
   const row = {
     unidade_id: patch.unidadeId,
-    municipio: patch.municipio, uf: patch.uf,
+    municipio: patch.municipio, uf: patch.uf, cnpj: patch.cnpj,
     inscricao_municipal: patch.inscricaoMunicipal, regime: patch.regime,
     codigo_servico: patch.codigoServico, descricao_servico: patch.descricaoServico,
     aliquota_iss: patch.aliquotaISS, emissor: patch.emissor, ambiente: patch.ambiente,
     emissao_ativa: patch.emissaoAtiva,
+    codigo_tributacao_nacional: patch.codigoTributacaoNacional,
+    codigo_servico_municipal: patch.codigoServicoMunicipal,
+    nbs: patch.nbs, regime_especial: patch.regimeEspecial,
+    aliquota_simples: patch.aliquotaSimples, iss_retido: patch.issRetido,
+    exigibilidade_iss: patch.exigibilidadeIss,
   };
   Object.keys(row).forEach((k) => row[k] === undefined && delete row[k]);
   try {

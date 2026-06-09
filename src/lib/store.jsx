@@ -962,13 +962,16 @@ export function StoreProvider({ children }) {
 
   // config_fiscal (linha do banco, snake) → formato do store (camel).
   const _mapConfigFiscal = (r) => ({
-    unidadeId: r.unidade_id, municipio: r.municipio, uf: r.uf,
+    unidadeId: r.unidade_id, municipio: r.municipio, uf: r.uf, cnpj: r.cnpj,
     inscricaoMunicipal: r.inscricao_municipal, regime: r.regime,
     codigoServico: r.codigo_servico, descricaoServico: r.descricao_servico,
     aliquotaISS: Number(r.aliquota_iss || 0), emissor: r.emissor, ambiente: r.ambiente,
     certificadoRef: r.certificado_ref, certificadoTitular: r.certificado_titular,
     certificadoValidade: r.certificado_validade, certificadoEnviadoEm: r.certificado_enviado_em,
     emissaoAtiva: r.emissao_ativa,
+    codigoTributacaoNacional: r.codigo_tributacao_nacional, codigoServicoMunicipal: r.codigo_servico_municipal,
+    nbs: r.nbs, regimeEspecial: r.regime_especial, aliquotaSimples: Number(r.aliquota_simples || 0),
+    issRetido: r.iss_retido, exigibilidadeIss: r.exigibilidade_iss,
   });
 
   // Hidrata as entidades operacionais (app_state) + as de tabela própria
