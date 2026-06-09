@@ -945,12 +945,20 @@ export function StoreProvider({ children }) {
   // PRODUÇÃO: aplica o perfil/unidade do usuário LOGADO a partir dos vínculos
   // (unidade_members). Sem vínculos = admin da plataforma (franqueador).
   const ROLE_PERFIL = { franqueador: "franqueador", admin: "franqueador", master: "master", financeiro: "financeiro", recepcao: "recepcao", cliente: "cliente" };
-  const aplicarSessaoUsuario = (membros) => {
+  const aplicarSessaoUsuario = (membros, isPlatformAdmin) => {
+    // Admin da plataforma (vendedor do app) → painel da plataforma + Contas.
+    if (isPlatformAdmin) { setPerfilState("franqueador"); setViewAs(null); return; }
     if (!membros || !membros.length) { setPerfilState("franqueador"); setViewAs(null); return; }
     const m = membros[0];
     setPerfilState(ROLE_PERFIL[m.role] || "master");
     setViewAs(m.franqueado_id || null);
     if (m.unidade_id) setActiveUnit(m.unidade_id);
+  };
+
+  // Após onboarding: adiciona a conta + unidade recém-criadas ao estado.
+  const adicionarCoworking = ({ conta, unidade }) => {
+    if (conta) setFranqueados((fs) => (fs.some((f) => f.id === conta.id) ? fs : [...fs, conta]));
+    if (unidade) setUnidades((us) => (us.some((u) => u.id === unidade.id) ? us : [...us, unidade]));
   };
 
   // Substitui o seed pelos dados reais do banco (quando logado/configurado).
@@ -1012,7 +1020,7 @@ export function StoreProvider({ children }) {
       unidadeAtiva: unidades.find((u) => u.id === activeUnit) || unidadesVisiveis[0] || unidades[0],
       unidadesVisiveis,
       viewAs, franqueadoAtivo, enterViewAs, exitViewAs,
-      perfil, setPerfil, verComoUsuario, aplicarSessaoUsuario, hydrateFromDb, hydrateOperacional,
+      perfil, setPerfil, verComoUsuario, aplicarSessaoUsuario, adicionarCoworking, hydrateFromDb, hydrateOperacional,
       meuPerfil, updateMeuPerfil,
       notificacaoPrefs, updateNotificacaoPrefs,
       notificacoesEmail, notificacoesEmailDe, enfileirarEmail,

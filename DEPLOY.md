@@ -71,6 +71,7 @@ supabase functions deploy enviar-email
 supabase functions deploy emitir-nfse
 supabase functions deploy cancelar-nfse
 supabase functions deploy salvar-certificado
+supabase functions deploy criar-coworking
 ```
 
 ## 4. Credenciais dos bancos no Vault
@@ -162,7 +163,8 @@ insert into public.platform_admins (user_id) values ('<uuid-admin>');  -- admin 
 | **Clientes (criar/editar/excluir → DB)** | ✅ | write-through (RLS por unidade) |
 | **Config fiscal por unidade (→ DB)** | ✅ | write-through (`config_fiscal`) |
 | **Nota Fiscal (NFS-e): emitir/cancelar + certificado** | ✅ | SEFIN Nacional/BHISS; A1 no Vault; validar assinatura em prod. restrita |
-| **Entidades operacionais** (salas, reservas, financeiro, estoque, catálogo, patrimônio, contratos, correspondências, pedidos) | ✅ | persistem via `app_state` (motor de sync); em produção partem vazias e hidratam do banco |
+| **Entidades operacionais** (salas, reservas, financeiro, estoque, catálogo, patrimônio, contratos, correspondências, pedidos, CRM, eventos) | ✅ | persistem via `app_state` (motor de sync); em produção partem vazias e hidratam do banco |
+| **Onboarding de coworkings** (criar conta + login master pela tela) | ✅ | Edge Function `criar-coworking` (só platform admin); devolve senha temporária |
 | Boletos: emitir/consultar/cancelar/webhook | ✅ | 4 bancos; Inter testado estruturalmente |
 | E-mail ao cliente (Resend) + opt-in | ✅ | Fase 1+2 |
 | RLS + Vault | ✅ | revisar policies antes do go-live |
@@ -184,8 +186,20 @@ contas bancárias reais (Vault) e a tabela de documentos do cliente.
 2. **Rode o banco**: cole `supabase/setup_completo.sql` no SQL Editor (idempotente).
 3. **Limpe os dados de exemplo**: rode `supabase/limpar_demo.sql` (remove os
    clientes/equipe/Savassi fictícios; mantém Grupo Ciatos + Lux/Estoril + config).
-4. **Cadastre o real pela tela**: clientes já **persistem no banco**. Equipe de
-   login = criar no Auth + `unidade_members` (passo 6).
+4. **Cadastre o real pela tela**: clientes, salas, reservas, financeiro, CRM,
+   eventos — tudo já **persiste no banco**.
 5. **Ajuste a config fiscal** (CNPJ/IM/ISS com o contador) e suba o certificado A1.
-6. Demais áreas (reservas, financeiro, estoque…) ainda mostram dados de exemplo
-   até receberem o write-through — me diga a ordem de prioridade.
+
+## 8. Onboarding de coworkings (vender o app)
+Para o **dono da plataforma** cadastrar coworkings clientes (cada um com login):
+1. Torne o dono **admin da plataforma** (uma vez, com o uuid do Auth dele):
+   ```sql
+   insert into public.platform_admins (user_id) values ('<uuid-do-dono>')
+     on conflict do nothing;
+   ```
+   No login, ele passa a ver o **painel da plataforma + Contas** (perfil franqueador).
+2. Em **Contas → Nova conta**, ele preenche empresa, master, e-mail e a 1ª unidade.
+   A Edge Function `criar-coworking` cria o **login do master** + conta + unidade
+   e devolve a **senha temporária** para repassar ao cliente.
+3. O coworking entra com esse login e cadastra as próprias salas/clientes.
+   O dono pode usar **"Entrar"** numa conta para dar suporte.

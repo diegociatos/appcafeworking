@@ -10,7 +10,7 @@ import { CLIENTES } from "./lib/data.js";
 import Logo from "./components/Logo.jsx";
 import Login from "./pages/Login.jsx";
 import { supabaseConfigured, getSession, onAuthChange, signOut } from "./lib/supabaseAuth.js";
-import { fetchMemberships, fetchTenant, fetchAppState, fetchBoletosDb, fetchNotasDb, fetchConfigFiscalDb } from "./lib/supabaseDb.js";
+import { fetchMemberships, fetchTenant, fetchAppState, fetchBoletosDb, fetchNotasDb, fetchConfigFiscalDb, fetchIsPlatformAdmin } from "./lib/supabaseDb.js";
 
 import Dashboard from "./pages/Dashboard.jsx";
 import CRM from "./pages/CRM.jsx";
@@ -96,7 +96,8 @@ export default function App() {
     if (!(supabaseConfigured && session)) return;
     let vivo = true;
     fetchTenant().then((dados) => { if (vivo) hydrateFromDb(dados); });
-    fetchMemberships().then((membros) => { if (vivo) aplicarSessaoUsuario(membros); });
+    Promise.all([fetchMemberships(), fetchIsPlatformAdmin()])
+      .then(([membros, isAdmin]) => { if (vivo) aplicarSessaoUsuario(membros, isAdmin); });
     // Estado operacional (salas, reservas, financeiro, estoque…) + tabelas próprias.
     Promise.all([fetchAppState(), fetchBoletosDb(), fetchNotasDb(), fetchConfigFiscalDb()])
       .then(([appState, boletos, notas, config]) => {

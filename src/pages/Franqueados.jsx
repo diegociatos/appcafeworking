@@ -11,6 +11,7 @@ const PLANOS = [
   { nome: "Enterprise", valor: 1290 },
 ];
 import { useStore } from "../lib/store.jsx";
+import { onboardApi } from "../lib/onboardApi.js";
 
 function baixarContrato(c) {
   if (!c?.url) return;
@@ -23,8 +24,36 @@ function baixarContrato(c) {
 const tipoDoc = (doc) => ((doc || "").replace(/\D/g, "").length > 11 ? "CNPJ" : "CPF");
 
 export default function Franqueados({ go }) {
-  const { franqueados, unidades, unidadesDe, addFranqueado, updateFranqueado, removeFranqueado, enterViewAs } = useStore();
+  const { franqueados, unidades, unidadesDe, addFranqueado, updateFranqueado, removeFranqueado, enterViewAs, adicionarCoworking } = useStore();
   const [modal, setModal] = useState(null);
+  const [salvando, setSalvando] = useState(false);
+  const [erroForm, setErroForm] = useState(null);
+  const [credenciais, setCredenciais] = useState(null);
+
+  const salvarConta = async (dados) => {
+    if (modal?.id) { updateFranqueado(modal.id, dados); setModal(null); return; }
+    if (!onboardApi.configured) { addFranqueado(dados); setModal(null); return; }
+    setErroForm(null); setSalvando(true);
+    try {
+      const res = await onboardApi.criarCoworking({
+        empresa: dados.nome,
+        master_nome: dados.master || dados.responsavel || dados.nome,
+        master_email: dados.email,
+        documento: dados.documento, telefone: dados.telefone,
+        plano: dados.plano, mensalidade: dados.mensalidade,
+        unidade_nome: dados.unidadeNome || dados.nomeFantasia || dados.nome,
+        endereco: [dados.endereco, dados.cidade].filter(Boolean).join(" · "),
+        senha: dados.senha || undefined,
+      });
+      adicionarCoworking({ conta: res.conta, unidade: res.unidade });
+      setModal(null);
+      setCredenciais({ ...res.login, empresa: dados.nome });
+    } catch (e) {
+      setErroForm(e.message || "Falha ao cadastrar.");
+    } finally {
+      setSalvando(false);
+    }
+  };
 
   const mrr = franqueados.reduce((s, f) => s + (f.mensalidade || 0), 0);
 
@@ -181,22 +210,56 @@ export default function Franqueados({ go }) {
       )}
 
       {modal && (
-        <Modal title={modal.id ? "Editar conta" : "Nova conta"} onClose={() => setModal(null)}>
-          <FranqueadoForm
-            inicial={modal}
-            onSave={(dados) => {
-              if (modal.id) updateFranqueado(modal.id, dados);
-              else addFranqueado(dados);
-              setModal(null);
-            }}
-          />
+        <Modal title={modal.id ? "Editar conta" : "Novo coworking (cria o login do master)"} onClose={() => setModal(null)}>
+          <FranqueadoForm inicial={modal} onSave={salvarConta} loading={salvando} erro={erroForm} novo={!modal.id && onboardApi.configured} />
+        </Modal>
+      )}
+
+      {credenciais && (
+        <Modal title="Coworking criado ✓" onClose={() => setCredenciais(null)}>
+          <CredenciaisCriadas dados={credenciais} onClose={() => setCredenciais(null)} />
         </Modal>
       )}
     </div>
   );
 }
 
-function FranqueadoForm({ inicial, onSave }) {
+function CredenciaisCriadas({ dados, onClose }) {
+  const [copiado, setCopiado] = useState(false);
+  const texto = `CafeWorking — acesso\nEmpresa: ${dados.empresa}\nLogin: ${dados.email}\nSenha temporária: ${dados.senha_temporaria}\nEntre em: ${location.origin}`;
+  const copiar = () => { navigator.clipboard?.writeText(texto); setCopiado(true); setTimeout(() => setCopiado(false), 2000); };
+  return (
+    <>
+      <div style={{ fontSize: 13.5, color: C.text2, marginBottom: 14 }}>
+        O login do master foi criado. <b>Repasse estes dados ao cliente</b> — a senha é temporária e ele pode trocá-la depois.
+      </div>
+      <div style={{ background: C.cream2, borderRadius: 12, padding: 16, marginBottom: 14, fontSize: 14 }}>
+        <Linha rotulo="Empresa" valor={dados.empresa} />
+        <Linha rotulo="Login (e-mail)" valor={dados.email} />
+        <Linha rotulo="Senha temporária" valor={dados.senha_temporaria} mono />
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: C.amberPale, border: `1px solid ${C.amber}33`, borderRadius: 10, padding: "9px 12px", fontSize: 11.5, color: C.text2, marginBottom: 14 }}>
+        <Mail size={14} color={C.amber} style={{ flexShrink: 0, marginTop: 1 }} />
+        <span>Guarde agora — a senha não será mostrada de novo. Oriente o cliente a trocá-la no primeiro acesso.</span>
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <Btn variant="ghost" onClick={copiar} style={{ flex: 1, justifyContent: "center" }}>{copiado ? "Copiado!" : "Copiar dados"}</Btn>
+        <Btn onClick={onClose} style={{ flex: 1, justifyContent: "center" }}>Concluir</Btn>
+      </div>
+    </>
+  );
+}
+
+function Linha({ rotulo, valor, mono }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "5px 0" }}>
+      <span style={{ color: C.text3 }}>{rotulo}</span>
+      <b style={{ fontFamily: mono ? "monospace" : serif, color: C.text, wordBreak: "break-all" }}>{valor}</b>
+    </div>
+  );
+}
+
+function FranqueadoForm({ inicial, onSave, loading, erro, novo }) {
   const [f, setF] = useState({
     tipoPessoa: inicial.tipoPessoa || "PJ",
     nome: inicial.nome || "",
@@ -208,6 +271,8 @@ function FranqueadoForm({ inicial, onSave }) {
     telefone: inicial.telefone || "",
     endereco: inicial.endereco || "",
     cidade: inicial.cidade || "",
+    unidadeNome: inicial.unidadeNome || "",
+    senha: "",
     plano: inicial.plano || "Essencial",
     mensalidade: inicial.mensalidade ?? 297,
     contrato: inicial.contrato || null,
@@ -215,7 +280,7 @@ function FranqueadoForm({ inicial, onSave }) {
   });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const pj = f.tipoPessoa === "PJ";
-  const valido = f.nome.trim() && f.documento.trim() && f.email.trim();
+  const valido = f.nome.trim() && f.documento.trim() && f.email.trim() && (!novo || f.unidadeNome.trim());
 
   return (
     <>
@@ -254,9 +319,19 @@ function FranqueadoForm({ inicial, onSave }) {
       <Field label="Usuário master (nome do dono/responsável pela conta)">
         <input value={f.master} onChange={set("master")} style={inp} placeholder="Ex: Diego Garcia" />
       </Field>
-      <Field label="E-mail de acesso do master">
-        <input type="email" value={f.email} onChange={set("email")} style={inp} placeholder="diego.garcia@empresa.com.br" />
+      <Field label="E-mail de acesso do master (será o login)">
+        <input type="email" value={f.email} onChange={set("email")} style={inp} placeholder="dono@coworking.com.br" />
       </Field>
+      {novo && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Field label="Nome da primeira unidade">
+            <input value={f.unidadeNome} onChange={set("unidadeNome")} style={inp} placeholder="Ex: Unidade Centro" />
+          </Field>
+          <Field label="Senha inicial (opcional)">
+            <input value={f.senha} onChange={set("senha")} style={inp} placeholder="deixe vazio = gerar automática" />
+          </Field>
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
         <Field label="Endereço">
           <input value={f.endereco} onChange={set("endereco")} style={inp} placeholder="Rua, número, bairro" />
@@ -283,11 +358,16 @@ function FranqueadoForm({ inicial, onSave }) {
         <textarea value={f.observacoes} onChange={set("observacoes")} rows={2} style={{ ...inp, resize: "vertical", minHeight: 52 }} placeholder="Condições da assinatura, descontos, etc." />
       </Field>
 
-      <div style={{ fontSize: 11, color: C.text4, marginBottom: 14 }}>
-        O e-mail será o login do <b>master</b> quando ativarmos o acesso. Use "Entrar" para operar/dar suporte à conta.
+      <div style={{ fontSize: 11, color: C.text4, marginBottom: 12 }}>
+        {novo
+          ? <>Isto <b>cria o login do master</b> e a primeira unidade. Você recebe a senha temporária para repassar ao cliente. Depois, use "Entrar" para dar suporte.</>
+          : <>O e-mail é o login do <b>master</b>. Use "Entrar" para operar/dar suporte à conta.</>}
       </div>
-      <Btn style={{ width: "100%", justifyContent: "center" }} onClick={() => valido && onSave(f)}>
-        {inicial.id ? "Salvar conta" : "Cadastrar conta"}
+      {erro && (
+        <div style={{ fontSize: 12.5, color: C.red, marginBottom: 12 }}>{erro}</div>
+      )}
+      <Btn style={{ width: "100%", justifyContent: "center", opacity: (!valido || loading) ? 0.6 : 1 }} onClick={() => valido && !loading && onSave(f)}>
+        {loading ? "Criando…" : inicial.id ? "Salvar conta" : novo ? "Criar coworking + login" : "Cadastrar conta"}
       </Btn>
     </>
   );

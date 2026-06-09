@@ -32,6 +32,12 @@ export async function fetchMemberships() {
   return (await getJson("unidade_members?select=unidade_id,franqueado_id,role")) || [];
 }
 
+/** O usuário logado é admin da plataforma? (RLS retorna só a própria linha.) */
+export async function fetchIsPlatformAdmin() {
+  const rows = await getJson("platform_admins?select=user_id");
+  return Array.isArray(rows) && rows.length > 0;
+}
+
 /**
  * Grava (upsert) a configuração fiscal de uma unidade via PostgREST. O RLS
  * (is_unidade_member) garante que só membros da unidade conseguem. Campos
