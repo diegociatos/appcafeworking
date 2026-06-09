@@ -3,6 +3,7 @@ import { Plus, Eye, Edit3, Trash2, ShieldCheck, Mail, Building2, Check } from "l
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
 import { C, serif, inp } from "../lib/theme.js";
 import { useStore, PERFIS } from "../lib/store.jsx";
+import { onboardApi } from "../lib/onboardApi.js";
 
 // Perfis que podem ser atribuídos a um usuário da equipe
 const ROLES = ["master", "recepcao", "financeiro"];
@@ -20,9 +21,30 @@ const modulosDoPerfil = (perfil) =>
 export default function Equipe({ go }) {
   const {
     usuarios, unidades, unidadesVisiveis, perfil,
-    addUsuario, updateUsuario, removeUsuario, verComoUsuario,
+    addUsuario, adicionarUsuario, updateUsuario, removeUsuario, verComoUsuario,
   } = useStore();
   const [modal, setModal] = useState(null);
+  const [salvando, setSalvando] = useState(false);
+  const [erroForm, setErroForm] = useState(null);
+  const [cred, setCred] = useState(null);
+
+  const salvarUsuario = async (dados) => {
+    if (modal?.id) { updateUsuario(modal.id, dados); setModal(null); return; }
+    if (!onboardApi.configured) { addUsuario(dados); setModal(null); return; }
+    setErroForm(null); setSalvando(true);
+    try {
+      const res = await onboardApi.criarUsuarioEquipe({
+        nome: dados.nome, email: dados.email, perfil: dados.perfil, unidade_ids: dados.unidadeIds,
+      });
+      adicionarUsuario(res.usuario);
+      setModal(null);
+      setCred({ ...res.login, nome: dados.nome });
+    } catch (e) {
+      setErroForm(e.message || "Falha ao criar o usuário.");
+    } finally {
+      setSalvando(false);
+    }
+  };
 
   const visiveis = new Set(unidadesVisiveis.map((u) => u.id));
   const unidadesDoUsuario = (u) => (u.unidadeIds?.length ? u.unidadeIds : (u.unidadeId ? [u.unidadeId] : []));
@@ -111,23 +133,30 @@ export default function Equipe({ go }) {
       )}
 
       {modal && (
-        <Modal title={modal.id ? "Editar usuário" : "Novo usuário"} onClose={() => setModal(null)}>
-          <UsuarioForm
-            inicial={modal}
-            unidades={unidadesVisiveis}
-            onSave={(dados) => {
-              if (modal.id) updateUsuario(modal.id, dados);
-              else addUsuario(dados);
-              setModal(null);
-            }}
-          />
+        <Modal title={modal.id ? "Editar usuário" : "Novo usuário (cria o login)"} onClose={() => setModal(null)}>
+          <UsuarioForm inicial={modal} unidades={unidadesVisiveis} onSave={salvarUsuario} loading={salvando} erro={erroForm} novo={!modal.id && onboardApi.configured} />
+        </Modal>
+      )}
+
+      {cred && (
+        <Modal title="Usuário criado ✓" onClose={() => setCred(null)}>
+          <div style={{ fontSize: 13.5, color: C.text2, marginBottom: 14 }}>
+            O login de <b>{cred.nome}</b> foi criado. Repasse estes dados — a senha é temporária.
+          </div>
+          <div style={{ background: C.cream2, borderRadius: 12, padding: 16, marginBottom: 14, fontSize: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0" }}><span style={{ color: C.text3 }}>Login</span><b>{cred.email}</b></div>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0" }}><span style={{ color: C.text3 }}>Senha temporária</span><b style={{ fontFamily: "monospace" }}>{cred.senha_temporaria}</b></div>
+          </div>
+          <Btn style={{ width: "100%", justifyContent: "center" }} onClick={() => { navigator.clipboard?.writeText(`Login: ${cred.email}\nSenha: ${cred.senha_temporaria}\nEntre em: ${location.origin}`); setCred(null); }}>
+            Copiar e concluir
+          </Btn>
         </Modal>
       )}
     </div>
   );
 }
 
-function UsuarioForm({ inicial, unidades, onSave }) {
+function UsuarioForm({ inicial, unidades, onSave, loading, erro, novo }) {
   const [f, setF] = useState({
     nome: inicial.nome || "",
     email: inicial.email || "",
@@ -226,8 +255,14 @@ function UsuarioForm({ inicial, unidades, onSave }) {
         Usuário ativo (pode acessar o sistema)
       </label>
 
-      <Btn style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.6 }} onClick={salvar}>
-        {inicial.id ? "Salvar usuário" : "Cadastrar usuário"}
+      {novo && (
+        <div style={{ fontSize: 11.5, color: C.text4, marginBottom: 10 }}>
+          Isto <b>cria o login</b> deste usuário e o acesso às unidades marcadas. Você recebe a senha temporária para repassar.
+        </div>
+      )}
+      {erro && <div style={{ fontSize: 12.5, color: C.red, marginBottom: 10 }}>{erro}</div>}
+      <Btn style={{ width: "100%", justifyContent: "center", opacity: (valido && !loading) ? 1 : 0.6 }} onClick={() => !loading && salvar()}>
+        {loading ? "Criando…" : inicial.id ? "Salvar usuário" : novo ? "Criar usuário + login" : "Cadastrar usuário"}
       </Btn>
     </>
   );

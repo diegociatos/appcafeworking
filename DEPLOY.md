@@ -72,6 +72,8 @@ supabase functions deploy emitir-nfse
 supabase functions deploy cancelar-nfse
 supabase functions deploy salvar-certificado
 supabase functions deploy criar-coworking
+supabase functions deploy criar-usuario-equipe
+supabase functions deploy excluir-coworking
 ```
 
 ## 4. Credenciais dos bancos no Vault

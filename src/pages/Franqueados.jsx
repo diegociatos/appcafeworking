@@ -24,11 +24,29 @@ function baixarContrato(c) {
 const tipoDoc = (doc) => ((doc || "").replace(/\D/g, "").length > 11 ? "CNPJ" : "CPF");
 
 export default function Franqueados({ go }) {
-  const { franqueados, unidades, unidadesDe, addFranqueado, updateFranqueado, removeFranqueado, enterViewAs, adicionarCoworking } = useStore();
+  const { franqueados, unidades, unidadesDe, addFranqueado, updateFranqueado, removeFranqueado, removerCoworking, enterViewAs, adicionarCoworking } = useStore();
   const [modal, setModal] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const [erroForm, setErroForm] = useState(null);
   const [credenciais, setCredenciais] = useState(null);
+  const [excluir, setExcluir] = useState(null); // conta a confirmar exclusão
+  const [excluindo, setExcluindo] = useState(false);
+  const [erroExcluir, setErroExcluir] = useState(null);
+
+  const confirmarExclusao = async () => {
+    if (!excluir) return;
+    if (!onboardApi.configured) { removeFranqueado(excluir.id); setExcluir(null); return; }
+    setErroExcluir(null); setExcluindo(true);
+    try {
+      await onboardApi.excluirCoworking(excluir.id);
+      removerCoworking(excluir.id);
+      setExcluir(null);
+    } catch (e) {
+      setErroExcluir(e.message || "Falha ao excluir.");
+    } finally {
+      setExcluindo(false);
+    }
+  };
 
   const salvarConta = async (dados) => {
     if (modal?.id) { updateFranqueado(modal.id, dados); setModal(null); return; }
@@ -195,9 +213,9 @@ export default function Franqueados({ go }) {
                     </Btn>
                     <Btn
                       variant="ghost"
-                      onClick={() => removeFranqueado(f.id)}
+                      onClick={() => setExcluir(f)}
                       style={{ color: C.red, borderColor: C.redPale, padding: "10px 12px" }}
-                      title="Excluir franqueado"
+                      title="Excluir conta"
                     >
                       <Trash2 size={15} />
                     </Btn>
@@ -218,6 +236,25 @@ export default function Franqueados({ go }) {
       {credenciais && (
         <Modal title="Coworking criado ✓" onClose={() => setCredenciais(null)}>
           <CredenciaisCriadas dados={credenciais} onClose={() => setCredenciais(null)} />
+        </Modal>
+      )}
+
+      {excluir && (
+        <Modal title="Excluir conta" onClose={() => !excluindo && setExcluir(null)}>
+          <div style={{ fontSize: 14, color: C.text2, marginBottom: 12 }}>
+            Excluir <b>{excluir.nome}</b> e <b>tudo</b> dela (unidades, clientes, equipe, login do master)?
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: C.redPale, border: `1px solid ${C.red}33`, borderRadius: 10, padding: "9px 12px", fontSize: 12, color: C.text2, marginBottom: 14 }}>
+            <Trash2 size={14} color={C.red} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>Esta ação é <b>irreversível</b>. Os dados e o acesso do coworking serão removidos para sempre.</span>
+          </div>
+          {erroExcluir && <div style={{ fontSize: 12.5, color: C.red, marginBottom: 12 }}>{erroExcluir}</div>}
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn variant="ghost" onClick={() => !excluindo && setExcluir(null)} style={{ flex: 1, justifyContent: "center" }}>Cancelar</Btn>
+            <Btn onClick={confirmarExclusao} style={{ flex: 1, justifyContent: "center", background: C.red, opacity: excluindo ? 0.6 : 1 }}>
+              {excluindo ? "Excluindo…" : "Excluir definitivamente"}
+            </Btn>
+          </div>
         </Modal>
       )}
     </div>

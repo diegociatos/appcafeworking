@@ -404,6 +404,8 @@ export function StoreProvider({ children }) {
     setUsuarios((list) => [...list, { ativo: true, ...u, id }]);
     return id;
   };
+  // Adiciona um usuário já criado no backend (mantém id/vínculos retornados).
+  const adicionarUsuario = (u) => setUsuarios((list) => (list.some((x) => x.id === u.id) ? list : [u, ...list]));
   const updateUsuario = (id, patch) =>
     setUsuarios((list) => list.map((u) => (u.id === id ? { ...u, ...patch } : u)));
   const removeUsuario = (id) => setUsuarios((list) => list.filter((u) => u.id !== id));
@@ -943,6 +945,11 @@ export function StoreProvider({ children }) {
     if (conta) setFranqueados((fs) => (fs.some((f) => f.id === conta.id) ? fs : [...fs, conta]));
     if (unidade) setUnidades((us) => (us.some((u) => u.id === unidade.id) ? us : [...us, unidade]));
   };
+  // Remove a conta e tudo dela do estado (após excluir no backend).
+  const removerCoworking = (contaId) => {
+    setFranqueados((fs) => fs.filter((f) => f.id !== contaId));
+    setUnidades((us) => us.filter((u) => u.franqueadoId !== contaId));
+  };
 
   // Substitui o seed pelos dados reais do banco (quando logado/configurado).
   const hydrateFromDb = (dados) => {
@@ -999,6 +1006,7 @@ export function StoreProvider({ children }) {
       unidades, franqueados, usuarios, salas, produtos, reservas,
       leads, setLeads, crmEtapas, setCrmEtapas, crmOrigens, setCrmOrigens,
       eventos, eventosDe, addEvento, updateEvento, removeEvento,
+      removerCoworking,
       activeUnit, setActiveUnit,
       unidadeAtiva: unidades.find((u) => u.id === activeUnit) || unidadesVisiveis[0] || unidades[0],
       unidadesVisiveis,
@@ -1009,7 +1017,7 @@ export function StoreProvider({ children }) {
       notificacoesEmail, notificacoesEmailDe, enfileirarEmail,
       clienteNotifPrefs, updateClienteNotifPrefs,
       addFranqueado, updateFranqueado, removeFranqueado,
-      addUsuario, updateUsuario, removeUsuario, usuariosDe,
+      addUsuario, adicionarUsuario, updateUsuario, removeUsuario, usuariosDe,
       clientes, clientesDe, addCliente, updateCliente, removeCliente,
       addUnidade, updateUnidade,
       addSala, updateSala, removeSala,
