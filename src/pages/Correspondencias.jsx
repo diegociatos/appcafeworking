@@ -5,7 +5,6 @@ import {
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, FileInput } from "../components/ui.jsx";
 import { C, serif, inp } from "../lib/theme.js";
-import { CLIENTES } from "../lib/data.js";
 import { useStore } from "../lib/store.jsx";
 
 const STATUS = {
@@ -150,7 +149,8 @@ export default function Correspondencias() {
 }
 
 function RegistrarForm({ unidadeNome, onSave }) {
-  const clientesUnidade = CLIENTES.filter((c) => c.unidade === unidadeNome);
+  const { clientesDe } = useStore();
+  const clientesUnidade = clientesDe(unidadeNome);
   const [f, setF] = useState({ cliente: clientesUnidade[0]?.nome || "", remetente: "", tipo: "Notificação", descricao: "", urgente: false, anexo: null });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const valido = f.cliente && f.remetente.trim();

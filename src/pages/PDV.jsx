@@ -16,10 +16,16 @@ const STATUS_INFO = {
 };
 
 export default function PDV() {
-  const { activeUnit, unidadeAtiva, produtosDe, pedidosDe, updatePedido } = useStore();
+  const { activeUnit, unidadeAtiva, produtosDe, pedidosDe, updatePedido, estoqueBaixoDe } = useStore();
   const [cart, setCart] = useState([]);
   const [cat, setCat] = useState("Todos");
   const [pago, setPago] = useState(null);
+
+  // KPIs reais (do banco) — zeram quando ainda não há vendas/produtos.
+  const pedidosUnidade = pedidosDe(activeUnit);
+  const vendasHoje = pedidosUnidade.reduce((s, p) => s + (p.total || 0), 0);
+  const ticketMedio = pedidosUnidade.length ? vendasHoje / pedidosUnidade.length : 0;
+  const baixo = estoqueBaixoDe ? estoqueBaixoDe(activeUnit) : [];
 
   const produtosUnidade = produtosDe(activeUnit).filter((p) => p.ativo !== false);
   const pedidosAtivos = pedidosDe(activeUnit).filter((p) => p.status !== "entregue");
@@ -62,12 +68,16 @@ export default function PDV() {
           marginBottom: 20,
         }}
       >
-        {[
-          { l: "Vendas hoje", v: fmt(2840), s: "47 pedidos", ic: TrendingUp, c: C.green },
-          { l: "Ticket médio", v: fmt(60.42), s: "+R$ 4,20 vs ontem", ic: Coffee, c: C.cafe },
-          { l: "Margem média", v: "69%", s: "CMV estimado 31%", ic: Percent, c: C.teal },
-          { l: "Estoque baixo", v: "2", s: "Leite, copos 200ml", ic: Box, c: C.amber },
-        ].map((k, i) => (
+        {(() => {
+          const m = produtosUnidade.filter((p) => p.preco > 0).map((p) => 1 - (p.cmv || 0) / p.preco);
+          const margem = m.length ? Math.round((m.reduce((a, b) => a + b, 0) / m.length) * 100) : 0;
+          return [
+            { l: "Vendas hoje", v: fmt(vendasHoje), s: `${pedidosUnidade.length} pedido(s)`, ic: TrendingUp, c: C.green },
+            { l: "Ticket médio", v: fmt(ticketMedio), s: pedidosUnidade.length ? "por pedido" : "sem vendas", ic: Coffee, c: C.cafe },
+            { l: "Margem média", v: `${margem}%`, s: `CMV estimado ${100 - margem}%`, ic: Percent, c: C.teal },
+            { l: "Estoque baixo", v: String(baixo.length), s: baixo.slice(0, 3).map((x) => x.nome).join(", ") || "tudo ok", ic: Box, c: C.amber },
+          ];
+        })().map((k, i) => (
           <Card key={i} className={`cw-fade cw-fade-${i + 1}`} style={{ padding: 16 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
               <div>

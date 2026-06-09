@@ -72,12 +72,8 @@ const seedFranqueados = [
   { id: "fr_ciatos", nome: "Grupo Ciatos", master: "Diego Garcia", email: "diego.garcia@grupociatos.com.br", documento: "20.351.761/0001-03", telefone: "(31) 99712-9789", plano: "Pro", mensalidade: 597, criadoEm: "2024-01" },
 ];
 
-// Usuários da equipe (cada um com um perfil de acesso e uma unidade)
-const seedUsuarios = [
-  { id: "us1", nome: "Marina Souza", email: "recepcao.lux@cafeworking.com.br", perfil: "recepcao", unidadeId: "lux", ativo: true },
-  { id: "us2", nome: "Paulo Andrade", email: "financeiro@ciatos.com.br", perfil: "financeiro", unidadeId: "lux", ativo: true },
-  { id: "us3", nome: "Júlia Reis", email: "recepcao.est@cafeworking.com.br", perfil: "recepcao", unidadeId: "est", ativo: true },
-];
+// Equipe começa vazia — os usuários reais são cadastrados pela tela (Equipe).
+const seedUsuarios = [];
 
 // ===== Financeiro (ERP) — contas bancárias, lançamentos, catálogo =========
 const seedContas = [

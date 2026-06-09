@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
 import { C, serif, fmt, inp } from "../lib/theme.js";
-import { CLIENTES, HORARIOS, DIAS } from "../lib/data.js";
+import { HORARIOS, DIAS } from "../lib/data.js";
 import { useStore } from "../lib/store.jsx";
 
 
@@ -32,8 +32,8 @@ function baixarArquivo(nome, conteudo) {
 
 export default function AreaCliente({ section, go }) {
   const { unidades, salasDe, produtosDe, addReserva, reservas, addPedido, pedidosDe, correspondenciasDe, conversasDe, enviarMensagemCliente, clienteNotifPrefs, updateClienteNotifPrefs, clientes, boletos, baixarBoleto } = useStore();
-  const cli = clientes[0] || CLIENTES[0];
-  const unidadeCli = unidades.find((u) => u.nome === cli.unidade) || unidades[0];
+  const cli = clientes[0] || { nome: "Cliente", unidade: "", plano: "—", fiscal: false, docs: [] };
+  const unidadeCli = unidades.find((u) => u.nome === cli.unidade) || unidades[0] || { id: "", nome: "" };
   const salas = salasDe(unidadeCli.id);
   // Salas de locação mensal (contratadas) não entram nas opções de reserva do cliente
   const salasDisponiveis = salas.filter((s) => !s.contratada);

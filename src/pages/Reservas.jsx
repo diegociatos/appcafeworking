@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Plus, CheckCircle2, CalendarOff, AlertCircle, Trash2, X, Smartphone, DollarSign } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
-import { HORARIOS, CLIENTES, DIAS } from "../lib/data.js";
+import { HORARIOS, DIAS } from "../lib/data.js";
 
 // Fim de um bloco: próximo horário, ou +1h após o último (ex.: 22:00 → 23:00).
 const horaFim = (inicio, dur) => {
@@ -15,7 +15,7 @@ import { useStore } from "../lib/store.jsx";
 
 
 export default function Reservas() {
-  const { activeUnit, unidadeAtiva, salasDe, reservas, addReserva, removeReserva, marcarReservasVistas, addLancamento } = useStore();
+  const { activeUnit, unidadeAtiva, salasDe, clientesDe, reservas, addReserva, removeReserva, marcarReservasVistas, addLancamento } = useStore();
   const [diaSel, setDiaSel] = useState(0);
   const [modal, setModal] = useState(null);
   const [detalhe, setDetalhe] = useState(null);
@@ -35,7 +35,7 @@ export default function Reservas() {
         title="Agenda de Salas"
         sub={`Agenda da unidade ${unidadeAtiva?.nome || ""} · disponibilidade por sala e horário.`}
         action={
-          <Btn variant="teal" onClick={() => setModal({})} disabled={salasReservaveis.length === 0}>
+          <Btn variant="teal" onClick={() => setModal({})}>
             <Plus size={16} /> Nova reserva
           </Btn>
         }
@@ -193,7 +193,7 @@ export default function Reservas() {
       {modal && (
         <NovaReservaModal
           salas={salasReservaveis}
-          clientes={CLIENTES.filter((c) => c.unidade === unidadeAtiva?.nome)}
+          clientes={clientesDe(unidadeAtiva?.nome)}
           dias={dias}
           diaInicial={diaSel}
           reservas={reservas}
@@ -290,6 +290,21 @@ function NovaReservaModal({ salas, clientes, dias, diaInicial, reservas, onClose
   );
   const podeSalvar = clienteNome && f.sala && !conflito;
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+
+  if (!salas.length) {
+    return (
+      <Modal onClose={onClose} title="Nova reserva">
+        <div style={{ textAlign: "center", padding: "10px 4px 4px" }}>
+          <CalendarOff size={34} color={C.text4} style={{ marginBottom: 12 }} />
+          <div style={{ fontSize: 14.5, fontWeight: 600, color: C.text, marginBottom: 6 }}>Nenhuma sala disponível para reserva</div>
+          <div style={{ fontSize: 13, color: C.text3, marginBottom: 16 }}>
+            Cadastre as salas desta unidade em <b>Unidades → Gerenciar → Salas</b> antes de criar reservas.
+          </div>
+          <Btn variant="ghost" onClick={onClose} style={{ justifyContent: "center" }}>Entendi</Btn>
+        </div>
+      </Modal>
+    );
+  }
 
   return (
     <Modal onClose={onClose} title="Nova reserva">

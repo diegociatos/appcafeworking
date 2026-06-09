@@ -6,7 +6,6 @@ import {
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, ImageInput } from "../components/ui.jsx";
 import { C, serif, sans, fmt, fmtShort, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
-import { CLIENTES } from "../lib/data.js";
 
 const PALETA = [C.cafe, C.teal, C.cafe2, C.teal3, C.green, C.amber, C.blue, C.red];
 
@@ -323,6 +322,7 @@ function FotosGaleria({ fotos, onChange }) {
 }
 
 function SalaForm({ inicial, unidade, onSave }) {
+  const { clientesDe } = useStore();
   const [f, setF] = useState({
     nome: inicial.nome || "",
     tipo: inicial.tipo || "Privativa",
@@ -338,7 +338,7 @@ function SalaForm({ inicial, unidade, onSave }) {
     valorMensal: inicial.valorMensal || 0,
   });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
-  const clientesUnidade = CLIENTES.filter((c) => c.unidade === unidade?.nome);
+  const clientesUnidade = clientesDe(unidade?.nome);
   const ehMensal = f.tipo === "Privativa" || f.tipo === "Compartilhada";
   const todasComodidades = Array.from(new Set([...COMODIDADES_SALA, ...f.comodidades]));
   const toggleCom = (c) => setF({ ...f, comodidades: f.comodidades.includes(c) ? f.comodidades.filter((x) => x !== c) : [...f.comodidades, c] });

@@ -3,8 +3,8 @@
 import { C } from "./theme.js";
 
 export const UNIDADES = [
-  { id: "lux", nome: "Luxemburgo", endereco: "Rua Guaicuí, 715 · BH/MG", salas: 14, ocupacao: 86, membros: 92, receita: 184500, cor: C.cafe },
-  { id: "est", nome: "Estoril", endereco: "Av. Raja Gabaglia, 2000 · BH/MG", salas: 9, ocupacao: 71, membros: 58, receita: 121300, cor: C.teal },
+  { id: "lux", nome: "Luxemburgo", endereco: "Rua Guaicuí, 715 · BH/MG", salas: 0, ocupacao: 0, membros: 0, receita: 0, cor: C.cafe },
+  { id: "est", nome: "Estoril", endereco: "Av. Raja Gabaglia, 2000 · BH/MG", salas: 0, ocupacao: 0, membros: 0, receita: 0, cor: C.teal },
 ];
 
 export const PRODUTOS = [
@@ -77,38 +77,9 @@ export const RESERVAS_INIT = [
   { id: "r7", sala: "s2", dia: 6, inicio: 4, dur: 2, cliente: "Reunião Domingo", cor: C.teal3 },
 ];
 
-export const CLIENTES = [
-  {
-    id: "c1", nome: "Ciatos Log Transportes", cnpj: "20.351.761/0001-03",
-    plano: "Sala Privativa", unidade: "Luxemburgo", fiscal: true, status: "ativo", desde: "2023",
-    contato: "Rafael Mendes", email: "rafael@ciatoslog.com.br", tel: "(31) 99100-2030",
-    docs: [
-      { nome: "Contrato Social.pdf", tipo: "Societário", data: "12/03/2024", status: "ok" },
-      { nome: "IPTU 2025.pdf", tipo: "Fiscal", data: "08/01/2025", status: "ok" },
-      { nome: "Correspondência DET.pdf", tipo: "Correspondência", data: "21/05/2026", status: "novo" },
-    ],
-  },
-  {
-    id: "c2", nome: "Mendes Advocacia", cnpj: "31.882.004/0001-77",
-    plano: "Endereço Fiscal", unidade: "Luxemburgo", fiscal: true, status: "ativo", desde: "2024",
-    contato: "Carla Mendes", email: "carla@mendesadv.com.br", tel: "(31) 98822-1140",
-    docs: [
-      { nome: "Comprovante Endereço.pdf", tipo: "Fiscal", data: "15/02/2025", status: "ok" },
-      { nome: "Notificação Receita.pdf", tipo: "Correspondência", data: "19/05/2026", status: "novo" },
-    ],
-  },
-  {
-    id: "c3", nome: "TechBH Software", cnpj: "44.120.330/0001-90",
-    plano: "Coworking", unidade: "Estoril", fiscal: false, status: "ativo", desde: "2025",
-    contato: "Diego Alves", email: "diego@techbh.io", tel: "(31) 99988-7766", docs: [],
-  },
-  {
-    id: "c4", nome: "Consultoria RM", cnpj: "18.445.992/0001-12",
-    plano: "Sala Privativa", unidade: "Estoril", fiscal: true, status: "pendente", desde: "2026",
-    contato: "Renata Maia", email: "renata@rmconsult.com.br", tel: "(31) 98700-5521",
-    docs: [{ nome: "Contrato CafeWorking.pdf", tipo: "Societário", data: "02/05/2026", status: "pendente" }],
-  },
-];
+// Sem clientes fictícios — os clientes reais vêm do banco (store.clientes) e
+// são cadastrados pela tela. Mantido como [] para compat de imports.
+export const CLIENTES = [];
 
 export const CHATS_INIT = [
   { id: "ch1", cliente: "Rafael Mendes", empresa: "Ciatos Log", unread: 2, online: true,

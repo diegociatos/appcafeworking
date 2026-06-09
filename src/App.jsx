@@ -6,7 +6,6 @@ import {
 } from "lucide-react";
 import { C, sans, serif } from "./lib/theme.js";
 import { useStore, PERFIS } from "./lib/store.jsx";
-import { CLIENTES } from "./lib/data.js";
 import Logo from "./components/Logo.jsx";
 import Login from "./pages/Login.jsx";
 import { supabaseConfigured, getSession, onAuthChange, signOut } from "./lib/supabaseAuth.js";
@@ -74,7 +73,7 @@ const PAGES = {
 };
 
 export default function App() {
-  const { viewAs, franqueadoAtivo, perfil, setPerfil, activeUnit, pedidosDe, unidades, correspondenciasDe, conversasDe, reservas, meuPerfil, contratosVencendoDe, notificacaoPrefs, aplicarSessaoUsuario, hydrateFromDb, hydrateOperacional, estoqueBaixoDe } = useStore();
+  const { viewAs, franqueadoAtivo, perfil, setPerfil, activeUnit, pedidosDe, unidades, clientes, correspondenciasDe, conversasDe, reservas, meuPerfil, contratosVencendoDe, notificacaoPrefs, aplicarSessaoUsuario, hydrateFromDb, hydrateOperacional, estoqueBaixoDe } = useStore();
   const [page, setPage] = useState("dash");
   const [finTab, setFinTab] = useState("visao");
   const [finOpen, setFinOpen] = useState(true); // submenu Financeiro recolhível
@@ -113,16 +112,17 @@ export default function App() {
   if (supabaseConfigured && !session) return <Login />;
 
   // No perfil cliente, a navegação do portal vai toda para o sidebar
-  const cliUnitId = unidades.find((u) => u.nome === CLIENTES[0].unidade)?.id;
-  const corrNovasCli = correspondenciasDe(cliUnitId || "").filter((c) => c.cliente === CLIENTES[0].nome && c.status === "notificado").length;
-  const novoDocs = CLIENTES[0].docs.filter((d) => d.status === "novo").length + corrNovasCli;
+  const cliRef = clientes[0] || {};
+  const cliUnitId = unidades.find((u) => u.nome === cliRef.unidade)?.id;
+  const corrNovasCli = correspondenciasDe(cliUnitId || "").filter((c) => c.cliente === cliRef.nome && c.status === "notificado").length;
+  const novoDocs = (cliRef.docs || []).filter((d) => d.status === "novo").length + corrNovasCli;
   const CLIENT_NAV = [
     { id: "cli_inicio", label: "Início", icon: Home },
     { id: "cli_reservar", label: "Reservar sala", icon: CalendarDays },
     { id: "cli_cafe", label: "Cafeteria", icon: Coffee },
     { id: "cli_faturas", label: "Faturas", icon: Wallet },
     { id: "cli_docs", label: "Documentos", icon: FileText, badge: novoDocs || undefined },
-    ...(CLIENTES[0].fiscal ? [{ id: "cli_fiscal", label: "Endereço fiscal", icon: Building2 }] : []),
+    ...(cliRef.fiscal ? [{ id: "cli_fiscal", label: "Endereço fiscal", icon: Building2 }] : []),
     { id: "cli_chat", label: "Falar com recepção", icon: MessageSquare },
     { id: "cli_notif", label: "Notificações", icon: Bell },
   ];
