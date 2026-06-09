@@ -44,13 +44,24 @@ export const C = {
   bluePale: "rgba(51,92,129,.1)",
 };
 
-// Todo o app usa Book Antiqua (fonte de sistema no Windows). Palatino Linotype/
-// Palatino fazem o mesmo papel em macOS/iOS/Linux; URW Palladio é o equivalente
-// livre. `serif` e `sans` apontam para a mesma pilha — todas as letras Book Antiqua.
-const bookAntiqua =
-  "'Book Antiqua', 'Palatino Linotype', Palatino, 'URW Palladio L', 'Palatino LT STD', Georgia, serif";
-export const serif = bookAntiqua;
-export const sans = bookAntiqua;
+// Tipografia premium: Fraunces (serifa display, elegante e moderna) nos títulos
+// e números de destaque; Inter (sans cristalina) em toda a interface. Há
+// fallback de sistema para quando a fonte ainda não carregou.
+export const serif =
+  "'Fraunces', 'Book Antiqua', 'Palatino Linotype', Palatino, Georgia, serif";
+export const sans =
+  "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
+
+// Sombras em camadas (profundidade suave e consistente).
+export const shadow = {
+  sm: "0 1px 2px rgba(31,31,28,.04), 0 4px 12px rgba(31,31,28,.04)",
+  md: "0 2px 6px rgba(31,31,28,.05), 0 12px 30px rgba(31,31,28,.07)",
+  lg: "0 24px 60px rgba(31,31,28,.16)",
+  brand: "0 6px 18px rgba(110,78,59,.28)",
+  teal: "0 6px 18px rgba(14,75,79,.26)",
+};
+
+export const radius = { sm: 10, md: 14, lg: 18, xl: 22, pill: 999 };
 
 export const fmt = (n) =>
   "R$ " + n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -63,11 +74,12 @@ export const fmtShort = (n) => {
 export const inp = {
   width: "100%",
   border: `1px solid ${C.border}`,
-  borderRadius: 10,
+  borderRadius: 11,
   padding: "11px 14px",
   fontFamily: sans,
   fontSize: 14,
   outline: "none",
   background: "#fff",
   color: C.text,
+  transition: "border-color .15s ease, box-shadow .15s ease, background .15s ease",
 };

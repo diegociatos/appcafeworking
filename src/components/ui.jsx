@@ -1,6 +1,6 @@
 import React, { useRef } from "react";
 import { X, ImagePlus, Trash2, Repeat, Paperclip, FileText } from "lucide-react";
-import { C, sans, serif } from "../lib/theme.js";
+import { C, sans, serif, shadow, radius } from "../lib/theme.js";
 
 export const Card = ({ children, style, className = "", ...p }) => (
   <div
@@ -8,7 +8,7 @@ export const Card = ({ children, style, className = "", ...p }) => (
     style={{
       background: C.white,
       border: `1px solid ${C.border2}`,
-      borderRadius: 16,
+      borderRadius: radius.lg,
       padding: 22,
       ...style,
     }}
@@ -24,14 +24,16 @@ export const Badge = ({ children, color = C.teal, bg }) => (
       display: "inline-flex",
       alignItems: "center",
       gap: 4,
+      fontFamily: sans,
       fontSize: 11,
       fontWeight: 600,
       color,
-      background: bg || `${color}14`,
+      background: bg || `${color}16`,
       padding: "3px 10px",
-      borderRadius: 20,
-      letterSpacing: 0.3,
+      borderRadius: radius.pill,
+      letterSpacing: 0.2,
       whiteSpace: "nowrap",
+      lineHeight: 1.5,
     }}
   >
     {children}
@@ -40,23 +42,25 @@ export const Badge = ({ children, color = C.teal, bg }) => (
 
 export const Btn = ({ children, variant = "primary", style, ...p }) => {
   const variants = {
-    primary: { background: C.cafe, color: "#fff" },
-    teal: { background: C.teal, color: "#fff" },
-    ghost: { background: "transparent", color: C.text2, border: `1px solid ${C.border}` },
+    primary: { background: `linear-gradient(135deg, ${C.cafe2} 0%, ${C.cafe} 100%)`, color: "#fff", boxShadow: shadow.brand },
+    teal: { background: `linear-gradient(135deg, ${C.teal2} 0%, ${C.teal} 100%)`, color: "#fff", boxShadow: shadow.teal },
+    ghost: { background: C.white, color: C.text2, border: `1px solid ${C.border}` },
     soft: { background: C.cafePale, color: C.cafe },
   };
   return (
     <button
-      className="cw-btn"
+      className={`cw-btn cw-btn-${variant}`}
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: 7,
+        justifyContent: "center",
+        gap: 8,
         fontFamily: sans,
         fontWeight: 600,
         fontSize: 14,
+        letterSpacing: 0.1,
         padding: "10px 18px",
-        borderRadius: 12,
+        borderRadius: radius.md,
         ...variants[variant],
         ...style,
       }}
@@ -74,7 +78,7 @@ export const PageHead = ({ title, sub, action }) => (
       display: "flex",
       justifyContent: "space-between",
       alignItems: "flex-end",
-      marginBottom: 24,
+      marginBottom: 26,
       flexWrap: "wrap",
       gap: 12,
     }}
@@ -83,15 +87,16 @@ export const PageHead = ({ title, sub, action }) => (
       <h1
         style={{
           fontFamily: serif,
-          fontSize: "clamp(26px, 4vw, 34px)",
-          fontWeight: 400,
+          fontSize: "clamp(27px, 4vw, 35px)",
+          fontWeight: 500,
           color: C.text,
-          lineHeight: 1.1,
+          lineHeight: 1.08,
+          letterSpacing: "-0.015em",
         }}
       >
         {title}
       </h1>
-      <p style={{ fontSize: 14, color: C.text3, marginTop: 4, maxWidth: 720 }}>{sub}</p>
+      {sub && <p style={{ fontFamily: sans, fontSize: 14, color: C.text3, marginTop: 6, maxWidth: 720, lineHeight: 1.5 }}>{sub}</p>}
     </div>
     {action}
   </div>
@@ -101,12 +106,13 @@ export const Field = ({ label, children, style }) => (
   <div style={{ marginBottom: 14, ...style }}>
     <label
       style={{
+        fontFamily: sans,
         fontSize: 12,
         fontWeight: 600,
         color: C.text3,
         display: "block",
         marginBottom: 6,
-        letterSpacing: 0.2,
+        letterSpacing: 0.1,
       }}
     >
       {label}
@@ -118,29 +124,32 @@ export const Field = ({ label, children, style }) => (
 export const Modal = ({ children, title, onClose, maxWidth = 440 }) => (
   <div
     onClick={onClose}
+    className="cw-modal-bg"
     style={{
       position: "fixed",
       inset: 0,
-      background: "rgba(31,31,28,.4)",
-      backdropFilter: "blur(4px)",
+      background: "rgba(31,31,28,.42)",
+      backdropFilter: "blur(5px)",
+      WebkitBackdropFilter: "blur(5px)",
       display: "grid",
       placeItems: "center",
       zIndex: 100,
       padding: 20,
-      animation: "fadeUp .2s ease",
     }}
   >
     <div
       onClick={(e) => e.stopPropagation()}
+      className="cw-modal"
       style={{
         background: "#fff",
-        borderRadius: 20,
+        borderRadius: radius.xl,
         padding: 26,
         width: "100%",
         maxWidth,
         maxHeight: "90vh",
         overflowY: "auto",
-        boxShadow: "0 24px 60px rgba(31,31,28,.18)",
+        boxShadow: shadow.lg,
+        border: `1px solid ${C.border2}`,
       }}
     >
       <div
@@ -151,9 +160,9 @@ export const Modal = ({ children, title, onClose, maxWidth = 440 }) => (
           marginBottom: 20,
         }}
       >
-        <span style={{ fontFamily: serif, fontSize: 22 }}>{title}</span>
-        <button onClick={onClose} aria-label="Fechar">
-          <X size={22} color={C.text3} />
+        <span style={{ fontFamily: serif, fontSize: 23, fontWeight: 500, letterSpacing: "-0.01em" }}>{title}</span>
+        <button onClick={onClose} aria-label="Fechar" className="cw-modal-x" style={{ display: "grid", placeItems: "center", width: 32, height: 32, borderRadius: 9, color: C.text3 }}>
+          <X size={20} />
         </button>
       </div>
       {children}
@@ -162,12 +171,14 @@ export const Modal = ({ children, title, onClose, maxWidth = 440 }) => (
 );
 
 export const Empty = ({ icon: Icon, title, sub }) => (
-  <div style={{ padding: 40, textAlign: "center", color: C.text4 }}>
-    {Icon && <Icon size={36} style={{ opacity: 0.4, marginBottom: 10 }} />}
-    <div style={{ fontSize: 14 }}>
-      <b style={{ color: C.text3 }}>{title}</b>
-      {sub && <div style={{ marginTop: 4 }}>{sub}</div>}
-    </div>
+  <div style={{ padding: "46px 40px", textAlign: "center" }}>
+    {Icon && (
+      <div style={{ width: 58, height: 58, borderRadius: 16, background: C.cream2, display: "grid", placeItems: "center", margin: "0 auto 14px" }}>
+        <Icon size={26} color={C.cafe3} />
+      </div>
+    )}
+    <div style={{ fontFamily: serif, fontSize: 17, fontWeight: 500, color: C.text2 }}>{title}</div>
+    {sub && <div style={{ fontFamily: sans, fontSize: 13, color: C.text4, marginTop: 5, maxWidth: 380, marginLeft: "auto", marginRight: "auto", lineHeight: 1.5 }}>{sub}</div>}
   </div>
 );
 

@@ -26,13 +26,18 @@ export default function Login() {
   };
 
   return (
-    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: C.cream, fontFamily: sans, padding: 20 }}>
-      <div style={{ width: "100%", maxWidth: 380 }}>
+    <div style={{
+      minHeight: "100vh", display: "grid", placeItems: "center", fontFamily: sans, padding: 20,
+      background: `radial-gradient(1000px 600px at 85% -10%, rgba(110,78,59,.14), transparent 55%), radial-gradient(900px 600px at -5% 110%, rgba(14,75,79,.14), transparent 55%), ${C.cream}`,
+    }}>
+      <div className="cw-fade" style={{ width: "100%", maxWidth: 392 }}>
         <div style={{ textAlign: "center", marginBottom: 22 }}>
-          <Logo size={48} />
+          <Logo size={52} />
+          <div style={{ fontFamily: serif, fontSize: 21, color: C.text, marginTop: 14, letterSpacing: "-0.01em" }}>Bem-vindo de volta</div>
+          <div style={{ fontSize: 13.5, color: C.text3, marginTop: 3 }}>Gestão completa do seu coworking, em um só lugar.</div>
         </div>
-        <form onSubmit={entrar} style={{ background: "#fff", border: `1px solid ${C.border2}`, borderRadius: 18, padding: 28, boxShadow: "0 16px 40px rgba(31,31,28,.06)" }}>
-          <div style={{ fontFamily: serif, fontSize: 22, color: C.text, marginBottom: 4 }}>Entrar</div>
+        <form onSubmit={entrar} style={{ background: "#fff", border: `1px solid ${C.border2}`, borderRadius: 20, padding: 28, boxShadow: "0 20px 50px rgba(31,31,28,.10)" }}>
+          <div style={{ fontFamily: serif, fontSize: 21, color: C.text, marginBottom: 4, letterSpacing: "-0.01em" }}>Entrar</div>
           <div style={{ fontSize: 13, color: C.text3, marginBottom: 20 }}>Acesse o painel da sua unidade.</div>
 
           <label style={{ fontSize: 12.5, fontWeight: 600, color: C.text2 }}>E-mail</label>
