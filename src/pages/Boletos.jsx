@@ -8,6 +8,7 @@ import { C, serif, sans, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 import { supabaseConfigured } from "../lib/boletosApi.js";
 import { oauthConfigured, conectarNoBanco } from "../lib/bankOauth.js";
+import { integracaoApi } from "../lib/asaasApi.js";
 
 // Metadados dos bancos suportados
 export const BANCOS = {
@@ -132,7 +133,7 @@ export default function Boletos() {
       )}
       {contaModal && (
         <Modal title="Nova conta bancária" onClose={() => setContaModal(null)} maxWidth={520}>
-          <ContaForm onSalvar={(dados) => { store.addBankAccount(activeUnit, dados); setContaModal(null); }} />
+          <ContaForm unidadeId={activeUnit} onSalvar={(dados) => { store.addBankAccount(activeUnit, dados); setContaModal(null); }} />
         </Modal>
       )}
       {integracao && (
@@ -431,7 +432,7 @@ function EmitirForm({ contas, contaPadrao, onEmitir }) {
 }
 
 // ===========================================================================
-function ContaForm({ onSalvar }) {
+function ContaForm({ onSalvar, unidadeId }) {
   const [f, setF] = useState({
     banco: "inter",
     tipo: "franqueado",
@@ -440,10 +441,36 @@ function ContaForm({ onSalvar }) {
     beneficiarioNome: "",
     beneficiarioDocumento: "",
     pixChave: "",
-    credenciaisRef: "",
+    clientId: "",
+    clientSecret: "",
+    certPem: "",
+    keyPem: "",
   });
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState(null);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
-  const valido = f.apelido.trim() && f.credenciaisRef.trim();
+  const mtls = f.banco !== "btg"; // Inter/Itaú/Bradesco exigem certificado mTLS
+  const valido = f.apelido.trim() && f.clientId.trim() && f.clientSecret.trim();
+
+  const salvar = () => {
+    setErro(null);
+    if (!valido) return;
+    const ref = `${f.banco}_${unidadeId}`;
+    const dados = {
+      banco: f.banco, tipo: f.tipo, ambiente: f.ambiente, apelido: f.apelido,
+      beneficiarioNome: f.beneficiarioNome, beneficiarioDocumento: f.beneficiarioDocumento,
+      pixChave: f.pixChave, credenciaisRef: ref,
+    };
+    if (!integracaoApi.configured) { onSalvar(dados); return; }
+    setBusy(true);
+    integracaoApi.salvarBanco(unidadeId, f.banco, {
+      client_id: f.clientId.trim(), client_secret: f.clientSecret.trim(),
+      cert_pem: f.certPem.trim() || undefined, key_pem: f.keyPem.trim() || undefined,
+    })
+      .then(() => onSalvar(dados))
+      .catch((e) => setErro(e.message))
+      .finally(() => setBusy(false));
+  };
 
   return (
     <>
@@ -487,15 +514,31 @@ function ContaForm({ onSalvar }) {
           <input value={f.pixChave} onChange={set("pixChave")} style={inp} placeholder="email@empresa.com / CNPJ" />
         </Field>
       )}
-      <Field label="Referência da credencial no Vault">
-        <input value={f.credenciaisRef} onChange={set("credenciaisRef")} style={inp} placeholder="ex: inter_grupo_ciatos_prod" />
-      </Field>
-      <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: C.amberPale, borderRadius: 10, padding: "9px 12px", fontSize: 11.5, color: C.text2, marginBottom: 14 }}>
-        <Info size={15} color={C.amber} style={{ flexShrink: 0, marginTop: 1 }} />
-        <span>O <b>client_id/secret</b> e os <b>certificados mTLS</b> não são digitados aqui — são cadastrados no <b>Supabase Vault</b> e referenciados por este nome. O front-end nunca toca na credencial.</span>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <Field label="Client ID (do banco)">
+          <input value={f.clientId} onChange={set("clientId")} style={inp} placeholder="client_id" autoComplete="off" />
+        </Field>
+        <Field label="Client Secret">
+          <input type="password" value={f.clientSecret} onChange={set("clientSecret")} style={inp} placeholder="••••••••" autoComplete="off" />
+        </Field>
       </div>
-      <Btn style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.5 }} onClick={() => valido && onSalvar(f)}>
-        <Building2 size={16} /> Cadastrar conta
+      {mtls && (
+        <>
+          <Field label="Certificado mTLS (PEM) — Inter/Itaú/Bradesco">
+            <textarea value={f.certPem} onChange={set("certPem")} rows={2} style={{ ...inp, resize: "vertical", fontFamily: "monospace", fontSize: 11 }} placeholder="-----BEGIN CERTIFICATE-----" />
+          </Field>
+          <Field label="Chave privada (PEM)">
+            <textarea value={f.keyPem} onChange={set("keyPem")} rows={2} style={{ ...inp, resize: "vertical", fontFamily: "monospace", fontSize: 11 }} placeholder="-----BEGIN PRIVATE KEY-----" />
+          </Field>
+        </>
+      )}
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: C.tealPale, borderRadius: 10, padding: "9px 12px", fontSize: 11.5, color: C.teal, marginBottom: 12 }}>
+        <ShieldCheck size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+        <span>As credenciais são enviadas direto ao backend e guardadas <b>criptografadas no cofre</b> — não ficam no navegador. <b>Dica:</b> para receber por cartão/PIX/boleto sem parceria bancária, use a aba <b>Cobranças (Asaas)</b>.</span>
+      </div>
+      {erro && <div style={{ fontSize: 12.5, color: C.red, marginBottom: 10 }}>{erro}</div>}
+      <Btn style={{ width: "100%", justifyContent: "center", opacity: (valido && !busy) ? 1 : 0.5 }} onClick={() => !busy && salvar()}>
+        <Building2 size={16} /> {busy ? "Salvando…" : "Cadastrar conta"}
       </Btn>
     </>
   );

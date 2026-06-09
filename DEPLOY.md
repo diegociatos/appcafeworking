@@ -76,7 +76,14 @@ supabase functions deploy criar-usuario-equipe
 supabase functions deploy excluir-coworking
 supabase functions deploy asaas-cobranca
 supabase functions deploy asaas-webhook --no-verify-jwt
+supabase functions deploy salvar-integracao
 ```
+
+> **Integrações cadastradas PELO APP:** a chave Asaas e as credenciais de banco
+> são digitadas na própria tela (Cobranças → Configurar; Boletos → Nova conta).
+> A função `salvar-integracao` guarda no Vault pelo backend — o cliente do
+> coworking **nunca** acessa o Supabase. Há **um só** projeto Supabase (o da
+> plataforma), multi-tenant; cada coworking só usa o app.
 
 ### Asaas (receber por boleto + PIX + cartão)
 Em vez de integrar banco a banco, o **Asaas** é um gateway: 1 conta + 1 chave

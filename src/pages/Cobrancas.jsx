@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { CreditCard, Plus, Barcode, QrCode, Link2, CheckCircle2, Copy, ExternalLink, AlertTriangle, Wallet } from "lucide-react";
+import { CreditCard, Plus, Barcode, QrCode, Link2, CheckCircle2, Copy, ExternalLink, AlertTriangle, Wallet, KeyRound, ShieldCheck } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
 import { C, serif, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
@@ -31,6 +31,7 @@ export default function Cobrancas() {
   const [lista, setLista] = useState([]);
   const [novo, setNovo] = useState(false);
   const [detalhe, setDetalhe] = useState(null);
+  const [config, setConfig] = useState(false);
 
   useEffect(() => {
     let vivo = true;
@@ -47,7 +48,12 @@ export default function Cobrancas() {
       <PageHead
         title="Cobranças"
         sub={`Receba por boleto, PIX ou cartão (Asaas) · ${unidadeAtiva?.nome || ""}.`}
-        action={<Btn onClick={() => setNovo(true)}><Plus size={16} /> Nova cobrança</Btn>}
+        action={
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn variant="ghost" onClick={() => setConfig(true)}><KeyRound size={15} /> Configurar recebimento</Btn>
+            <Btn onClick={() => setNovo(true)}><Plus size={16} /> Nova cobrança</Btn>
+          </div>
+        }
       />
 
       {!asaasApi.configured && (
@@ -96,7 +102,56 @@ export default function Cobrancas() {
           <DetalheCobranca c={detalhe} />
         </Modal>
       )}
+      {config && (
+        <Modal title="Configurar recebimento (Asaas)" onClose={() => setConfig(false)} maxWidth={460}>
+          <ConfigAsaas unidadeId={activeUnit} onClose={() => setConfig(false)} />
+        </Modal>
+      )}
     </div>
+  );
+}
+
+function ConfigAsaas({ unidadeId, onClose }) {
+  const [apiKey, setApiKey] = useState("");
+  const [ambiente, setAmbiente] = useState("producao");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const salvar = () => {
+    setMsg(null);
+    if (!apiKey.trim()) return setMsg({ t: "erro", m: "Cole a chave da API Asaas." });
+    setBusy(true);
+    asaasApi.salvarChave(unidadeId, apiKey.trim(), ambiente)
+      .then(() => { setMsg({ t: "ok", m: "Chave salva com segurança. Já pode emitir cobranças." }); setApiKey(""); })
+      .catch((e) => setMsg({ t: "erro", m: e.message }))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <>
+      <div style={{ fontSize: 13, color: C.text2, marginBottom: 14 }}>
+        Crie sua conta no <b>Asaas</b> (asaas.com), copie a <b>chave de API</b> (Configurações → Integrações → API) e cole abaixo. Você recebe por boleto, PIX e <b>cartão de crédito</b>.
+      </div>
+      <Field label="Chave da API Asaas">
+        <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} style={inp} placeholder="$aact_..." autoComplete="off" />
+      </Field>
+      <Field label="Ambiente">
+        <div style={{ display: "flex", gap: 8 }}>
+          {[["producao", "Produção"], ["sandbox", "Sandbox (testes)"]].map(([v, lb]) => (
+            <button key={v} type="button" onClick={() => setAmbiente(v)}
+              style={{ flex: 1, padding: "10px 0", borderRadius: 10, fontSize: 13, fontWeight: 600, border: `1px solid ${ambiente === v ? C.cafe : C.border}`, background: ambiente === v ? C.cafePale : C.white, color: ambiente === v ? C.cafe : C.text2 }}>
+              {lb}
+            </button>
+          ))}
+        </div>
+      </Field>
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: C.tealPale, borderRadius: 10, padding: "9px 12px", fontSize: 11.5, color: C.teal, marginBottom: 12 }}>
+        <ShieldCheck size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+        <span>A chave é enviada direto ao backend e guardada <b>criptografada</b>. Não fica no navegador.</span>
+      </div>
+      {msg && <div style={{ fontSize: 12.5, color: msg.t === "ok" ? C.green : C.red, marginBottom: 12 }}>{msg.m}</div>}
+      <Btn style={{ width: "100%", justifyContent: "center", opacity: busy ? 0.6 : 1 }} onClick={() => !busy && salvar()}>
+        {busy ? "Salvando…" : "Salvar chave"}
+      </Btn>
+    </>
   );
 }
 
