@@ -10,3 +10,6 @@ dist
 
 # Ferramentas locais
 .claude/
+
+# Supabase CLI temp
+supabase/.temp/
