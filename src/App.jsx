@@ -22,6 +22,8 @@ import Clientes from "./pages/Clientes.jsx";
 import Financeiro, { FIN_GRUPOS } from "./pages/Financeiro.jsx";
 import Boletos from "./pages/Boletos.jsx";
 import NotaFiscal from "./pages/NotaFiscal.jsx";
+import Cobrancas from "./pages/Cobrancas.jsx";
+import { CreditCard } from "lucide-react";
 import Estoque from "./pages/Estoque.jsx";
 import Patrimonio from "./pages/Patrimonio.jsx";
 import Eventos from "./pages/Eventos.jsx";
@@ -48,6 +50,7 @@ const NAV = [
   { id: "chat", label: "Chat", icon: MessageSquare, group: "relacionamento", badge: 3 },
   { id: "financeiro", label: "Financeiro", icon: Wallet, group: "financeiro" },
   { id: "boletos", label: "Boletos", icon: Barcode, group: "financeiro" },
+  { id: "cobrancas", label: "Cobranças (cartão/PIX)", icon: CreditCard, group: "financeiro" },
   { id: "notafiscal", label: "Notas Fiscais", icon: FileText, group: "financeiro" },
   { id: "area", label: "Área Cliente", icon: UserCircle, group: "preview" },
 ];
@@ -66,7 +69,7 @@ const NAV_GRUPOS = [
 const PAGES = {
   dash: Dashboard, franqueados: Franqueados, crm: CRM, unidades: Unidades,
   reservas: Reservas, corresp: Correspondencias, pdv: PDV, clientes: Clientes,
-  financeiro: Financeiro, boletos: Boletos, notafiscal: NotaFiscal, estoque: Estoque, patrimonio: Patrimonio, eventos: Eventos, chat: Chat,
+  financeiro: Financeiro, boletos: Boletos, cobrancas: Cobrancas, notafiscal: NotaFiscal, estoque: Estoque, patrimonio: Patrimonio, eventos: Eventos, chat: Chat,
   area: AreaCliente, equipe: Equipe, catalogo: Catalogo, config: Configuracoes,
   cli_inicio: AreaCliente, cli_reservar: AreaCliente, cli_cafe: AreaCliente,
   cli_faturas: AreaCliente, cli_docs: AreaCliente, cli_fiscal: AreaCliente, cli_chat: AreaCliente, cli_notif: AreaCliente,

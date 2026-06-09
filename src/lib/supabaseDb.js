@@ -128,6 +128,9 @@ export async function fetchBoletosDb() {
 export async function fetchNotasDb() {
   return (await getJson("notas_fiscais?select=*&order=created_at.desc")) || [];
 }
+export async function fetchCobrancasDb() {
+  return (await getJson("cobrancas?select=*&order=created_at.desc")) || [];
+}
 
 // Cliente: front (camelCase) → linha do banco (snake_case). cnpj→documento,
 // tel→telefone, unidade(nome) resolvido para unidade_id pelo chamador.

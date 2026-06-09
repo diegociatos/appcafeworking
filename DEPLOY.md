@@ -74,7 +74,23 @@ supabase functions deploy salvar-certificado
 supabase functions deploy criar-coworking
 supabase functions deploy criar-usuario-equipe
 supabase functions deploy excluir-coworking
+supabase functions deploy asaas-cobranca
+supabase functions deploy asaas-webhook --no-verify-jwt
 ```
+
+### Asaas (receber por boleto + PIX + cartão)
+Em vez de integrar banco a banco, o **Asaas** é um gateway: 1 conta + 1 chave
+de API cobram por boleto, PIX e cartão. Cadastre a chave no Vault por unidade:
+```sql
+select vault.create_secret(
+  '{"api_key":"$aact_SUACHAVE","ambiente":"producao"}',
+  'asaas_lux', 'Asaas API key — Luxemburgo'
+);
+```
+(ou defina o secret de função `ASAAS_API_KEY` como fallback global). No painel
+do Asaas, configure o **webhook** para
+`https://<proj>.supabase.co/functions/v1/asaas-webhook` e o token em
+`ASAAS_WEBHOOK_TOKEN` (secret de função). Sandbox: `"ambiente":"sandbox"`.
 
 ## 4. Credenciais dos bancos no Vault
 Para cada conta bancária (uma vez), guarde o segredo e use o **nome** como
