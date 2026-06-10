@@ -269,9 +269,9 @@ const seedNotasFiscais = [
 ];
 
 export function StoreProvider({ children }) {
-  const [unidades, setUnidades] = useState(seedUnidades);
-  const [franqueados, setFranqueados] = useState(seedFranqueados);
-  const [usuarios, setUsuarios] = useState(seedUsuarios);
+  const [unidades, setUnidades] = useState(seedOr(seedUnidades));
+  const [franqueados, setFranqueados] = useState(seedOr(seedFranqueados));
+  const [usuarios, setUsuarios] = useState(seedOr(seedUsuarios));
   const [clientes, setClientes] = useState(seedOr(CLIENTES));
   const [contas, setContas] = useState(seedOr(seedContas));
   const [lancamentos, setLancamentos] = useState(seedOr(seedLancamentos));
@@ -976,11 +976,12 @@ export function StoreProvider({ children }) {
 
   // Substitui o seed pelos dados reais do banco (quando logado/configurado).
   const hydrateFromDb = (dados) => {
-    if (!dados) return;
-    if (dados.contas?.length) setFranqueados(dados.contas);
-    if (dados.unidades?.length) setUnidades(dados.unidades);
-    if (dados.usuarios?.length) setUsuarios(dados.usuarios);
-    if (dados.clientes?.length) setClientes(dados.clientes);
+    if (!dados) return; // backend indisponível → mantém o seed (demo)
+    // Reflete o banco EXATAMENTE (inclusive vazio) — não mantém dado antigo.
+    if (dados.contas) setFranqueados(dados.contas);
+    if (dados.unidades) setUnidades(dados.unidades);
+    if (dados.usuarios) setUsuarios(dados.usuarios);
+    if (dados.clientes) setClientes(dados.clientes);
   };
 
   // config_fiscal (linha do banco, snake) → formato do store (camel).
