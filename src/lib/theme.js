@@ -44,13 +44,13 @@ export const C = {
   bluePale: "rgba(51,92,129,.1)",
 };
 
-// Tipografia premium: Fraunces (serifa display, elegante e moderna) nos títulos
-// e números de destaque; Inter (sans cristalina) em toda a interface. Há
-// fallback de sistema para quando a fonte ainda não carregou.
-export const serif =
-  "'Fraunces', 'Book Antiqua', 'Palatino Linotype', Palatino, Georgia, serif";
-export const sans =
-  "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
+// Tipografia da marca: Book Antiqua em todo o app (Palatino/Georgia fazem o
+// mesmo papel em macOS/iOS/Linux/Android). `serif` (títulos/números) e `sans`
+// (interface) apontam para a mesma pilha — todas as letras Book Antiqua.
+const bookAntiqua =
+  "'Book Antiqua', 'Palatino Linotype', Palatino, 'URW Palladio L', 'Palatino LT STD', Georgia, serif";
+export const serif = bookAntiqua;
+export const sans = bookAntiqua;
 
 // Sombras em camadas (profundidade suave e consistente).
 export const shadow = {

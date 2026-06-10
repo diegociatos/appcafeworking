@@ -6,29 +6,48 @@ import Logo from "../components/Logo.jsx";
 import { signInWithPassword } from "../lib/supabaseAuth.js";
 import { fetchUnidadesPublicas, cadastrarCliente } from "../lib/authPublic.js";
 
-const card = { background: "#fff", border: `1px solid ${C.border2}`, borderRadius: 20, padding: 28, boxShadow: "0 20px 50px rgba(31,31,28,.10)" };
+const card = {
+  position: "relative",
+  background: "rgba(255,255,255,0.80)",
+  backdropFilter: "blur(18px)",
+  WebkitBackdropFilter: "blur(18px)",
+  border: "1px solid rgba(255,255,255,0.65)",
+  borderRadius: 22,
+  padding: 30,
+  boxShadow: "0 30px 70px rgba(31,31,28,.14), 0 2px 8px rgba(31,31,28,.04)",
+  overflow: "hidden",
+};
+const accent = { position: "absolute", top: 0, left: 0, right: 0, height: 4, background: `linear-gradient(90deg, ${C.cafe}, ${C.teal})` };
 const rotulo = { fontFamily: sans, fontSize: 12.5, fontWeight: 600, color: C.text2 };
 const iconWrap = { position: "absolute", left: 12, top: 13 };
+
+const blob = (extra) => ({ position: "absolute", borderRadius: "50%", filter: "blur(30px)", pointerEvents: "none", ...extra });
 
 export default function Login() {
   const [modo, setModo] = useState("login"); // login | signup
 
   return (
     <div style={{
-      minHeight: "100vh", display: "grid", placeItems: "center", fontFamily: sans, padding: 20,
-      background: `radial-gradient(1000px 600px at 85% -10%, rgba(110,78,59,.14), transparent 55%), radial-gradient(900px 600px at -5% 110%, rgba(14,75,79,.14), transparent 55%), ${C.cream}`,
+      minHeight: "100vh", display: "grid", placeItems: "center", fontFamily: sans, padding: 20, position: "relative", overflow: "hidden",
+      background: `radial-gradient(1100px 700px at 88% -12%, rgba(110,78,59,.13), transparent 58%), radial-gradient(950px 650px at -8% 112%, rgba(14,75,79,.13), transparent 55%), ${C.cream}`,
     }}>
-      <div className="cw-fade" style={{ width: "100%", maxWidth: modo === "signup" ? 440 : 392 }}>
-        <div style={{ textAlign: "center", marginBottom: 22 }}>
-          <Logo size={52} />
-          <div style={{ fontFamily: serif, fontSize: 21, color: C.text, marginTop: 14, letterSpacing: "-0.01em" }}>
+      <div style={blob({ top: -130, right: -90, width: 360, height: 360, background: "radial-gradient(circle, rgba(110,78,59,.20), transparent 70%)" })} />
+      <div style={blob({ bottom: -150, left: -110, width: 400, height: 400, background: "radial-gradient(circle, rgba(14,75,79,.18), transparent 70%)" })} />
+
+      <div className="cw-fade" style={{ width: "100%", maxWidth: modo === "signup" ? 456 : 400, position: "relative", zIndex: 1 }}>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <Logo size={56} />
+          <div style={{ fontFamily: serif, fontSize: 23, color: C.text, marginTop: 16 }}>
             {modo === "login" ? "Bem-vindo de volta" : "Crie sua conta"}
           </div>
-          <div style={{ fontSize: 13.5, color: C.text3, marginTop: 3 }}>
+          <div style={{ fontSize: 13.5, color: C.text3, marginTop: 4 }}>
             {modo === "login" ? "Gestão completa do seu coworking, em um só lugar." : "Reserve salas, peça na cafeteria e gerencie tudo pelo app."}
           </div>
         </div>
         {modo === "login" ? <LoginCard irParaCadastro={() => setModo("signup")} /> : <SignupCard irParaLogin={() => setModo("login")} />}
+        <div style={{ textAlign: "center", fontSize: 11.5, color: C.text4, marginTop: 18 }}>
+          🔒 Conexão segura · CafeWorking
+        </div>
       </div>
     </div>
   );
@@ -54,7 +73,8 @@ function LoginCard({ irParaCadastro }) {
 
   return (
     <form onSubmit={entrar} style={card}>
-      <div style={{ fontFamily: serif, fontSize: 21, color: C.text, marginBottom: 4, letterSpacing: "-0.01em" }}>Entrar</div>
+      <div style={accent} />
+      <div style={{ fontFamily: serif, fontSize: 22, color: C.text, marginBottom: 4 }}>Entrar</div>
       <div style={{ fontSize: 13, color: C.text3, marginBottom: 20 }}>Acesse sua conta.</div>
 
       <label style={rotulo}>E-mail</label>
@@ -115,6 +135,7 @@ function SignupCard({ irParaLogin }) {
 
   return (
     <form onSubmit={cadastrar} style={card}>
+      <div style={accent} />
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 4 }}>
         <div>
           <label style={rotulo}>Cidade</label>
