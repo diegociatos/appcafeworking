@@ -36,9 +36,11 @@ export default function Login() {
 
       <div className="cw-fade" style={{ width: "100%", maxWidth: modo === "signup" ? 456 : 400, position: "relative", zIndex: 1 }}>
         <div style={{ textAlign: "center", marginBottom: 24 }}>
-          <Logo size={56} />
+          <div style={{ display: "flex", justifyContent: "center" }}>
+            <Logo size={56} />
+          </div>
           <div style={{ fontFamily: serif, fontSize: 23, color: C.text, marginTop: 16 }}>
-            {modo === "login" ? "Bem-vindo de volta" : "Crie sua conta"}
+            {modo === "login" ? "Seja bem-vindo" : "Crie sua conta"}
           </div>
           <div style={{ fontSize: 13.5, color: C.text3, marginTop: 4 }}>
             {modo === "login" ? "Gestão completa do seu coworking, em um só lugar." : "Reserve salas, peça na cafeteria e gerencie tudo pelo app."}
