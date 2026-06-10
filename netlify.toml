@@ -1,11 +1,32 @@
+# ============================================================================
+# CafeWorking — configuração de deploy na Netlify
+# ============================================================================
+
 [build]
   command = "npm run build"
   publish = "dist"
 
+  # ECONOMIA DE BUILD: só rebuilda quando o FRONT-END muda. Commits que mexem
+  # só em supabase/ (Edge Functions/SQL), *.md, docs ou memória NÃO disparam
+  # build (o site não muda). A Netlify cancela o build quando este comando
+  # retorna 0 (= sem mudanças nos caminhos do front-end entre o último build
+  # publicado e o commit atual).
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- src public index.html package.json package-lock.json vite.config.js netlify.toml"
+
 [build.environment]
   NODE_VERSION = "22"
+  # Instalação mais rápida e silenciosa
+  NPM_FLAGS = "--no-audit --no-fund"
 
+# SPA: todas as rotas servem o index.html
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+
+# Cache longo para os assets versionados (hash no nome) — menos banda em
+# visitas repetidas. O index.html não é cacheado (sempre pega a versão nova).
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
