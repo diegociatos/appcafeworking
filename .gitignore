@@ -13,3 +13,6 @@ dist
 
 # Supabase CLI temp
 supabase/.temp/
+
+# Referência técnica NFS-e extraída de PDFs/XSD (não versionar)
+.nfse-docs/
