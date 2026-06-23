@@ -37,7 +37,7 @@ export const PERFIS = {
   master: {
     label: "Master (coworking)",
     cor: "#B8862F",
-    modules: ["dash", "equipe", "crm", "unidades", "patrimonio", "reservas", "corresp", "pdv", "catalogo", "estoque", "clientes", "chat", "financeiro", "boletos", "cobrancas", "notafiscal", "eventos"],
+    modules: ["dash", "equipe", "crm", "planos", "unidades", "patrimonio", "reservas", "corresp", "pdv", "catalogo", "estoque", "clientes", "chat", "financeiro", "boletos", "cobrancas", "notafiscal", "eventos"],
     landing: "dash",
   },
   recepcao: {
@@ -49,7 +49,7 @@ export const PERFIS = {
   financeiro: {
     label: "Financeiro",
     cor: "#3D7A5A",
-    modules: ["dash", "financeiro", "boletos", "cobrancas", "notafiscal", "patrimonio", "estoque", "catalogo", "clientes", "crm"],
+    modules: ["dash", "financeiro", "boletos", "cobrancas", "notafiscal", "planos", "patrimonio", "estoque", "catalogo", "clientes", "crm"],
     landing: "financeiro",
   },
   cliente: {
@@ -268,6 +268,16 @@ const seedNotasFiscais = [
   { id: "nf2", unidadeId: "lux", numero: "000123", tomador: "TechBH Software", tomadorDoc: "33.444.555/0001-22", descricao: "Plano coworking mensal · Jun/2026", valor: 390, iss: 7.8, status: "autorizada", emitidaEm: "2026-06-02", pdfUrl: "", xmlUrl: "" },
 ];
 
+// Planos vendáveis POR UNIDADE — o coworking define o que vende (mensal/avulso),
+// preço e se emite nota fiscal. Usados no lançador de cobrança e no autocheckout
+// do cliente (escolhe um plano e paga no cadastro).
+const seedPlanos = [
+  { id: "pl_fiscal", unidadeId: "lux", nome: "Endereço Fiscal", preco: 119, recorrencia: "mensal", emiteNF: true, descricao: "Endereço fiscal + recebimento de correspondências", ativo: true },
+  { id: "pl_cowork", unidadeId: "lux", nome: "Coworking Mensal", preco: 390, recorrencia: "mensal", emiteNF: true, descricao: "Estação compartilhada + café à vontade", ativo: true },
+  { id: "pl_priv", unidadeId: "lux", nome: "Sala Privativa", preco: 2890, recorrencia: "mensal", emiteNF: true, descricao: "Escritório privativo mobiliado", ativo: true },
+  { id: "pl_day", unidadeId: "lux", nome: "Day Pass", preco: 59, recorrencia: "avulso", emiteNF: true, descricao: "Acesso por um dia ao coworking", ativo: true },
+];
+
 export function StoreProvider({ children }) {
   const [unidades, setUnidades] = useState(seedOr(seedUnidades));
   const [franqueados, setFranqueados] = useState(seedOr(seedFranqueados));
@@ -289,6 +299,8 @@ export function StoreProvider({ children }) {
   const [patrimonio, setPatrimonio] = useState(seedOr(seedPatrimonio));
   const [configFiscal, setConfigFiscal] = useState(seedOr(seedConfigFiscal));
   const [notasFiscais, setNotasFiscais] = useState(seedOr(seedNotasFiscais));
+  const [planos, setPlanos] = useState(seedOr(seedPlanos));
+  const [recibos, setRecibos] = useState(seedOr([]));
   const [reservas, setReservas] = useState(seedOr(RESERVAS_INIT));
   // CRM: leads são dados (por unidade, persistem); etapas/origens são a
   // estrutura do funil (config padrão, compartilhada — não some no modo real).
@@ -328,6 +340,8 @@ export function StoreProvider({ children }) {
   useSync("conversas", conversas);
   useSync("leads", leads);
   useSync("eventos", eventos);
+  useSync("planos", planos);
+  useSync("recibos", recibos);
 
   const [activeUnit, setActiveUnit] = useState(UNIDADES[0].id);
   const [viewAs, setViewAs] = useState(null); // id do franqueado, ou null = franqueador
@@ -766,6 +780,34 @@ export function StoreProvider({ children }) {
     });
   };
 
+  // Planos vendáveis (por unidade) — cobrança e autocheckout do cliente ------
+  const planosDe = (unidadeId, incluirInativos = false) =>
+    planos.filter((p) => p.unidadeId === unidadeId && (incluirInativos || p.ativo !== false));
+  const addPlano = (unidadeId, p) => {
+    const id = "pl_" + Date.now();
+    setPlanos((ps) => [...ps, { id, unidadeId, recorrencia: "mensal", emiteNF: true, ativo: true, ...p, preco: Number(p.preco || 0) }]);
+    return id;
+  };
+  const updatePlano = (id, patch) =>
+    setPlanos((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch, ...(patch.preco != null ? { preco: Number(patch.preco) } : {}) } : p)));
+  const removePlano = (id) => setPlanos((ps) => ps.filter((p) => p.id !== id));
+
+  // Recibos — comprovante simples (quando não se emite nota fiscal) ----------
+  const recibosDe = (unidadeId) => recibos.filter((r) => r.unidadeId === unidadeId);
+  const emitirRecibo = (unidadeId, dados) => {
+    const numero = String(recibos.filter((r) => r.unidadeId === unidadeId).length + 1).padStart(5, "0");
+    const rec = {
+      id: "rec_" + Date.now(), unidadeId, numero,
+      cliente: dados.cliente || "Cliente", clienteDoc: dados.clienteDoc || "",
+      valor: Number(dados.valor || 0), descricao: dados.descricao || "Recebimento",
+      forma: dados.forma || "", cobrancaId: dados.cobrancaId || null,
+      emitidoEm: new Date().toISOString().slice(0, 10),
+    };
+    setRecibos((rs) => [rec, ...rs]);
+    return rec;
+  };
+  const removeRecibo = (id) => setRecibos((rs) => rs.filter((r) => r.id !== id));
+
   // Boletos / contas bancárias --------------------------------------------
   // ⚠️ Demonstração: em produção, addBankAccount manda a credencial pro Vault
   // e emitirBoleto/cancelarBoleto chamam as Edge Functions (boletosApi.js).
@@ -951,14 +993,29 @@ export function StoreProvider({ children }) {
   // PRODUÇÃO: aplica o perfil/unidade do usuário LOGADO a partir dos vínculos
   // (unidade_members). Sem vínculos = admin da plataforma (franqueador).
   const ROLE_PERFIL = { franqueador: "franqueador", admin: "franqueador", master: "master", financeiro: "financeiro", recepcao: "recepcao", cliente: "cliente" };
-  const aplicarSessaoUsuario = (membros, isPlatformAdmin) => {
+  const CARGO_LABEL = { franqueador: "Administrador", master: "Master", financeiro: "Financeiro", recepcao: "Recepção", cliente: "Cliente" };
+  // Atualiza a identidade exibida (rodapé do menu) com o usuário REALMENTE logado.
+  const _aplicarIdentidade = (ident, perfilKey) => {
+    if (!ident) return;
+    const doEmail = ident.email ? ident.email.split("@")[0].replace(/[._-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "";
+    setMeuPerfil((p) => ({
+      ...p,
+      nome: ident.nome || doEmail || p.nome,
+      email: ident.email || p.email,
+      cargo: CARGO_LABEL[perfilKey] || p.cargo,
+      foto: "",
+    }));
+  };
+  const aplicarSessaoUsuario = (membros, isPlatformAdmin, ident = null) => {
     // Admin da plataforma (vendedor do app) → painel da plataforma + Contas.
-    if (isPlatformAdmin) { setPerfilState("franqueador"); setViewAs(null); return; }
-    if (!membros || !membros.length) { setPerfilState("franqueador"); setViewAs(null); return; }
+    if (isPlatformAdmin) { setPerfilState("franqueador"); setViewAs(null); _aplicarIdentidade(ident, "franqueador"); return; }
+    if (!membros || !membros.length) { setPerfilState("franqueador"); setViewAs(null); _aplicarIdentidade(ident, "franqueador"); return; }
     const m = membros[0];
-    setPerfilState(ROLE_PERFIL[m.role] || "master");
+    const perfilKey = ROLE_PERFIL[m.role] || "master";
+    setPerfilState(perfilKey);
     setViewAs(m.franqueado_id || null);
     if (m.unidade_id) setActiveUnit(m.unidade_id);
+    _aplicarIdentidade(ident, perfilKey);
   };
 
   // Após onboarding: adiciona a conta + unidade recém-criadas ao estado.
@@ -1018,6 +1075,7 @@ export function StoreProvider({ children }) {
       apply("patrimonio", setPatrimonio); apply("contratos", setContratos);
       apply("correspondencias", setCorrespondencias); apply("pedidos", setPedidos);
       apply("conversas", setConversas); apply("leads", setLeads); apply("eventos", setEventos);
+      apply("planos", setPlanos); apply("recibos", setRecibos);
     }
     if (bs?.length) setBoletos(bs.map((b) => _mapApiBoleto(b, b.unidade_id)));
     if (notas?.length) setNotasFiscais(notas.map(_mapApiNota));
@@ -1067,8 +1125,10 @@ export function StoreProvider({ children }) {
       estoque, estoqueDe, estoqueBaixoDe, addItemEstoque, updateItemEstoque, removeItemEstoque, ajustarEstoque, comprarEstoque, venderEstoque,
       patrimonio, patrimonioDe, addAtivo, updateAtivo, removeAtivo,
       configFiscal, configFiscalDe, updateConfigFiscal, salvarConfigFiscal, notasFiscais, notasFiscaisDe, emitirNFSe, cancelarNF, salvarCertificadoFiscal,
+      planos, planosDe, addPlano, updatePlano, removePlano,
+      recibos, recibosDe, emitirRecibo, removeRecibo,
     }),
-    [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, configFiscal, notasFiscais, reservas, leads, crmEtapas, crmOrigens, eventos, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail, clienteNotifPrefs]
+    [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, configFiscal, notasFiscais, planos, recibos, reservas, leads, crmEtapas, crmOrigens, eventos, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail, clienteNotifPrefs]
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

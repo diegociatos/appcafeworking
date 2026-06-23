@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import {
   LayoutDashboard, KanbanSquare, Building2, CalendarDays, Mail, Coffee,
   Users, Wallet, Mic2, MessageSquare, UserCircle, Settings,
-  Search, Bell, Menu, X, ChevronDown, Check, Store, Eye, LogOut, ShieldCheck, Package, Home, FileText, Barcode, Boxes, Landmark,
+  Search, Bell, Menu, X, ChevronDown, Check, Store, Eye, LogOut, ShieldCheck, Package, Home, FileText, Barcode, Boxes, Landmark, Tags,
 } from "lucide-react";
 import { C, sans, serif } from "./lib/theme.js";
 import { useStore, PERFIS } from "./lib/store.jsx";
@@ -31,12 +31,14 @@ import Chat from "./pages/Chat.jsx";
 import AreaCliente from "./pages/AreaCliente.jsx";
 import Equipe from "./pages/Equipe.jsx";
 import Catalogo from "./pages/Catalogo.jsx";
+import Planos from "./pages/Planos.jsx";
 import Configuracoes from "./pages/Configuracoes.jsx";
 
 const NAV = [
   { id: "dash", label: "Dashboard", icon: LayoutDashboard, group: "principal" },
   { id: "franqueados", label: "Contas", icon: Store, group: "comercial" },
   { id: "crm", label: "CRM · Leads", icon: KanbanSquare, group: "comercial" },
+  { id: "planos", label: "Planos e serviços", icon: Tags, group: "comercial" },
   { id: "unidades", label: "Unidades", icon: Building2, group: "gestao" },
   { id: "equipe", label: "Equipe", icon: ShieldCheck, group: "gestao" },
   { id: "patrimonio", label: "Patrimônio", icon: Landmark, group: "gestao" },
@@ -70,7 +72,7 @@ const PAGES = {
   dash: Dashboard, franqueados: Franqueados, crm: CRM, unidades: Unidades,
   reservas: Reservas, corresp: Correspondencias, pdv: PDV, clientes: Clientes,
   financeiro: Financeiro, boletos: Boletos, cobrancas: Cobrancas, notafiscal: NotaFiscal, estoque: Estoque, patrimonio: Patrimonio, eventos: Eventos, chat: Chat,
-  area: AreaCliente, equipe: Equipe, catalogo: Catalogo, config: Configuracoes,
+  area: AreaCliente, equipe: Equipe, catalogo: Catalogo, planos: Planos, config: Configuracoes,
   cli_inicio: AreaCliente, cli_reservar: AreaCliente, cli_cafe: AreaCliente,
   cli_faturas: AreaCliente, cli_docs: AreaCliente, cli_fiscal: AreaCliente, cli_chat: AreaCliente, cli_notif: AreaCliente,
 };
@@ -99,8 +101,10 @@ export default function App() {
     if (!(supabaseConfigured && session)) return;
     let vivo = true;
     fetchTenant().then((dados) => { if (vivo) hydrateFromDb(dados); });
+    const u = session.user || {};
+    const ident = { email: u.email || "", nome: u.user_metadata?.nome || u.user_metadata?.name || "" };
     Promise.all([fetchMemberships(), fetchIsPlatformAdmin()])
-      .then(([membros, isAdmin]) => { if (vivo) aplicarSessaoUsuario(membros, isAdmin); });
+      .then(([membros, isAdmin]) => { if (vivo) aplicarSessaoUsuario(membros, isAdmin, ident); });
     // Estado operacional (salas, reservas, financeiro, estoque…) + tabelas próprias.
     Promise.all([fetchAppState(), fetchBoletosDb(), fetchNotasDb(), fetchConfigFiscalDb()])
       .then(([appState, boletos, notas, config]) => {

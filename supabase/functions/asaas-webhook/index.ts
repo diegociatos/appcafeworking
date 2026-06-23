@@ -21,6 +21,40 @@ const STATUS: Record<string, string> = {
   PAYMENT_CHARGEBACK_REQUESTED: "estornado",
 };
 
+// Ativa um cadastro pendente após o pagamento: desbane o login e cria o cliente
+// + vínculo de acesso. Best-effort por etapa (idempotente o suficiente).
+async function ativarAssinatura(admin: any, ps: any, pay: any) {
+  try {
+    if (ps.user_id) await admin.auth.admin.updateUserById(ps.user_id, { ban_duration: "none" });
+
+    const ano = new Date().getFullYear();
+    const clienteId = "c_" + crypto.randomUUID().slice(0, 10);
+    await admin.from("clientes").insert({
+      id: clienteId, unidade_id: ps.unidade_id, nome: ps.nome, documento: ps.documento || null,
+      plano: ps.plano_nome || "Assinante", fiscal: false, status: "ativo", desde: String(ano),
+      contato: ps.nome, email: ps.email, telefone: ps.telefone || null,
+    });
+
+    if (ps.user_id) {
+      await admin.from("unidade_members").insert({
+        user_id: ps.user_id, unidade_id: ps.unidade_id, franqueado_id: ps.franqueado_id, role: "cliente",
+      });
+    }
+
+    // Registra a 1ª fatura como paga (aparece em Cobranças / faturas do cliente).
+    await admin.from("cobrancas").insert({
+      unidade_id: ps.unidade_id, cliente: ps.nome, cliente_documento: ps.documento, cliente_email: ps.email,
+      valor: ps.valor, descricao: `${ps.plano_nome} · assinatura`, tipo: "UNDEFINED", gateway: "asaas",
+      asaas_customer_id: ps.asaas_customer_id, asaas_payment_id: pay.id, status: "pago",
+      valor_pago: pay.value ?? ps.valor, pago_em: new Date().toISOString(), invoice_url: ps.invoice_url || null,
+    });
+
+    await admin.from("pending_signups").update({ status: "ativo", ativado_em: new Date().toISOString() }).eq("id", ps.id);
+  } catch (e) {
+    console.error("ativarAssinatura:", (e as Error).message);
+  }
+}
+
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
@@ -47,6 +81,16 @@ Deno.serve(async (req) => {
       patch.pago_em = new Date().toISOString();
     }
     await admin.from("cobrancas").update(patch).eq("asaas_payment_id", pay.id);
+
+    // Autocheckout: pagamento confirmado ATIVA o cadastro pendente (desbanir o
+    // login + criar cliente e vínculo de acesso).
+    if (novo === "pago") {
+      const { data: ps } = await admin
+        .from("pending_signups").select("*").eq("asaas_payment_id", pay.id).eq("status", "aguardando").maybeSingle();
+      if (ps) {
+        await ativarAssinatura(admin, ps, pay);
+      }
+    }
 
     return json({ ok: true, status: novo }, 200);
   } catch (e) {

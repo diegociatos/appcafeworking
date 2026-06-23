@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { CreditCard, Plus, Barcode, QrCode, Link2, CheckCircle2, Copy, ExternalLink, AlertTriangle, Wallet, KeyRound, ShieldCheck } from "lucide-react";
+import { CreditCard, Plus, Barcode, QrCode, Link2, CheckCircle2, Copy, ExternalLink, AlertTriangle, Wallet, KeyRound, ShieldCheck, FileText, Receipt, Tags } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
-import { C, serif, fmt, inp } from "../lib/theme.js";
+import { C, serif, sans, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 import { asaasApi } from "../lib/asaasApi.js";
 import { fetchCobrancasDb } from "../lib/supabaseDb.js";
+import ReciboView from "../components/ReciboView.jsx";
 
 const STATUS = {
   pendente: { label: "Aguardando", cor: C.amber, bg: C.amberPale },
@@ -21,21 +22,25 @@ const TIPOS = [
 ];
 const fmtData = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
 const mapCob = (c) => ({
-  id: c.id, cliente: c.cliente, valor: Number(c.valor || 0), vencimento: c.vencimento,
+  id: c.id, cliente: c.cliente, documento: c.cliente_documento, email: c.cliente_email,
+  valor: Number(c.valor || 0), vencimento: c.vencimento,
   tipo: c.tipo, status: c.status, invoiceUrl: c.invoice_url, boletoUrl: c.boleto_url,
   pixPayload: c.pix_payload, descricao: c.descricao,
 });
 
 export default function Cobrancas() {
-  const { activeUnit, unidadeAtiva, clientesDe } = useStore();
+  const store = useStore();
+  const { activeUnit, unidadeAtiva, clientesDe } = store;
   const [lista, setLista] = useState([]);
   const [novo, setNovo] = useState(false);
   const [detalhe, setDetalhe] = useState(null);
   const [config, setConfig] = useState(false);
+  const [recibo, setRecibo] = useState(null);
 
   useEffect(() => {
     let vivo = true;
     if (asaasApi.configured) fetchCobrancasDb().then((rows) => { if (vivo) setLista((rows || []).map(mapCob).filter((c) => true)); });
+    else setLista([]);
     return () => { vivo = false; };
   }, [activeUnit]);
 
@@ -46,8 +51,8 @@ export default function Cobrancas() {
   return (
     <div>
       <PageHead
-        title="Cobranças"
-        sub={`Receba por boleto, PIX ou cartão (Asaas) · ${unidadeAtiva?.nome || ""}.`}
+        title="Contas a receber"
+        sub={`Lance uma cobrança e já escolha boleto, PIX, cartão, nota fiscal ou recibo · ${unidadeAtiva?.nome || ""}.`}
         action={
           <div style={{ display: "flex", gap: 8 }}>
             <Btn variant="ghost" onClick={() => setConfig(true)}><KeyRound size={15} /> Configurar recebimento</Btn>
@@ -70,7 +75,7 @@ export default function Cobrancas() {
       </div>
 
       {cobrancas.length === 0 ? (
-        <Card><Empty icon={CreditCard} title="Nenhuma cobrança" sub="Crie a primeira cobrança — o cliente paga por boleto, PIX ou cartão." /></Card>
+        <Card><Empty icon={CreditCard} title="Nenhuma cobrança" sub="Crie a primeira cobrança — você escolhe boleto, PIX, cartão (link), nota fiscal ou recibo." /></Card>
       ) : (
         <Card style={{ padding: 0, overflow: "hidden" }}>
           {cobrancas.map((c, i) => {
@@ -93,13 +98,21 @@ export default function Cobrancas() {
       )}
 
       {novo && (
-        <Modal title="Nova cobrança" onClose={() => setNovo(false)} maxWidth={480}>
-          <CobrancaForm unidadeId={activeUnit} clientes={clientesDe(unidadeAtiva?.nome)} onCriada={(c) => { setLista((l) => [c, ...l]); setNovo(false); setDetalhe(c); }} />
+        <Modal title="Nova conta a receber" onClose={() => setNovo(false)} maxWidth={500}>
+          <CobrancaForm
+            store={store}
+            onCriada={(c, rec) => { setLista((l) => [c, ...l]); setNovo(false); if (rec) setRecibo(rec); else setDetalhe(c); }}
+          />
         </Modal>
       )}
       {detalhe && (
         <Modal title="Cobrança" onClose={() => setDetalhe(null)} maxWidth={460}>
-          <DetalheCobranca c={detalhe} />
+          <DetalheCobranca c={detalhe} store={store} onRecibo={(rec) => { setDetalhe(null); setRecibo(rec); }} />
+        </Modal>
+      )}
+      {recibo && (
+        <Modal title="Recibo" onClose={() => setRecibo(null)} maxWidth={440}>
+          <ReciboView recibo={recibo} unidade={unidadeAtiva} />
         </Modal>
       )}
       {config && (
@@ -169,35 +182,95 @@ function Kpi({ label, valor, cor, icon: Icon }) {
   );
 }
 
-function CobrancaForm({ unidadeId, clientes, onCriada }) {
-  const [f, setF] = useState({ clienteId: clientes[0]?.id || "", nome: "", doc: "", email: "", valor: "", vencimento: "", descricao: "", tipo: "UNDEFINED" });
+// Documento fiscal a emitir junto da cobrança.
+const DOCS = [
+  { v: "nenhum", lb: "Nenhum", ic: CreditCard, hint: "Só a cobrança" },
+  { v: "nf", lb: "Nota fiscal", ic: FileText, hint: "Emite NFS-e" },
+  { v: "recibo", lb: "Recibo", ic: Receipt, hint: "Comprovante simples" },
+];
+const ddmm = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "—");
+
+function CobrancaForm({ store, onCriada }) {
+  const { activeUnit, unidadeAtiva, clientesDe, planosDe, addLancamento, contasDe, emitirNFSe, emitirRecibo, configFiscalDe } = store;
+  const clientes = clientesDe(unidadeAtiva?.nome) || [];
+  const planos = planosDe(activeUnit) || [];
+  const cfgFiscal = configFiscalDe(activeUnit);
+
+  const [f, setF] = useState({ clienteId: clientes[0]?.id || "", nome: "", doc: "", email: "", planoId: "", valor: "", vencimento: "", descricao: "", tipo: "UNDEFINED", documento: "nenhum" });
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState(null);
   const cli = clientes.find((c) => c.id === f.clienteId);
   const nome = cli?.nome || f.nome.trim();
   const doc = cli?.cnpj || f.doc.trim();
+  const email = cli?.email || f.email.trim();
+  const descricaoFinal = f.descricao.trim() || planos.find((p) => p.id === f.planoId)?.nome || "Cobrança";
   const valido = nome && doc && +f.valor > 0;
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
-  const criar = () => {
+  const escolherPlano = (id) => {
+    const p = planos.find((x) => x.id === id);
+    if (!p) return setF({ ...f, planoId: "" });
+    setF({ ...f, planoId: id, valor: String(p.preco), descricao: p.nome + (p.recorrencia === "mensal" ? " · mensal" : ""), documento: p.emiteNF ? "nf" : f.documento });
+  };
+
+  const criar = async () => {
     setErro(null);
     if (!valido) return setErro("Preencha cliente, documento e valor.");
     setBusy(true);
-    asaasApi.criarCobranca({
-      unidade_id: unidadeId, cliente: nome, cliente_documento: doc, cliente_email: cli?.email || f.email,
-      valor: +f.valor, vencimento: f.vencimento || undefined, descricao: f.descricao, tipo: f.tipo,
-    })
-      .then(({ cobranca }) => onCriada({
-        id: cobranca.id, cliente: cobranca.cliente, valor: Number(cobranca.valor), vencimento: cobranca.vencimento,
-        tipo: cobranca.tipo, status: cobranca.status, invoiceUrl: cobranca.invoice_url, boletoUrl: cobranca.boleto_url,
-        pixPayload: cobranca.pix_payload, descricao: cobranca.descricao,
-      }))
-      .catch((e) => setErro(e.message))
-      .finally(() => setBusy(false));
+    try {
+      let cobranca;
+      if (asaasApi.configured) {
+        const { cobranca: cb } = await asaasApi.criarCobranca({
+          unidade_id: activeUnit, cliente: nome, cliente_documento: doc, cliente_email: email,
+          valor: +f.valor, vencimento: f.vencimento || undefined, descricao: descricaoFinal, tipo: f.tipo,
+        });
+        cobranca = {
+          id: cb.id, cliente: cb.cliente, documento: cb.cliente_documento, email: cb.cliente_email,
+          valor: Number(cb.valor), vencimento: cb.vencimento, tipo: cb.tipo, status: cb.status,
+          invoiceUrl: cb.invoice_url, boletoUrl: cb.boleto_url, pixPayload: cb.pix_payload, descricao: cb.descricao,
+        };
+      } else {
+        // Demonstração (sem backend): gera uma cobrança plausível localmente.
+        const id = "cob_" + Date.now();
+        const venc = f.vencimento || new Date(Date.now() + 3 * 864e5).toISOString().slice(0, 10);
+        cobranca = {
+          id, cliente: nome, documento: doc, email, valor: +f.valor, vencimento: venc, tipo: f.tipo, status: "pendente",
+          invoiceUrl: "", boletoUrl: "", pixPayload: (f.tipo === "PIX" || f.tipo === "UNDEFINED") ? "00020126DEMOPIX" + id : "",
+          descricao: descricaoFinal,
+        };
+      }
+
+      // Lança no financeiro como conta a receber (vinculada à cobrança).
+      addLancamento(activeUnit, {
+        tipo: "entrada", descricao: descricaoFinal,
+        categoria: "Receita Operacional Bruta", subcategoria: planos.find((p) => p.id === f.planoId)?.nome || "",
+        valor: +f.valor, contaId: contasDe(activeUnit)[0]?.id, data: ddmm(cobranca.vencimento),
+        status: cobranca.status === "pago" ? "pago" : "previsto", cobrancaId: cobranca.id,
+      });
+
+      // Documento fiscal escolhido.
+      if (f.documento === "nf") emitirNFSe(activeUnit, { tomador: nome, tomadorDoc: doc, tomadorEmail: email, valor: +f.valor, descricao: descricaoFinal });
+      let rec = null;
+      if (f.documento === "recibo") rec = emitirRecibo(activeUnit, { cliente: nome, clienteDoc: doc, valor: +f.valor, descricao: descricaoFinal, forma: TIPOS.find((t) => t.v === f.tipo)?.lb, cobrancaId: cobranca.id });
+
+      onCriada(cobranca, rec);
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
     <>
+      {planos.length > 0 && (
+        <Field label="Plano / serviço (opcional)">
+          <select value={f.planoId} onChange={(e) => escolherPlano(e.target.value)} style={inp}>
+            <option value="">— avulso (digitar valor) —</option>
+            {planos.map((p) => <option key={p.id} value={p.id}>{p.nome} · {fmt(p.preco)}{p.recorrencia === "mensal" ? "/mês" : ""}</option>)}
+          </select>
+        </Field>
+      )}
       {clientes.length > 0 && (
         <Field label="Cliente">
           <select value={f.clienteId} onChange={set("clienteId")} style={inp}>
@@ -217,7 +290,8 @@ function CobrancaForm({ unidadeId, clientes, onCriada }) {
         <Field label="Vencimento"><input type="date" value={f.vencimento} onChange={set("vencimento")} style={inp} /></Field>
       </div>
       <Field label="Descrição"><input value={f.descricao} onChange={set("descricao")} style={inp} placeholder="Ex: Mensalidade Junho" /></Field>
-      <Field label="Forma de pagamento">
+
+      <Field label="Como cobrar">
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           {TIPOS.map((t) => (
             <button key={t.v} type="button" onClick={() => setF({ ...f, tipo: t.v })}
@@ -226,19 +300,47 @@ function CobrancaForm({ unidadeId, clientes, onCriada }) {
             </button>
           ))}
         </div>
+        <div style={{ fontSize: 11, color: C.text4, marginTop: 6 }}>"Cliente escolhe" gera um link Asaas que aceita boleto, PIX e <b>cartão de crédito</b>.</div>
       </Field>
+
+      <Field label="Documento fiscal">
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+          {DOCS.map((dd) => (
+            <button key={dd.v} type="button" onClick={() => setF({ ...f, documento: dd.v })}
+              style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "10px 6px", borderRadius: 10, border: `1px solid ${f.documento === dd.v ? C.teal : C.border}`, background: f.documento === dd.v ? C.tealPale : C.white, color: f.documento === dd.v ? C.teal : C.text2, fontSize: 12.5, fontWeight: 600 }}>
+              <dd.ic size={16} /> {dd.lb}
+              <span style={{ fontSize: 9.5, fontWeight: 500, color: C.text4 }}>{dd.hint}</span>
+            </button>
+          ))}
+        </div>
+        {f.documento === "nf" && !cfgFiscal?.emissaoAtiva && (
+          <div style={{ fontSize: 11, color: C.amber, marginTop: 6 }}>⚠ Configure o certificado e a emissão fiscal da unidade (Notas Fiscais) para a NF sair de verdade.</div>
+        )}
+      </Field>
+
       {erro && <div style={{ fontSize: 12.5, color: C.red, marginBottom: 10 }}>{erro}</div>}
       <Btn style={{ width: "100%", justifyContent: "center", opacity: busy ? 0.6 : 1 }} onClick={() => !busy && criar()}>
-        {busy ? "Criando…" : "Gerar cobrança"}
+        {busy ? "Criando…" : "Lançar conta a receber"}
       </Btn>
     </>
   );
 }
 
-function DetalheCobranca({ c }) {
+function DetalheCobranca({ c, store, onRecibo }) {
+  const { activeUnit, emitirNFSe, emitirRecibo, configFiscalDe } = store;
   const [cop, setCop] = useState("");
+  const [nfFeita, setNfFeita] = useState(false);
   const copiar = (txt, tag) => { navigator.clipboard?.writeText(txt); setCop(tag); setTimeout(() => setCop(""), 1500); };
   const st = STATUS[c.status] || STATUS.pendente;
+  const emitirNota = () => {
+    emitirNFSe(activeUnit, { tomador: c.cliente, tomadorDoc: c.documento, tomadorEmail: c.email, valor: c.valor, descricao: c.descricao });
+    setNfFeita(true);
+  };
+  const gerarRecibo = () => {
+    const rec = emitirRecibo(activeUnit, { cliente: c.cliente, clienteDoc: c.documento, valor: c.valor, descricao: c.descricao || "Cobrança", forma: (TIPOS.find((t) => t.v === c.tipo) || {}).lb, cobrancaId: c.id });
+    onRecibo?.(rec);
+  };
+
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
@@ -267,6 +369,15 @@ function DetalheCobranca({ c }) {
           <Link2 size={15} /> {cop === "link" ? "Link copiado!" : "Copiar link para enviar ao cliente"}
         </Btn>
       )}
+
+      <div style={{ borderTop: `1px solid ${C.border2}`, marginTop: 14, paddingTop: 14, display: "flex", gap: 8 }}>
+        <Btn variant="ghost" style={{ flex: 1, justifyContent: "center", color: nfFeita ? C.green : C.teal }} onClick={emitirNota} disabled={nfFeita}>
+          <FileText size={15} /> {nfFeita ? "Nota emitida" : "Emitir nota fiscal"}
+        </Btn>
+        <Btn variant="ghost" style={{ flex: 1, justifyContent: "center" }} onClick={gerarRecibo}>
+          <Receipt size={15} /> Gerar recibo
+        </Btn>
+      </div>
     </>
   );
 }
