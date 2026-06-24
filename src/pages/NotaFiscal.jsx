@@ -234,7 +234,7 @@ function CertificadoCard({ cfg, unidadeNome, onEnviar }) {
 
 function ConfigFiscal({ cfg, unidadeNome, onSalvar }) {
   const [f, setF] = useState({
-    municipio: cfg?.municipio || "", uf: cfg?.uf || "MG", cnpj: cfg?.cnpj || "",
+    municipio: cfg?.municipio || "", codigoMunicipio: cfg?.codigoMunicipio || "", uf: cfg?.uf || "MG", cnpj: cfg?.cnpj || "",
     inscricaoMunicipal: cfg?.inscricaoMunicipal || "", regime: cfg?.regime || "Simples Nacional",
     codigoServico: cfg?.codigoServico || "", descricaoServico: cfg?.descricaoServico || "",
     aliquotaISS: cfg?.aliquotaISS ?? 0,
@@ -250,7 +250,7 @@ function ConfigFiscal({ cfg, unidadeNome, onSalvar }) {
     issRetido: cfg?.issRetido ?? false,
     exigibilidadeIss: cfg?.exigibilidadeIss || "exigivel",
   });
-  const [maisFiscal, setMaisFiscal] = useState(false);
+  const [maisFiscal, setMaisFiscal] = useState((cfg?.emissor || "nacional") === "nacional");
   const [salvo, setSalvo] = useState(false);
   const set = (k) => (e) => { setF({ ...f, [k]: e.target.value }); setSalvo(false); };
 
@@ -264,9 +264,13 @@ function ConfigFiscal({ cfg, unidadeNome, onSalvar }) {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1.7fr 1fr 64px", gap: 12 }}>
         <Field label="Município"><input value={f.municipio} onChange={set("municipio")} style={inp} placeholder="Ex: Belo Horizonte" /></Field>
+        <Field label="Código IBGE (cLocEmi)"><input value={f.codigoMunicipio} onChange={set("codigoMunicipio")} style={inp} placeholder="3106200" inputMode="numeric" /></Field>
         <Field label="UF"><input value={f.uf} onChange={set("uf")} style={inp} maxLength={2} /></Field>
+      </div>
+      <div style={{ fontSize: 11, color: C.text4, margin: "-4px 0 10px" }}>
+        Código IBGE de 7 dígitos do município emissor (obrigatório no padrão nacional). Belo Horizonte = <b>3106200</b>.
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
         <Field label="CNPJ do prestador"><input value={f.cnpj} onChange={set("cnpj")} style={inp} placeholder="00.000.000/0001-00" /></Field>

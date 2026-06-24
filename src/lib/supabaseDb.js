@@ -50,7 +50,7 @@ export async function upsertConfigFiscal(patch) {
   if (!token) return null;
   const row = {
     unidade_id: patch.unidadeId,
-    municipio: patch.municipio, uf: patch.uf, cnpj: patch.cnpj,
+    municipio: patch.municipio, codigo_municipio: patch.codigoMunicipio, uf: patch.uf, cnpj: patch.cnpj,
     inscricao_municipal: patch.inscricaoMunicipal, regime: patch.regime,
     codigo_servico: patch.codigoServico, descricao_servico: patch.descricaoServico,
     aliquota_iss: patch.aliquotaISS, emissor: patch.emissor, ambiente: patch.ambiente,

@@ -1043,7 +1043,7 @@ export function StoreProvider({ children }) {
 
   // config_fiscal (linha do banco, snake) → formato do store (camel).
   const _mapConfigFiscal = (r) => ({
-    unidadeId: r.unidade_id, municipio: r.municipio, uf: r.uf, cnpj: r.cnpj,
+    unidadeId: r.unidade_id, municipio: r.municipio, codigoMunicipio: r.codigo_municipio, uf: r.uf, cnpj: r.cnpj,
     inscricaoMunicipal: r.inscricao_municipal, regime: r.regime,
     codigoServico: r.codigo_servico, descricaoServico: r.descricao_servico,
     aliquotaISS: Number(r.aliquota_iss || 0), emissor: r.emissor, ambiente: r.ambiente,
