@@ -187,13 +187,13 @@ export default function Unidades({ go }) {
 // ===========================================================================
 function GerenciarUnidade({ unidade, go, onBack }) {
   const store = useStore();
-  const [tab, setTab] = useState("salas");
+  const [tab, setTab] = useState("cafeteria");
 
   const salas = store.salasDe(unidade.id);
   const produtos = store.produtosDe(unidade.id);
 
+  // Cadastro de salas saiu daqui — agora fica no menu lateral (página "Salas").
   const tabs = [
-    { id: "salas", label: "Salas", icon: DoorOpen, n: salas.length },
     { id: "cafeteria", label: "Cafeteria", icon: Coffee, n: produtos.length },
     { id: "agenda", label: "Agenda", icon: CalendarDays },
   ];
@@ -272,7 +272,6 @@ function GerenciarUnidade({ unidade, go, onBack }) {
         ))}
       </div>
 
-      {tab === "salas" && <SalasTab unidade={unidade} salas={salas} store={store} />}
       {tab === "cafeteria" && <CafeteriaTab unidade={unidade} produtos={produtos} go={go} />}
       {tab === "agenda" && <AgendaTab unidade={unidade} salas={salas} store={store} go={go} />}
     </div>
