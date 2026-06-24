@@ -374,7 +374,7 @@ function FotosGaleria({ fotos, onChange }) {
   );
 }
 
-function SalaForm({ inicial, unidade, onSave }) {
+export function SalaForm({ inicial, unidade, onSave }) {
   const { clientesDe } = useStore();
   const [f, setF] = useState({
     nome: inicial.nome || "",

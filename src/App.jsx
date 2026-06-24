@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import {
   LayoutDashboard, KanbanSquare, Building2, CalendarDays, Mail, Coffee,
   Users, Wallet, Mic2, MessageSquare, UserCircle, Settings,
-  Search, Bell, Menu, X, ChevronDown, Check, Store, Eye, LogOut, ShieldCheck, Package, Home, FileText, Barcode, Boxes, Landmark, Tags,
+  Search, Bell, Menu, X, ChevronDown, Check, Store, Eye, LogOut, ShieldCheck, Package, Home, FileText, Barcode, Boxes, Landmark, Tags, DoorOpen,
 } from "lucide-react";
 import { C, sans, serif } from "./lib/theme.js";
 import { useStore, PERFIS } from "./lib/store.jsx";
@@ -32,6 +32,7 @@ import AreaCliente from "./pages/AreaCliente.jsx";
 import Equipe from "./pages/Equipe.jsx";
 import Catalogo from "./pages/Catalogo.jsx";
 import Planos from "./pages/Planos.jsx";
+import Salas from "./pages/Salas.jsx";
 import Configuracoes from "./pages/Configuracoes.jsx";
 
 const NAV = [
@@ -42,6 +43,7 @@ const NAV = [
   { id: "unidades", label: "Unidades", icon: Building2, group: "gestao" },
   { id: "equipe", label: "Equipe", icon: ShieldCheck, group: "gestao" },
   { id: "patrimonio", label: "Patrimônio", icon: Landmark, group: "gestao" },
+  { id: "salas", label: "Salas", icon: DoorOpen, group: "operacao" },
   { id: "reservas", label: "Reservas", icon: CalendarDays, group: "operacao" },
   { id: "corresp", label: "Correspondências", icon: Mail, group: "operacao" },
   { id: "pdv", label: "Cafeteria · PDV", icon: Coffee, group: "operacao" },
@@ -72,7 +74,7 @@ const PAGES = {
   dash: Dashboard, franqueados: Franqueados, crm: CRM, unidades: Unidades,
   reservas: Reservas, corresp: Correspondencias, pdv: PDV, clientes: Clientes,
   financeiro: Financeiro, boletos: Boletos, cobrancas: Cobrancas, notafiscal: NotaFiscal, estoque: Estoque, patrimonio: Patrimonio, eventos: Eventos, chat: Chat,
-  area: AreaCliente, equipe: Equipe, catalogo: Catalogo, planos: Planos, config: Configuracoes,
+  area: AreaCliente, equipe: Equipe, catalogo: Catalogo, planos: Planos, salas: Salas, config: Configuracoes,
   cli_inicio: AreaCliente, cli_reservar: AreaCliente, cli_cafe: AreaCliente,
   cli_faturas: AreaCliente, cli_docs: AreaCliente, cli_fiscal: AreaCliente, cli_chat: AreaCliente, cli_notif: AreaCliente,
 };
