@@ -147,14 +147,17 @@ function Kpi({ label, valor, icon: Icon, cor }) {
 }
 
 function EmitirNotaForm({ cfg, onEmitir }) {
-  const [f, setF] = useState({ tomador: "", tomadorDoc: "", descricao: cfg?.descricaoServico || "", valor: "" });
+  const [f, setF] = useState({ tomador: "", tomadorDoc: "", tomadorEmail: "", descricao: cfg?.descricaoServico || "", valor: "" });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const iss = (+f.valor || 0) * (cfg?.aliquotaISS || 0) / 100;
   const valido = f.tomador.trim() && +f.valor > 0;
   return (
     <>
       <Field label="Tomador (cliente)"><input value={f.tomador} onChange={set("tomador")} style={inp} placeholder="Nome / razão social" /></Field>
-      <Field label="CPF / CNPJ do tomador"><input value={f.tomadorDoc} onChange={set("tomadorDoc")} style={inp} placeholder="00.000.000/0001-00" /></Field>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <Field label="CPF / CNPJ do tomador"><input value={f.tomadorDoc} onChange={set("tomadorDoc")} style={inp} placeholder="00.000.000/0001-00" /></Field>
+        <Field label="E-mail (recebe a nota)"><input type="email" value={f.tomadorEmail} onChange={set("tomadorEmail")} style={inp} placeholder="cliente@email.com" /></Field>
+      </div>
       <Field label="Descrição do serviço"><input value={f.descricao} onChange={set("descricao")} style={inp} placeholder="Ex: Locação de sala / mensalidade coworking" /></Field>
       <Field label="Valor do serviço (R$)"><input type="number" min="0" step="0.01" value={f.valor} onChange={set("valor")} style={inp} placeholder="0,00" /></Field>
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, color: C.text3, background: C.cream2, borderRadius: 9, padding: "9px 12px", marginBottom: 14 }}>
