@@ -17,6 +17,7 @@ import { userClient, adminClient } from "../_shared/supabaseAdmin.ts";
 import { getFiscalCredentials } from "../_shared/fiscalVault.ts";
 import { uploadNfseFile } from "../_shared/storage.ts";
 import { getNfseProvider, FiscalError, type ConfigFiscal, type EmitirNfseInput } from "../_shared/nfse/index.ts";
+import { dispatchNotificacao } from "../_shared/notify/index.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -103,6 +104,14 @@ Deno.serve(async (req) => {
     if (result.pdfUrl) {
       await admin.from("notas_fiscais").update({ pdf_url: result.pdfUrl }).eq("id", nota.id);
       nota.pdf_url = result.pdfUrl;
+    }
+
+    // Envia a nota ao e-mail do tomador (Resend) — best-effort.
+    if (body.tomador_email) {
+      await dispatchNotificacao(admin, {
+        unidade_id: config.unidade_id, evento: "nfse_emitida", email: body.tomador_email, cliente: input.tomador.nome,
+        dados: { numero: nota.numero, valor: input.valor, descricao: input.descricao, pdfUrl: nota.pdf_url || result.pdfUrl },
+      });
     }
 
     return json({ nota }, 201);

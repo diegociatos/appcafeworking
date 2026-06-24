@@ -25,6 +25,8 @@ export type Evento =
   | "boleto_lembrete"
   | "boleto_pago"
   | "boleto_vencido"
+  | "cobranca_nova"
+  | "nfse_emitida"
   | "correspondencia"
   | "cafe_pedido"
   | "cafe_pronto"

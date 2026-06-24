@@ -67,6 +67,28 @@ const TEMPLATES: Record<Evento, (d: any) => Render> = {
     html: layout("Cobrança em atraso", `Olá <b>${d.cliente}</b>,<br><br>A cobrança de <b>${brl(d.valor)}</b> venceu em <b>${dataBR(d.vencimento)}</b>. Se já pagou, desconsidere.`,
       { label: "Regularizar", url: `${APP_URL}/faturas` }),
   }),
+  cobranca_nova: (d) => ({
+    assunto: `Sua cobrança · ${brl(d.valor)}${d.vencimento ? ` vence ${dataBR(d.vencimento)}` : ""}`,
+    texto: `Olá ${d.cliente}, sua cobrança de ${brl(d.valor)} está disponível. Pague por cartão, PIX ou boleto: ${d.invoiceUrl || d.pdfUrl || `${APP_URL}/faturas`}`,
+    html: layout(
+      "Sua cobrança está disponível",
+      `Olá <b>${d.cliente}</b>,<br><br>${d.descricao ? `${d.descricao}<br><br>` : ""}Valor: <b>${brl(d.valor)}</b>${d.vencimento ? ` · vence em <b>${dataBR(d.vencimento)}</b>` : ""}.<br><br>
+       Você pode pagar por <b>cartão de crédito, PIX ou boleto</b> no botão abaixo.
+       ${d.pixCopiaCola ? `<br><br><b>PIX copia e cola:</b><br><span style="font-family:monospace;font-size:12px;word-break:break-all">${d.pixCopiaCola}</span>` : ""}`,
+      d.invoiceUrl ? { label: "Pagar agora", url: d.invoiceUrl }
+        : d.pdfUrl ? { label: "Ver boleto (PDF)", url: d.pdfUrl }
+        : { label: "Ver na minha área", url: `${APP_URL}/faturas` },
+    ),
+  }),
+  nfse_emitida: (d) => ({
+    assunto: `Sua nota fiscal${d.numero ? ` nº ${d.numero}` : ""} · ${brl(d.valor)}`,
+    texto: `Olá ${d.cliente}, sua NFS-e${d.numero ? ` nº ${d.numero}` : ""} de ${brl(d.valor)} foi emitida.${d.pdfUrl ? ` PDF: ${d.pdfUrl}` : ""}`,
+    html: layout(
+      "Sua nota fiscal foi emitida 🧾",
+      `Olá <b>${d.cliente}</b>,<br><br>Emitimos a sua <b>NFS-e${d.numero ? ` nº ${d.numero}` : ""}</b> no valor de <b>${brl(d.valor)}</b>${d.descricao ? ` referente a ${d.descricao}` : ""}.`,
+      d.pdfUrl ? { label: "Baixar nota (PDF)", url: d.pdfUrl } : { label: "Ver na minha área", url: `${APP_URL}/faturas` },
+    ),
+  }),
   correspondencia: (d) => ({
     assunto: `Você recebeu uma correspondência`,
     texto: `Olá ${d.cliente}, chegou uma correspondência (${d.remetente || "remetente"}) no seu endereço fiscal.`,

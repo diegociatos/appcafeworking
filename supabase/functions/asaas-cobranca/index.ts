@@ -13,6 +13,7 @@
 
 import { handleOptions, json } from "../_shared/cors.ts";
 import { userClient, adminClient } from "../_shared/supabaseAdmin.ts";
+import { dispatchNotificacao } from "../_shared/notify/index.ts";
 
 const BASE = {
   producao: "https://api.asaas.com/v3",
@@ -103,6 +104,14 @@ Deno.serve(async (req) => {
     };
     const { data: cob, error: insErr } = await admin.from("cobrancas").insert(insert).select().single();
     if (insErr) return json({ error: `Cobrança criada no Asaas, mas falhou ao gravar: ${insErr.message}` }, 500);
+
+    // Avisa o cliente por e-mail (Resend) com o link de pagamento — best-effort.
+    if (body.cliente_email) {
+      await dispatchNotificacao(admin, {
+        unidade_id: body.unidade_id, evento: "cobranca_nova", email: body.cliente_email, cliente: body.cliente,
+        dados: { valor: Number(body.valor), vencimento: venc, descricao: cob.descricao, invoiceUrl: cob.invoice_url, pdfUrl: cob.boleto_url, pixCopiaCola: cob.pix_payload, linhaDigitavel: cob.linha_digitavel },
+      });
+    }
 
     return json({ cobranca: cob }, 201);
   } catch (e) {
