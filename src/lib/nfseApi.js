@@ -42,4 +42,6 @@ export const nfseApi = {
     callFn("salvar-certificado", { unidade_id, pfx_base64, senha }),
   emitir: (dados) => callFn("emitir-nfse", dados),
   cancelar: (nota_id, motivo) => callFn("cancelar-nfse", { nota_id, motivo }),
+  // Diagnóstico: testa o endpoint nacional + convênio do município (não emite).
+  testar: (unidade_id) => callFn("testar-fiscal", { unidade_id }),
 };

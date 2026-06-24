@@ -6,6 +6,7 @@ import {
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, FileInput } from "../components/ui.jsx";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
+import { nfseApi } from "../lib/nfseApi.js";
 
 const STATUS = {
   autorizada: { label: "Autorizada", cor: C.green, bg: C.greenPale },
@@ -101,7 +102,7 @@ export default function NotaFiscal() {
       {aba === "config" && (
         <div style={{ display: "grid", gap: 16 }}>
           <CertificadoCard cfg={cfg} unidadeNome={unidadeAtiva?.nome} onEnviar={(d) => store.salvarCertificadoFiscal(activeUnit, d)} />
-          <ConfigFiscal cfg={cfg} unidadeNome={unidadeAtiva?.nome} onSalvar={(d) => store.salvarConfigFiscal(activeUnit, d)} />
+          <ConfigFiscal cfg={cfg} unidadeNome={unidadeAtiva?.nome} unidadeId={activeUnit} onSalvar={(d) => store.salvarConfigFiscal(activeUnit, d)} />
         </div>
       )}
 
@@ -232,7 +233,7 @@ function CertificadoCard({ cfg, unidadeNome, onEnviar }) {
   );
 }
 
-function ConfigFiscal({ cfg, unidadeNome, onSalvar }) {
+function ConfigFiscal({ cfg, unidadeNome, unidadeId, onSalvar }) {
   const [f, setF] = useState({
     municipio: cfg?.municipio || "", codigoMunicipio: cfg?.codigoMunicipio || "", uf: cfg?.uf || "MG", cnpj: cfg?.cnpj || "",
     inscricaoMunicipal: cfg?.inscricaoMunicipal || "", regime: cfg?.regime || "Simples Nacional",
@@ -252,7 +253,16 @@ function ConfigFiscal({ cfg, unidadeNome, onSalvar }) {
   });
   const [maisFiscal, setMaisFiscal] = useState((cfg?.emissor || "nacional") === "nacional");
   const [salvo, setSalvo] = useState(false);
+  const [testando, setTestando] = useState(false);
+  const [teste, setTeste] = useState(null);
   const set = (k) => (e) => { setF({ ...f, [k]: e.target.value }); setSalvo(false); };
+  const testar = () => {
+    setTeste(null); setTestando(true);
+    nfseApi.testar(unidadeId)
+      .then((r) => setTeste(r))
+      .catch((e) => setTeste({ erro: e.message }))
+      .finally(() => setTestando(false));
+  };
 
   return (
     <Card style={{ maxWidth: 620 }}>
@@ -263,6 +273,36 @@ function ConfigFiscal({ cfg, unidadeNome, onSalvar }) {
           <div style={{ fontSize: 12, color: C.text3 }}>Dados usados na emissão das NFS-e desta unidade.</div>
         </div>
       </div>
+
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
+        <Btn variant="ghost" onClick={() => !testando && testar()} style={{ opacity: testando ? 0.6 : 1 }}>
+          <ShieldCheck size={15} /> {testando ? "Testando…" : "Testar conexão / convênio"}
+        </Btn>
+        <span style={{ fontSize: 11.5, color: C.text4 }}>Consulta o convênio do município e descobre o endpoint nacional — não emite nota.</span>
+      </div>
+      {teste && (
+        <div style={{ background: C.cream2, borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 12 }}>
+          {teste.erro ? (
+            <div style={{ color: C.red, display: "flex", alignItems: "center", gap: 6 }}><AlertTriangle size={14} /> {teste.erro}</div>
+          ) : (
+            <>
+              <div style={{ marginBottom: 6, color: C.text3 }}>
+                Município <b>{teste.codMun}</b> · ambiente <b>{teste.ambiente}</b> · certificado {teste.temCertificado ? (teste.certificadoMtls ? "ativo (mTLS)" : "presente (PFX)") : "ausente"}
+              </div>
+              {(teste.resultados || []).map((r, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderTop: i ? `1px solid ${C.border2}` : "none" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, background: r.status && r.status !== 0 ? (r.ok ? C.green : C.amber) : C.red }} />
+                  <code style={{ fontSize: 10.5, color: C.text2, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.base}</code>
+                  <b style={{ color: r.ok ? C.green : C.text3 }}>{r.status || "sem resposta"}</b>
+                </div>
+              ))}
+              <div style={{ marginTop: 6, color: C.text4, fontSize: 11 }}>
+                Verde/âmbar = o host respondeu (endpoint certo). Vermelho = não respondeu. Me mande este resultado que eu travo o host de emissão.
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "1.7fr 1fr 64px", gap: 12 }}>
         <Field label="Município"><input value={f.municipio} onChange={set("municipio")} style={inp} placeholder="Ex: Belo Horizonte" /></Field>
