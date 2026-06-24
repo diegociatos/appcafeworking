@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Plus, Edit3, Trash2, Package, Repeat, Layers, Tag, Coffee } from "lucide-react";
+import { Plus, Edit3, Trash2, Package, Repeat, Layers, Tag, Coffee, DoorOpen } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, ImageInput } from "../components/ui.jsx";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
@@ -12,10 +12,12 @@ const TIPOS = [
 const tipoInfo = (id) => TIPOS.find((t) => t.id === id) || { label: "Item", cor: C.text3 };
 
 export default function Catalogo() {
-  const { activeUnit, unidadeAtiva, catalogoDe, addItemCatalogo, updateItemCatalogo, removeItemCatalogo } = useStore();
+  const { activeUnit, unidadeAtiva, catalogoDe, salasDe, addItemCatalogo, updateItemCatalogo, removeItemCatalogo } = useStore();
   const [filtro, setFiltro] = useState("todos");
   const [modal, setModal] = useState(null);
 
+  const salas = salasDe(activeUnit);
+  const salaNome = (id) => salas.find((s) => s.id === id)?.nome;
   const itens = catalogoDe(activeUnit);
   const lista = filtro === "todos" ? itens : itens.filter((i) => i.tipo === filtro);
 
@@ -83,6 +85,11 @@ export default function Catalogo() {
                         <Coffee size={12} /> {it.categoria || "Cafeteria"} · aparece no PDV
                       </span>
                     )}
+                    {it.tipo === "plano" && it.salaId && salaNome(it.salaId) && (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 3, color: C.cafe }}>
+                        <DoorOpen size={12} /> {salaNome(it.salaId)}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div style={{ textAlign: "right", minWidth: 100 }}>
@@ -132,6 +139,8 @@ function Mini({ label, valor, icon: Icon, cor }) {
 }
 
 function ItemForm({ inicial, onSave }) {
+  const { activeUnit, salasDe } = useStore();
+  const salas = salasDe(activeUnit);
   const [f, setF] = useState({
     nome: inicial.nome || "",
     tipo: inicial.tipo || "plano",
@@ -142,8 +151,13 @@ function ItemForm({ inicial, onSave }) {
     categoria: inicial.categoria || "Café",
     emoji: inicial.emoji || "☕",
     foto: inicial.foto || "",
+    salaId: inicial.salaId || "",
   });
   const ehProduto = f.tipo === "produto";
+  const escolherSala = (id) => {
+    const s = salas.find((x) => x.id === id);
+    setF({ ...f, salaId: id, preco: f.preco || s?.valorMensal || 0, nome: f.nome || (s ? s.nome : "") });
+  };
   return (
     <>
       <Field label="Tipo">
@@ -175,6 +189,18 @@ function ItemForm({ inicial, onSave }) {
       ) : (
         <Field label="Nome do produto/serviço">
           <input value={f.nome} onChange={(e) => setF({ ...f, nome: e.target.value })} style={inp} placeholder="Ex: Sala Privativa, Diária, Hora de reunião..." />
+        </Field>
+      )}
+
+      {f.tipo === "plano" && (
+        <Field label="Sala vinculada (opcional)">
+          <select value={f.salaId} onChange={(e) => escolherSala(e.target.value)} style={inp}>
+            <option value="">— nenhuma (plano genérico) —</option>
+            {salas.map((s) => <option key={s.id} value={s.id}>{s.nome} · {s.tipo}{s.valorMensal ? ` · ${fmt(s.valorMensal)}/mês` : ""}</option>)}
+          </select>
+          {salas.length === 0
+            ? <div style={{ fontSize: 11, color: C.text4, marginTop: 4 }}>Cadastre salas no menu "Salas" para poder vincular.</div>
+            : <div style={{ fontSize: 11, color: C.text4, marginTop: 4 }}>Vincule quando o plano é de uma sala específica (ex.: Sala Privativa 3). Ao escolher, sugerimos o valor mensal da sala.</div>}
         </Field>
       )}
 
