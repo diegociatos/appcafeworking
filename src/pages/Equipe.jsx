@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Plus, Eye, Edit3, Trash2, ShieldCheck, Mail, Building2, Check } from "lucide-react";
-import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
+import { Card, Badge, Btn, PageHead, Modal, Field, Empty, ConfirmDialog } from "../components/ui.jsx";
 import { C, serif, inp } from "../lib/theme.js";
 import { useStore, PERFIS } from "../lib/store.jsx";
 import { onboardApi } from "../lib/onboardApi.js";
@@ -27,6 +27,25 @@ export default function Equipe({ go }) {
   const [salvando, setSalvando] = useState(false);
   const [erroForm, setErroForm] = useState(null);
   const [cred, setCred] = useState(null);
+  const [excluir, setExcluir] = useState(null);
+  const [excluindo, setExcluindo] = useState(false);
+  const [erroExcluir, setErroExcluir] = useState(null);
+
+  const confirmarExclusao = async () => {
+    const u = excluir;
+    if (!u) return;
+    if (!onboardApi.configured) { removeUsuario(u.id); setExcluir(null); return; }
+    setErroExcluir(null); setExcluindo(true);
+    try {
+      await onboardApi.excluirUsuarioEquipe(u.id);
+      removeUsuario(u.id);
+      setExcluir(null);
+    } catch (e) {
+      setErroExcluir(e.message || "Falha ao excluir o usuário.");
+    } finally {
+      setExcluindo(false);
+    }
+  };
 
   const salvarUsuario = async (dados) => {
     if (modal?.id) { updateUsuario(modal.id, dados); setModal(null); return; }
@@ -122,7 +141,7 @@ export default function Equipe({ go }) {
                   <Btn variant="ghost" style={{ padding: "8px 12px", fontSize: 13 }} onClick={() => setModal(u)}>
                     <Edit3 size={14} /> Editar
                   </Btn>
-                  <Btn variant="ghost" style={{ color: C.red, borderColor: C.redPale, padding: "8px 11px" }} onClick={() => removeUsuario(u.id)} title="Excluir">
+                  <Btn variant="ghost" style={{ color: C.red, borderColor: C.redPale, padding: "8px 11px" }} onClick={() => { setErroExcluir(null); setExcluir(u); }} title="Excluir" aria-label={`Excluir ${u.nome}`}>
                     <Trash2 size={14} />
                   </Btn>
                 </div>
@@ -152,6 +171,17 @@ export default function Equipe({ go }) {
           </Btn>
         </Modal>
       )}
+
+      <ConfirmDialog
+        aberto={!!excluir}
+        titulo="Excluir usuário?"
+        mensagem={excluir
+          ? `O login e o acesso de "${excluir.nome}" serão removidos. Esta ação não pode ser desfeita.${erroExcluir ? `\n\n⚠ ${erroExcluir}` : ""}`
+          : ""}
+        textoConfirmar={excluindo ? "Excluindo…" : "Excluir"}
+        onConfirmar={confirmarExclusao}
+        onCancelar={() => { if (!excluindo) { setExcluir(null); setErroExcluir(null); } }}
+      />
     </div>
   );
 }
