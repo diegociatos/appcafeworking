@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import {
   Boxes, Plus, Edit3, Trash2, Minus, AlertTriangle, PackageSearch, Coins,
-  ArrowDownUp, ShoppingCart, Coffee, ShoppingBag, Wrench, Store, Tag, DollarSign,
+  ArrowDownUp, ShoppingCart, Coffee, ShoppingBag, Wrench, Store, DollarSign,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";

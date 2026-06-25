@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { LogIn, Lock, Mail, User, Phone, MapPin, Building2, Loader2, UserPlus, FileText, CreditCard, ExternalLink, CheckCircle2, Repeat, Zap, Copy } from "lucide-react";
+import { LogIn, Lock, Mail, User, Phone, MapPin, Building2, Loader2, FileText, CreditCard, ExternalLink, CheckCircle2, Repeat, Zap, Copy } from "lucide-react";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
 import { Btn } from "../components/ui.jsx";
 import Logo from "../components/Logo.jsx";

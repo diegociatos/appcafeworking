@@ -310,9 +310,49 @@ export function StoreProvider({ children }) {
   const [eventos, setEventos] = useState(seedOr(EVENTOS));
 
   // ---- Sync engine: persiste cada entidade operacional no banco -----------
-  // Observa cada lista; quando há backend/sessão, faz upsert do que mudou e
-  // apaga o que saiu (tabela genérica app_state). Demo (REAL=false) = no-op.
-  const syncedRef = useRef({}); // entity -> Map(id -> { unidadeId, json })
+  // Observa cada lista; quando há backend/sessão, faz upsert do que mudou
+  // (debounce 600ms/item, cancelando writes substituídos) e apaga o que saiu
+  // (imediato). Falha de rede → retry com backoff (3x); persistindo a falha,
+  // marca em `syncErrors` para a UI avisar. Demo (REAL=false) = no-op.
+  const syncedRef = useRef({});          // entity -> Map(id -> { unidadeId, json })
+  const syncTimersRef = useRef(new Map()); // "entity:id" -> timeoutId (debounce)
+  const [syncErrors, setSyncErrors] = useState([]); // [{ entity, id, unidadeId, erro }]
+
+  const _syncKey = (entity, id) => entity + ":" + id;
+  const _markSyncErr = (entity, id, unidadeId, erro) =>
+    setSyncErrors((es) => (es.some((e) => e.entity === entity && e.id === id)
+      ? es : [...es, { entity, id, unidadeId, erro: String(erro?.message || erro || "") }]));
+  const _clearSyncErr = (entity, id) =>
+    setSyncErrors((es) => (es.some((e) => e.entity === entity && e.id === id)
+      ? es.filter((e) => !(e.entity === entity && e.id === id)) : es));
+
+  // Executa a escrita com retry/backoff (até 3 tentativas). putAppState/
+  // delAppState lançam em falha → entramos no catch.
+  const _comBackoff = (fn, entity, unidadeId, id, tentativa = 0) => {
+    Promise.resolve()
+      .then(fn)
+      .then(() => _clearSyncErr(entity, id))
+      .catch((erro) => {
+        if (tentativa < 2) setTimeout(() => _comBackoff(fn, entity, unidadeId, id, tentativa + 1), 700 * Math.pow(2, tentativa));
+        else _markSyncErr(entity, id, unidadeId, erro);
+      });
+  };
+  const _agendarPut = (entity, unidadeId, id, item) => {
+    const k = _syncKey(entity, id);
+    const ant = syncTimersRef.current.get(k);
+    if (ant) clearTimeout(ant);
+    const t = setTimeout(() => {
+      syncTimersRef.current.delete(k);
+      _comBackoff(() => putAppState(entity, unidadeId, id, item), entity, unidadeId, id);
+    }, 600);
+    syncTimersRef.current.set(k, t);
+  };
+  const _cancelarPut = (entity, id) => {
+    const k = _syncKey(entity, id);
+    const t = syncTimersRef.current.get(k);
+    if (t) { clearTimeout(t); syncTimersRef.current.delete(k); }
+  };
+
   const useSync = (entity, list) => useEffect(() => {
     if (!REAL) return;
     const prev = syncedRef.current[entity] || new Map();
@@ -322,11 +362,15 @@ export function StoreProvider({ children }) {
       const json = JSON.stringify(it);
       cur.set(it.id, { unidadeId: it.unidadeId, json });
       const p = prev.get(it.id);
-      if (!p || p.json !== json) putAppState(entity, it.unidadeId, it.id, it).catch(() => {});
+      if (!p || p.json !== json) _agendarPut(entity, it.unidadeId, it.id, it); // debounce
     }
-    for (const [id, v] of prev) if (!cur.has(id)) delAppState(entity, v.unidadeId, id).catch(() => {});
+    // Removidos: cancela write pendente e apaga imediatamente (com retry).
+    for (const [id, v] of prev) if (!cur.has(id)) {
+      _cancelarPut(entity, id);
+      _comBackoff(() => delAppState(entity, v.unidadeId, id), entity, v.unidadeId, id);
+    }
     syncedRef.current[entity] = cur;
-  }, [list]);
+  }, [list]); // eslint-disable-line react-hooks/exhaustive-deps
   useSync("salas", salas);
   useSync("reservas", reservas);
   useSync("lancamentos", lancamentos);
@@ -1127,8 +1171,9 @@ export function StoreProvider({ children }) {
       configFiscal, configFiscalDe, updateConfigFiscal, salvarConfigFiscal, notasFiscais, notasFiscaisDe, emitirNFSe, cancelarNF, salvarCertificadoFiscal,
       planos, planosDe, addPlano, updatePlano, removePlano,
       recibos, recibosDe, emitirRecibo, removeRecibo,
+      syncErrors,
     }),
-    [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, configFiscal, notasFiscais, planos, recibos, reservas, leads, crmEtapas, crmOrigens, eventos, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail, clienteNotifPrefs]
+    [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, configFiscal, notasFiscais, planos, recibos, syncErrors, reservas, leads, crmEtapas, crmOrigens, eventos, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail, clienteNotifPrefs]
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

@@ -4,9 +4,10 @@ import {
   Users, Wallet, Mic2, MessageSquare, UserCircle, Settings,
   Search, Bell, Menu, X, ChevronDown, Check, Store, Eye, LogOut, ShieldCheck, Package, Home, FileText, Barcode, Boxes, Landmark, Tags, DoorOpen,
 } from "lucide-react";
-import { C, sans, serif, fmt } from "./lib/theme.js";
+import { C, sans, serif, fmt, shadow } from "./lib/theme.js";
 import { useStore, PERFIS } from "./lib/store.jsx";
 import Logo from "./components/Logo.jsx";
+import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import Login from "./pages/Login.jsx";
 import { supabaseConfigured, getSession, onAuthChange, signOut } from "./lib/supabaseAuth.js";
 import { fetchMemberships, fetchTenant, fetchAppState, fetchBoletosDb, fetchNotasDb, fetchConfigFiscalDb, fetchIsPlatformAdmin } from "./lib/supabaseDb.js";
@@ -80,7 +81,7 @@ const PAGES = {
 };
 
 export default function App() {
-  const { viewAs, franqueadoAtivo, perfil, setPerfil, activeUnit, pedidosDe, unidades, clientes, correspondenciasDe, conversasDe, reservas, meuPerfil, contratosVencendoDe, notificacaoPrefs, aplicarSessaoUsuario, hydrateFromDb, hydrateOperacional, estoqueBaixoDe } = useStore();
+  const { viewAs, franqueadoAtivo, perfil, setPerfil, activeUnit, pedidosDe, unidades, clientes, correspondenciasDe, conversasDe, reservas, meuPerfil, contratosVencendoDe, notificacaoPrefs, aplicarSessaoUsuario, hydrateFromDb, hydrateOperacional, estoqueBaixoDe, syncErrors } = useStore();
   const [page, setPage] = useState("dash");
   const [finTab, setFinTab] = useState("visao");
   const [finOpen, setFinOpen] = useState(true); // submenu Financeiro recolhível
@@ -521,9 +522,17 @@ export default function App() {
           className="cw-content"
           style={{ padding: 28, flex: 1, maxWidth: 1320, width: "100%" }}
         >
-          <Page go={setPage} section={pageId} finTab={finTab} setFinTab={setFinTab} />
+          <ErrorBoundary key={pageId} onHome={() => setPage(cfg.landing)}>
+            <Page go={setPage} section={pageId} finTab={finTab} setFinTab={setFinTab} />
+          </ErrorBoundary>
         </main>
       </div>
+      {syncErrors?.length > 0 && (
+        <div role="status" aria-live="polite" style={{ position: "fixed", bottom: 16, left: 16, zIndex: 200, display: "flex", alignItems: "center", gap: 8, background: "#fff", border: `1px solid ${C.amber}55`, borderRadius: 10, boxShadow: shadow.md, padding: "8px 12px", fontSize: 12, color: C.text2 }}>
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.amber, flexShrink: 0 }} />
+          {syncErrors.length} alteração(ões) não sincronizada(s) — tentando novamente…
+        </div>
+      )}
     </div>
   );
 }

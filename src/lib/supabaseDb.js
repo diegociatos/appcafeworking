@@ -106,18 +106,33 @@ async function writeJson(pathQuery, method, body, prefer = "return=representatio
 export async function fetchAppState() {
   return (await getJson("app_state?select=unidade_id,entity,item_id,doc")) || [];
 }
-/** Upsert de um item (doc JSON) por (unidade_id, entity, item_id). */
+
+// Escrita que LANÇA em falha (para o sync engine fazer retry/backoff e sinalizar
+// erro). Sem backend/sessão é no-op silencioso (modo demo trata antes).
+async function writeOrThrow(pathQuery, method, body, prefer = "return=minimal") {
+  if (!URL || !ANON) return;
+  const token = await getAccessToken();
+  if (!token) throw new Error("Sessão indisponível");
+  const res = await fetch(`${URL}/rest/v1/${pathQuery}`, {
+    method,
+    headers: { apikey: ANON, authorization: `Bearer ${token}`, "content-type": "application/json", Prefer: prefer },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) throw new Error(`${method} ${res.status}: ${(await res.text().catch(() => "")).slice(0, 140)}`);
+}
+
+/** Upsert de um item (doc JSON) por (unidade_id, entity, item_id). Lança em falha. */
 export async function putAppState(entity, unidadeId, itemId, doc) {
-  return await writeJson(
+  return writeOrThrow(
     "app_state?on_conflict=unidade_id,entity,item_id",
     "POST",
     { unidade_id: unidadeId, entity, item_id: String(itemId), doc },
     "resolution=merge-duplicates,return=minimal",
   );
 }
-/** Remove um item. */
+/** Remove um item. Lança em falha. */
 export async function delAppState(entity, unidadeId, itemId) {
-  return await writeJson(
+  return writeOrThrow(
     `app_state?unidade_id=eq.${encodeURIComponent(unidadeId)}&entity=eq.${encodeURIComponent(entity)}&item_id=eq.${encodeURIComponent(itemId)}`,
     "DELETE", null, "return=minimal",
   );

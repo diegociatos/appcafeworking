@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { CreditCard, Plus, Barcode, QrCode, Link2, CheckCircle2, Copy, ExternalLink, AlertTriangle, Wallet, KeyRound, ShieldCheck, FileText, Receipt, Tags } from "lucide-react";
+import { CreditCard, Plus, Barcode, QrCode, Link2, CheckCircle2, Copy, ExternalLink, AlertTriangle, Wallet, KeyRound, ShieldCheck, FileText, Receipt } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
-import { C, serif, sans, fmt, inp } from "../lib/theme.js";
+import { C, serif, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 import { asaasApi } from "../lib/asaasApi.js";
 import { fetchCobrancasDb } from "../lib/supabaseDb.js";

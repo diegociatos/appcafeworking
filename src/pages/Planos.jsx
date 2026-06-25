@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Tags, Plus, Edit3, Trash2, Check, X, FileText, Repeat, Zap, ShoppingBag } from "lucide-react";
-import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
+import { Card, Badge, Btn, PageHead, Modal, Field, Empty, ConfirmDialog } from "../components/ui.jsx";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 
@@ -8,6 +8,7 @@ export default function Planos() {
   const { activeUnit, unidadeAtiva, planosDe, addPlano, updatePlano, removePlano } = useStore();
   const planos = planosDe(activeUnit, true); // inclui inativos para gerir
   const [modal, setModal] = useState(null); // {} novo | plano editar
+  const [excluir, setExcluir] = useState(null); // plano a excluir
 
   const ativos = planos.filter((p) => p.ativo !== false);
   const ticketMedio = ativos.length ? ativos.reduce((s, p) => s + p.preco, 0) / ativos.length : 0;
@@ -61,7 +62,7 @@ export default function Planos() {
                   <Btn variant="ghost" style={{ fontSize: 13, color: inativo ? C.green : C.amber }} onClick={() => updatePlano(p.id, { ativo: inativo })}>
                     {inativo ? <><Check size={14} /> Ativar</> : <><X size={14} /> Pausar</>}
                   </Btn>
-                  <Btn variant="ghost" style={{ color: C.red, padding: "10px 12px" }} onClick={() => { if (confirm(`Excluir o plano "${p.nome}"?`)) removePlano(p.id); }}><Trash2 size={14} /></Btn>
+                  <Btn variant="ghost" style={{ color: C.red, padding: "10px 12px" }} aria-label={`Excluir plano ${p.nome}`} onClick={() => setExcluir(p)}><Trash2 size={14} /></Btn>
                 </div>
               </Card>
             );
@@ -74,6 +75,14 @@ export default function Planos() {
           <PlanoForm inicial={modal} onSave={(d) => { if (modal.id) updatePlano(modal.id, d); else addPlano(activeUnit, d); setModal(null); }} />
         </Modal>
       )}
+
+      <ConfirmDialog
+        aberto={!!excluir}
+        titulo="Excluir plano?"
+        mensagem={excluir ? `O plano "${excluir.nome}" será removido do catálogo. Esta ação não pode ser desfeita.` : ""}
+        onConfirmar={() => { removePlano(excluir.id); setExcluir(null); }}
+        onCancelar={() => setExcluir(null)}
+      />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, CheckCircle2, CalendarOff, AlertCircle, Trash2, X, Smartphone, DollarSign } from "lucide-react";
+import { Plus, CheckCircle2, CalendarOff, AlertCircle, Trash2, Smartphone, DollarSign } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
 import { HORARIOS, DIAS } from "../lib/data.js";

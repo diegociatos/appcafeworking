@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import {
-  Landmark, Plus, Edit3, Trash2, FileText, Download, Armchair, Coins, Boxes,
+  Landmark, Plus, Edit3, Trash2, FileText, Armchair, Coins, Boxes,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, FileInput } from "../components/ui.jsx";
 import { C, serif, fmt, inp } from "../lib/theme.js";

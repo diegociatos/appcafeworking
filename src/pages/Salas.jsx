@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { DoorOpen, Plus, Edit3, Trash2 } from "lucide-react";
-import { Card, Badge, Btn, PageHead, Modal, Empty } from "../components/ui.jsx";
-import { C, serif, fmt } from "../lib/theme.js";
+import { Card, Badge, Btn, PageHead, Modal, Empty, ConfirmDialog } from "../components/ui.jsx";
+import { C, fmt } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 import { SalaForm } from "./Unidades.jsx";
 
@@ -12,6 +12,7 @@ export default function Salas() {
   const { activeUnit, unidadeAtiva, salasDe } = store;
   const salas = salasDe(activeUnit);
   const [modal, setModal] = useState(null); // {} nova | sala editar
+  const [excluir, setExcluir] = useState(null); // sala a excluir
 
   if (!unidadeAtiva) {
     return (
@@ -58,7 +59,7 @@ export default function Salas() {
                 </div>
                 <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                   <button onClick={() => setModal(s)} title="Editar" className="cw-btn" style={{ color: C.text3, padding: 6 }}><Edit3 size={16} /></button>
-                  <button onClick={() => { if (confirm(`Excluir a sala "${s.nome}"?`)) store.removeSala(s.id); }} title="Excluir" className="cw-btn" style={{ color: C.red, padding: 6 }}><Trash2 size={16} /></button>
+                  <button onClick={() => setExcluir(s)} title="Excluir" aria-label={`Excluir sala ${s.nome}`} className="cw-btn" style={{ color: C.red, padding: 6 }}><Trash2 size={16} /></button>
                 </div>
               </div>
             );
@@ -79,6 +80,14 @@ export default function Salas() {
           />
         </Modal>
       )}
+
+      <ConfirmDialog
+        aberto={!!excluir}
+        titulo="Excluir sala?"
+        mensagem={excluir ? `A sala "${excluir.nome}" será removida desta unidade. Esta ação não pode ser desfeita.` : ""}
+        onConfirmar={() => { store.removeSala(excluir.id); setExcluir(null); }}
+        onCancelar={() => setExcluir(null)}
+      />
     </div>
   );
 }

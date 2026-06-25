@@ -1,5 +1,5 @@
-import React, { useRef } from "react";
-import { X, ImagePlus, Trash2, Repeat, Paperclip, FileText } from "lucide-react";
+import React, { useRef, useEffect } from "react";
+import { X, ImagePlus, Trash2, Repeat, Paperclip, FileText, AlertTriangle } from "lucide-react";
 import { C, sans, serif, shadow, radius } from "../lib/theme.js";
 
 export const Card = ({ children, style, className = "", ...p }) => (
@@ -169,6 +169,68 @@ export const Modal = ({ children, title, onClose, maxWidth = 440 }) => (
     </div>
   </div>
 );
+
+// Diálogo de confirmação reutilizável (substitui o confirm() nativo).
+// Foco inicial no Cancelar, foco preso (Tab), fecha no Esc e no clique fora.
+export const ConfirmDialog = ({ aberto, titulo, mensagem, textoConfirmar = "Excluir", textoCancelar = "Cancelar", onConfirmar, onCancelar, perigo = true }) => {
+  const cardRef = useRef(null);
+  const cancelRef = useRef(null);
+  useEffect(() => {
+    if (!aberto) return;
+    cancelRef.current?.focus();
+    const onKey = (e) => {
+      if (e.key === "Escape") { e.preventDefault(); onCancelar?.(); return; }
+      if (e.key === "Tab") {
+        const focaveis = cardRef.current?.querySelectorAll("button");
+        if (!focaveis || !focaveis.length) return;
+        const first = focaveis[0], last = focaveis[focaveis.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [aberto, onCancelar]);
+
+  if (!aberto) return null;
+  const btnBase = { padding: "10px 16px", borderRadius: radius.md, fontFamily: sans, fontSize: 14, fontWeight: 600, cursor: "pointer" };
+  return (
+    <div
+      onClick={onCancelar}
+      role="presentation"
+      style={{ position: "fixed", inset: 0, background: "rgba(31,31,28,.4)", display: "grid", placeItems: "center", zIndex: 120, padding: 20 }}
+    >
+      <div
+        ref={cardRef}
+        onClick={(e) => e.stopPropagation()}
+        role="alertdialog"
+        aria-modal="true"
+        aria-label={titulo}
+        style={{ background: "#fff", borderRadius: radius.lg, boxShadow: shadow.lg, border: `1px solid ${C.border2}`, padding: 24, width: "100%", maxWidth: 400, fontFamily: sans }}
+      >
+        <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+          {perigo && (
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: C.redPale, display: "grid", placeItems: "center", flexShrink: 0 }}>
+              <AlertTriangle size={20} color={C.red} />
+            </div>
+          )}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontFamily: serif, fontSize: 19, color: C.text }}>{titulo}</div>
+            {mensagem && <div style={{ fontSize: 13.5, color: C.text3, marginTop: 5, lineHeight: 1.5 }}>{mensagem}</div>}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
+          <button ref={cancelRef} type="button" onClick={onCancelar} style={{ ...btnBase, border: `1px solid ${C.border}`, background: "#fff", color: C.text2 }}>
+            {textoCancelar}
+          </button>
+          <button type="button" onClick={onConfirmar} style={{ ...btnBase, border: "none", background: perigo ? C.red : C.cafe, color: "#fff" }}>
+            {textoConfirmar}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const Empty = ({ icon: Icon, title, sub }) => (
   <div style={{ padding: "46px 40px", textAlign: "center" }}>
