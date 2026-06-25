@@ -677,6 +677,9 @@ function UnitSwitcher() {
       <button
         onClick={() => setOpen((o) => !o)}
         onBlur={() => setTimeout(() => setOpen(false), 120)}
+        onKeyDown={(e) => { if (e.key === "Escape") setOpen(false); }}
+        aria-haspopup="menu"
+        aria-expanded={open}
         className="cw-btn"
         style={{
           display: "flex",
@@ -772,6 +775,9 @@ function PerfilSwitcher() {
       <button
         onClick={() => setOpen((o) => !o)}
         onBlur={() => setTimeout(() => setOpen(false), 120)}
+        onKeyDown={(e) => { if (e.key === "Escape") setOpen(false); }}
+        aria-haspopup="menu"
+        aria-expanded={open}
         className="cw-btn"
         style={{
           display: "flex",

@@ -121,7 +121,13 @@ export const Field = ({ label, children, style }) => (
   </div>
 );
 
-export const Modal = ({ children, title, onClose, maxWidth = 440 }) => (
+export const Modal = ({ children, title, onClose, maxWidth = 440 }) => {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose?.(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
   <div
     onClick={onClose}
     className="cw-modal-bg"
@@ -139,6 +145,9 @@ export const Modal = ({ children, title, onClose, maxWidth = 440 }) => (
   >
     <div
       onClick={(e) => e.stopPropagation()}
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
       className="cw-modal"
       style={{
         background: "#fff",
@@ -168,7 +177,8 @@ export const Modal = ({ children, title, onClose, maxWidth = 440 }) => (
       {children}
     </div>
   </div>
-);
+  );
+};
 
 // Diálogo de confirmação reutilizável (substitui o confirm() nativo).
 // Foco inicial no Cancelar, foco preso (Tab), fecha no Esc e no clique fora.
