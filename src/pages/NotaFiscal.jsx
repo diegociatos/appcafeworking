@@ -7,6 +7,7 @@ import { Card, Badge, Btn, PageHead, Modal, Field, Empty, FileInput } from "../c
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 import { nfseApi } from "../lib/nfseApi.js";
+import { buscarCnpj, buscarCep } from "../lib/lookup.js";
 
 const STATUS = {
   autorizada: { label: "Autorizada", cor: C.green, bg: C.greenPale },
@@ -258,7 +259,24 @@ function ConfigFiscal({ cfg, unidadeNome, unidadeId, onSalvar }) {
   const [salvo, setSalvo] = useState(false);
   const [testando, setTestando] = useState(false);
   const [teste, setTeste] = useState(null);
+  const [cep, setCep] = useState("");
+  const [buscandoCnpj, setBuscandoCnpj] = useState(false);
+  const [buscandoCep, setBuscandoCep] = useState(false);
   const set = (k) => (e) => { setF({ ...f, [k]: e.target.value }); setSalvo(false); };
+  const onCnpj = (e) => {
+    const v = e.target.value; setF((p) => ({ ...p, cnpj: v })); setSalvo(false);
+    if (v.replace(/\D/g, "").length === 14) {
+      setBuscandoCnpj(true);
+      buscarCnpj(v).then((r) => { if (r) setF((p) => ({ ...p, municipio: p.municipio || r.municipio, uf: p.uf || r.uf })); }).finally(() => setBuscandoCnpj(false));
+    }
+  };
+  const onCep = (e) => {
+    const v = e.target.value; setCep(v);
+    if (v.replace(/\D/g, "").length === 8) {
+      setBuscandoCep(true);
+      buscarCep(v).then((r) => { if (r) { setF((p) => ({ ...p, municipio: r.cidade || p.municipio, uf: r.uf || p.uf, codigoMunicipio: r.ibge || p.codigoMunicipio })); setSalvo(false); } }).finally(() => setBuscandoCep(false));
+    }
+  };
   const testar = () => {
     setTeste(null); setTestando(true);
     nfseApi.testar(unidadeId)
@@ -307,6 +325,10 @@ function ConfigFiscal({ cfg, unidadeNome, unidadeId, onSalvar }) {
         </div>
       )}
 
+      <Field label="CEP (preenche município, UF e código IBGE)">
+        <input value={cep} onChange={onCep} style={inp} placeholder="00000-000" inputMode="numeric" aria-label="CEP para autopreencher endereço fiscal" />
+        {buscandoCep && <div style={{ fontSize: 10.5, color: C.text4, marginTop: 3 }}>Buscando CEP…</div>}
+      </Field>
       <div style={{ display: "grid", gridTemplateColumns: "1.7fr 1fr 64px", gap: 12 }}>
         <Field label="Município"><input value={f.municipio} onChange={set("municipio")} style={inp} placeholder="Ex: Belo Horizonte" /></Field>
         <Field label="Código IBGE (cLocEmi)"><input value={f.codigoMunicipio} onChange={set("codigoMunicipio")} style={inp} placeholder="3106200" inputMode="numeric" /></Field>
@@ -316,7 +338,7 @@ function ConfigFiscal({ cfg, unidadeNome, unidadeId, onSalvar }) {
         Código IBGE de 7 dígitos do município emissor (obrigatório no padrão nacional). Belo Horizonte = <b>3106200</b>.
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-        <Field label="CNPJ do prestador"><input value={f.cnpj} onChange={set("cnpj")} style={inp} placeholder="00.000.000/0001-00" /></Field>
+        <Field label="CNPJ do prestador"><input value={f.cnpj} onChange={onCnpj} style={inp} placeholder="00.000.000/0001-00" />{buscandoCnpj && <div style={{ fontSize: 10.5, color: C.text4, marginTop: 3 }}>Buscando CNPJ…</div>}</Field>
         <Field label="Inscrição Municipal (CCM)"><input value={f.inscricaoMunicipal} onChange={set("inscricaoMunicipal")} style={inp} placeholder="0000000/000-0" /></Field>
         <Field label="Regime tributário">
           <select value={f.regime} onChange={set("regime")} style={inp}>{REGIMES.map((r) => <option key={r}>{r}</option>)}</select>

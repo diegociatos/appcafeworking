@@ -7,6 +7,7 @@ import { Card, Badge, Btn, PageHead, Modal, Field, Empty, ImageInput } from "../
 import { C, serif, sans, fmt, fmtShort, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 import { onboardApi } from "../lib/onboardApi.js";
+import { buscarCnpj, buscarCep } from "../lib/lookup.js";
 
 const PALETA = [C.cafe, C.teal, C.cafe2, C.teal3, C.green, C.amber, C.blue, C.red];
 
@@ -686,8 +687,24 @@ function LinhaItem({ emoji, foto, titulo, sub, badge, onEdit, onDelete }) {
 
 function UnidadeForm({ onSave, loading, erro }) {
   const [f, setF] = useState({ nome: "", endereco: "", cidade: "", cnpj: "", cor: PALETA[0] });
+  const [cep, setCep] = useState("");
+  const [buscando, setBuscando] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const valido = f.nome.trim() && f.cidade.trim();
+  const onCep = (e) => {
+    const v = e.target.value; setCep(v);
+    if (v.replace(/\D/g, "").length === 8) {
+      setBuscando(true);
+      buscarCep(v).then((r) => { if (r) setF((p) => ({ ...p, endereco: p.endereco || [r.logradouro, r.bairro].filter(Boolean).join(", "), cidade: r.cidade || p.cidade })); }).finally(() => setBuscando(false));
+    }
+  };
+  const onCnpj = (e) => {
+    const v = e.target.value; setF((p) => ({ ...p, cnpj: v }));
+    if (v.replace(/\D/g, "").length === 14) {
+      setBuscando(true);
+      buscarCnpj(v).then((r) => { if (r) setF((p) => ({ ...p, nome: p.nome || r.nomeFantasia || r.razaoSocial, endereco: p.endereco || [r.logradouro, r.numero, r.bairro].filter(Boolean).join(", "), cidade: p.cidade || r.municipio })); }).finally(() => setBuscando(false));
+    }
+  };
 
   return (
     <>
@@ -697,17 +714,23 @@ function UnidadeForm({ onSave, loading, erro }) {
       <Field label="Nome da unidade">
         <input value={f.nome} onChange={set("nome")} style={inp} placeholder="Ex: Savassi" />
       </Field>
-      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 12 }}>
+        <Field label="CEP">
+          <input value={cep} onChange={onCep} style={inp} placeholder="00000-000" inputMode="numeric" aria-label="CEP da unidade" />
+        </Field>
         <Field label="Endereço">
           <input value={f.endereco} onChange={set("endereco")} style={inp} placeholder="Rua, número · bairro" />
         </Field>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Field label="Cidade">
           <input value={f.cidade} onChange={set("cidade")} style={inp} placeholder="Ex: Belo Horizonte" />
         </Field>
+        <Field label="CNPJ (para emissão de nota)">
+          <input value={f.cnpj} onChange={onCnpj} style={inp} placeholder="00.000.000/0001-00 (opcional)" />
+        </Field>
       </div>
-      <Field label="CNPJ desta unidade (para emissão de nota)">
-        <input value={f.cnpj} onChange={set("cnpj")} style={inp} placeholder="00.000.000/0001-00 (opcional, define depois)" />
-      </Field>
+      {buscando && <div style={{ fontSize: 11, color: C.text4, marginTop: -6, marginBottom: 10 }}>Buscando dados…</div>}
       <Field label="Cor da unidade">
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {PALETA.map((c) => (

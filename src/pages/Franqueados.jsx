@@ -12,6 +12,7 @@ const PLANOS = [
 ];
 import { useStore } from "../lib/store.jsx";
 import { onboardApi } from "../lib/onboardApi.js";
+import { buscarCnpj } from "../lib/lookup.js";
 
 function baixarContrato(c) {
   if (!c?.url) return;
@@ -319,6 +320,27 @@ function FranqueadoForm({ inicial, onSave, loading, erro, novo }) {
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const pj = f.tipoPessoa === "PJ";
   const valido = f.nome.trim() && f.documento.trim() && f.email.trim() && (!novo || f.unidadeNome.trim());
+  const [buscandoDoc, setBuscandoDoc] = useState(false);
+  const lookupCnpj = async (d) => {
+    setBuscandoDoc(true);
+    const r = await buscarCnpj(d);
+    setBuscandoDoc(false);
+    if (!r) return;
+    setF((prev) => ({
+      ...prev,
+      nome: r.razaoSocial || prev.nome,
+      nomeFantasia: prev.nomeFantasia || r.nomeFantasia,
+      telefone: prev.telefone || r.telefone,
+      email: prev.email || r.email,
+      endereco: prev.endereco || [r.logradouro, r.numero, r.bairro].filter(Boolean).join(", "),
+      cidade: prev.cidade || [r.municipio, r.uf].filter(Boolean).join("/"),
+    }));
+  };
+  const onDoc = (e) => {
+    const v = e.target.value;
+    setF((prev) => ({ ...prev, documento: v }));
+    if (pj && v.replace(/\D/g, "").length === 14) lookupCnpj(v.replace(/\D/g, ""));
+  };
 
   return (
     <>
@@ -343,7 +365,8 @@ function FranqueadoForm({ inicial, onSave, loading, erro, novo }) {
       )}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Field label={pj ? "CNPJ" : "CPF"}>
-          <input value={f.documento} onChange={set("documento")} style={inp} placeholder={pj ? "00.000.000/0000-00" : "000.000.000-00"} />
+          <input value={f.documento} onChange={onDoc} style={inp} placeholder={pj ? "00.000.000/0000-00" : "000.000.000-00"} />
+          {pj && buscandoDoc && <div style={{ fontSize: 11, color: C.text4, marginTop: 4 }}>Buscando dados do CNPJ…</div>}
         </Field>
         <Field label="Telefone / WhatsApp">
           <input value={f.telefone} onChange={set("telefone")} style={inp} placeholder="(31) 99999-9999" />
