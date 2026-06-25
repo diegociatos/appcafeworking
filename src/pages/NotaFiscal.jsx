@@ -267,7 +267,7 @@ function ConfigFiscal({ cfg, unidadeNome, unidadeId, onSalvar }) {
     const v = e.target.value; setF((p) => ({ ...p, cnpj: v })); setSalvo(false);
     if (v.replace(/\D/g, "").length === 14) {
       setBuscandoCnpj(true);
-      buscarCnpj(v).then((r) => { if (r) setF((p) => ({ ...p, municipio: p.municipio || r.municipio, uf: p.uf || r.uf })); }).finally(() => setBuscandoCnpj(false));
+      buscarCnpj(v).then((r) => { if (r) setF((p) => ({ ...p, municipio: p.municipio || r.municipio, uf: p.uf || r.uf, codigoMunicipio: p.codigoMunicipio || r.ibge })); }).finally(() => setBuscandoCnpj(false));
     }
   };
   const onCep = (e) => {

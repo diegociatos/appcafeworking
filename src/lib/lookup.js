@@ -29,6 +29,7 @@ export async function buscarCnpj(cnpj) {
       bairro: titulo(j.bairro),
       municipio: titulo(j.municipio),
       uf: (j.uf || "").toUpperCase(),
+      ibge: String(j.codigo_municipio_ibge || ""), // código IBGE do município (cLocEmi)
     };
   } catch {
     return null;
