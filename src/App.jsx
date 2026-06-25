@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   LayoutDashboard, KanbanSquare, Building2, CalendarDays, Mail, Coffee,
   Users, Wallet, Mic2, MessageSquare, UserCircle, Settings,
   Search, Bell, Menu, X, ChevronDown, Check, Store, Eye, LogOut, ShieldCheck, Package, Home, FileText, Barcode, Boxes, Landmark, Tags, DoorOpen,
 } from "lucide-react";
-import { C, sans, serif } from "./lib/theme.js";
+import { C, sans, serif, fmt } from "./lib/theme.js";
 import { useStore, PERFIS } from "./lib/store.jsx";
 import Logo from "./components/Logo.jsx";
 import Login from "./pages/Login.jsx";
@@ -458,33 +458,7 @@ export default function App() {
           >
             <Menu size={22} />
           </button>
-          <div
-            className="cw-search-wrap"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              background: "#fff",
-              border: `1px solid ${C.border2}`,
-              borderRadius: 12,
-              padding: "9px 14px",
-              width: 360,
-              maxWidth: "40vw",
-            }}
-          >
-            <Search size={17} color={C.text4} />
-            <input
-              placeholder="Buscar clientes, salas, pedidos, leads..."
-              style={{
-                border: "none",
-                outline: "none",
-                fontSize: 14,
-                flex: 1,
-                background: "transparent",
-                color: C.text,
-              }}
-            />
-          </div>
+          <GlobalSearch setPage={setPage} />
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
             {/* "Ver como" é ferramenta de demonstração — escondida no login real */}
             {!autenticadoReal && <PerfilSwitcher />}
@@ -550,6 +524,137 @@ export default function App() {
           <Page go={setPage} section={pageId} finTab={finTab} setFinTab={setFinTab} />
         </main>
       </div>
+    </div>
+  );
+}
+
+const GRUPO_META = {
+  cliente: { label: "CLIENTES", icon: Users, page: "clientes" },
+  sala: { label: "SALAS", icon: DoorOpen, page: "salas" },
+  lead: { label: "LEADS (CRM)", icon: KanbanSquare, page: "crm" },
+  pedido: { label: "PEDIDOS (PDV)", icon: Coffee, page: "pdv" },
+  unidade: { label: "UNIDADES", icon: Building2, page: "unidades" },
+};
+
+// Busca global do header — agrega clientes, salas, leads, pedidos e unidades.
+function GlobalSearch({ setPage }) {
+  const { clientes, salas, leads, pedidos, unidades, setActiveUnit } = useStore();
+  const [busca, setBusca] = useState("");
+  const [open, setOpen] = useState(false);
+  const [hi, setHi] = useState(0);
+  const wrapRef = useRef(null);
+  const q = busca.trim().toLowerCase();
+  const nomeUni = (id) => unidades.find((u) => u.id === id)?.nome || "";
+
+  const grupos = useMemo(() => {
+    if (q.length < 2) return [];
+    const inc = (v) => String(v || "").toLowerCase().includes(q);
+    const gs = [];
+    const cli = (clientes || []).filter((c) => inc(c.nome) || inc(c.cnpj) || inc(c.documento)).slice(0, 6)
+      .map((c) => ({ tipo: "cliente", id: c.id, titulo: c.nome, sub: [c.cnpj || c.documento, c.unidade || nomeUni(c.unidadeId)].filter(Boolean).join(" · "), page: "clientes", unidadeId: c.unidadeId }));
+    if (cli.length) gs.push({ tipo: "cliente", itens: cli });
+    const sal = (salas || []).filter((s) => inc(s.nome)).slice(0, 6)
+      .map((s) => ({ tipo: "sala", id: s.id, titulo: s.nome, sub: [s.tipo, nomeUni(s.unidadeId)].filter(Boolean).join(" · "), page: "salas", unidadeId: s.unidadeId }));
+    if (sal.length) gs.push({ tipo: "sala", itens: sal });
+    const led = (leads || []).filter((l) => inc(l.nome) || inc(l.empresa) || inc(l.interesse)).slice(0, 6)
+      .map((l) => ({ tipo: "lead", id: l.id, titulo: l.nome, sub: [l.empresa, l.interesse].filter(Boolean).join(" · "), page: "crm", unidadeId: l.unidadeId }));
+    if (led.length) gs.push({ tipo: "lead", itens: led });
+    const ped = (pedidos || []).filter((p) => inc(p.cliente) || (p.itens || []).some((i) => inc(i.nome))).slice(0, 6)
+      .map((p) => ({ tipo: "pedido", id: p.id, titulo: `Pedido · ${p.cliente || "balcão"}`, sub: `${(p.itens || []).reduce((s, i) => s + (i.q || 1), 0)} itens · ${fmt(p.total || 0)}`, page: "pdv", unidadeId: p.unidadeId }));
+    if (ped.length) gs.push({ tipo: "pedido", itens: ped });
+    const uni = (unidades || []).filter((u) => inc(u.nome) || inc(u.endereco)).slice(0, 6)
+      .map((u) => ({ tipo: "unidade", id: u.id, titulo: u.nome, sub: u.endereco, page: "unidades", unidadeId: u.id }));
+    if (uni.length) gs.push({ tipo: "unidade", itens: uni });
+    return gs;
+  }, [q, clientes, salas, leads, pedidos, unidades]); // eslint-disable-line
+
+  const flat = grupos.flatMap((g) => g.itens);
+  const mostra = open && q.length >= 2;
+
+  useEffect(() => { setHi(0); }, [busca]);
+  useEffect(() => {
+    if (!mostra) return;
+    const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [mostra]);
+
+  const selecionar = (it) => {
+    if (!it) return;
+    if (it.unidadeId) setActiveUnit(it.unidadeId);
+    setPage(it.page);
+    setOpen(false); setBusca("");
+  };
+  const onKey = (e) => {
+    if (e.key === "Escape") { setOpen(false); e.currentTarget.blur?.(); return; }
+    if (!mostra || !flat.length) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); setHi((h) => Math.min(h + 1, flat.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setHi((h) => Math.max(h - 1, 0)); }
+    else if (e.key === "Enter") { e.preventDefault(); selecionar(flat[hi]); }
+  };
+
+  let idx = -1;
+  return (
+    <div
+      ref={wrapRef}
+      className="cw-search-wrap"
+      style={{ position: "relative", display: "flex", alignItems: "center", gap: 10, background: "#fff", border: `1px solid ${C.border2}`, borderRadius: 12, padding: "9px 14px", width: 360, maxWidth: "40vw" }}
+    >
+      <Search size={17} color={C.text4} />
+      <input
+        value={busca}
+        onChange={(e) => { setBusca(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={onKey}
+        placeholder="Buscar clientes, salas, pedidos, leads..."
+        role="combobox"
+        aria-expanded={mostra}
+        aria-controls="cw-busca-lista"
+        aria-autocomplete="list"
+        style={{ border: "none", outline: "none", fontSize: 14, flex: 1, background: "transparent", color: C.text }}
+      />
+      {mostra && (
+        <div
+          id="cw-busca-lista"
+          role="listbox"
+          style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, background: "#fff", border: `1px solid ${C.border2}`, borderRadius: 14, boxShadow: "0 16px 40px rgba(31,31,28,.14)", padding: 6, zIndex: 60, maxHeight: "70vh", overflowY: "auto" }}
+        >
+          {flat.length === 0 ? (
+            <div style={{ fontSize: 13, color: C.text3, padding: "12px 10px", textAlign: "center" }}>Nada encontrado para “{busca.trim()}”.</div>
+          ) : (
+            grupos.map((g) => {
+              const meta = GRUPO_META[g.tipo];
+              return (
+                <div key={g.tipo}>
+                  <div style={{ fontSize: 11, color: C.text4, fontWeight: 600, padding: "6px 10px 4px", letterSpacing: 0.4 }}>{meta.label}</div>
+                  {g.itens.map((it) => {
+                    idx++; const ix = idx; const ativo = ix === hi;
+                    return (
+                      <button
+                        key={it.tipo + it.id}
+                        role="option"
+                        aria-selected={ativo}
+                        onMouseEnter={() => setHi(ix)}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => selecionar(it)}
+                        style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 10px", borderRadius: 10, background: ativo ? C.cream2 : "transparent", textAlign: "left", fontFamily: sans }}
+                      >
+                        <span style={{ width: 30, height: 30, borderRadius: 8, background: `${C.cafe}12`, display: "grid", placeItems: "center", flexShrink: 0 }}>
+                          <meta.icon size={15} color={C.cafe} />
+                        </span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.titulo}</div>
+                          {it.sub && <div style={{ fontSize: 11, color: C.text3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.sub}</div>}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
     </div>
   );
 }
