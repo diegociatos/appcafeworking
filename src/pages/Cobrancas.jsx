@@ -6,6 +6,7 @@ import { useStore } from "../lib/store.jsx";
 import { asaasApi } from "../lib/asaasApi.js";
 import { fetchCobrancasDb } from "../lib/supabaseDb.js";
 import ReciboView from "../components/ReciboView.jsx";
+import { buscarCnpj } from "../lib/lookup.js";
 
 const STATUS = {
   pendente: { label: "Aguardando", cor: C.amber, bg: C.amberPale },
@@ -212,6 +213,15 @@ function CobrancaForm({ store, onCriada }) {
     if (!p) return setF({ ...f, planoId: "" });
     setF({ ...f, planoId: id, valor: String(p.preco), descricao: p.nome + (p.recorrencia === "mensal" ? " · mensal" : ""), documento: p.emiteNF ? "nf" : f.documento });
   };
+  const [buscandoDoc, setBuscandoDoc] = useState(false);
+  const onDocAvulso = (e) => {
+    const v = e.target.value;
+    setF((prev) => ({ ...prev, doc: v }));
+    if (v.replace(/\D/g, "").length === 14) {
+      setBuscandoDoc(true);
+      buscarCnpj(v).then((r) => { if (r) setF((prev) => ({ ...prev, nome: prev.nome || r.nomeFantasia || r.razaoSocial, email: prev.email || r.email })); }).finally(() => setBuscandoDoc(false));
+    }
+  };
 
   const criar = async () => {
     setErro(null);
@@ -282,7 +292,7 @@ function CobrancaForm({ store, onCriada }) {
       {!f.clienteId && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <Field label="Nome"><input value={f.nome} onChange={set("nome")} style={inp} placeholder="Nome do pagador" /></Field>
-          <Field label="CPF/CNPJ"><input value={f.doc} onChange={set("doc")} style={inp} placeholder="só números" /></Field>
+          <Field label="CPF/CNPJ"><input value={f.doc} onChange={onDocAvulso} style={inp} placeholder="CPF ou CNPJ" />{buscandoDoc && <div style={{ fontSize: 10.5, color: C.text4, marginTop: 3 }}>Buscando CNPJ…</div>}</Field>
         </div>
       )}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>

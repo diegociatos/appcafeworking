@@ -5,6 +5,7 @@ import { Btn } from "../components/ui.jsx";
 import Logo from "../components/Logo.jsx";
 import { signInWithPassword } from "../lib/supabaseAuth.js";
 import { fetchUnidadesPublicas, fetchPlanosPublicos, iniciarAssinatura } from "../lib/authPublic.js";
+import { buscarCnpj } from "../lib/lookup.js";
 
 const card = {
   position: "relative",
@@ -116,7 +117,16 @@ function SignupCard({ irParaLogin }) {
   const [erro, setErro] = useState("");
   const [carregando, setCarregando] = useState(false);
   const [checkout, setCheckout] = useState(null); // { checkoutUrl, plano, valor, pix_payload }
+  const [buscandoDoc, setBuscandoDoc] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const onDoc = (e) => {
+    const v = e.target.value;
+    setF((p) => ({ ...p, documento: v }));
+    if (v.replace(/\D/g, "").length === 14) {
+      setBuscandoDoc(true);
+      buscarCnpj(v).then((r) => { if (r) setF((p) => ({ ...p, nome: p.nome || r.nomeFantasia || r.razaoSocial, telefone: p.telefone || r.telefone, email: p.email || r.email })); }).finally(() => setBuscandoDoc(false));
+    }
+  };
 
   useEffect(() => { fetchUnidadesPublicas().then(setUnidades); }, []);
   const cidades = [...new Set(unidades.map((u) => u.cidade))];
@@ -258,7 +268,8 @@ function SignupCard({ irParaLogin }) {
           <label style={rotulo}>CPF / CNPJ</label>
           <div style={{ position: "relative", margin: "6px 0 0" }}>
             <FileText size={16} color={C.text4} style={iconWrap} />
-            <input value={f.documento} onChange={set("documento")} placeholder="só números" style={{ ...inp, paddingLeft: 36 }} />
+            <input value={f.documento} onChange={onDoc} placeholder="CPF ou CNPJ" style={{ ...inp, paddingLeft: 36 }} aria-label="CPF ou CNPJ" />
+            {buscandoDoc && <div style={{ fontSize: 10.5, color: C.text4, marginTop: 3 }}>Buscando CNPJ…</div>}
           </div>
         </div>
       </div>
