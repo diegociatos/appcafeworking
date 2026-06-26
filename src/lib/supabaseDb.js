@@ -159,7 +159,7 @@ function clienteToRow(c) {
     id: c.id, unidade_id: c.unidadeId, nome: c.nome, documento: c.cnpj,
     plano: c.plano, fiscal: c.fiscal, status: c.status, desde: c.desde,
     contato: c.contato, email: c.email, telefone: c.tel,
-    endereco: c.endereco, cep: c.cep,
+    endereco: c.endereco, numero: c.numero, cep: c.cep,
   };
   Object.keys(row).forEach((k) => row[k] === undefined && delete row[k]);
   return row;
@@ -184,7 +184,7 @@ const mapUsuario = (r) => ({ id: r.id, unidadeId: r.unidade_id, nome: r.nome, em
 const mapCliente = (r, nomeDaUnidade) => ({
   id: r.id, nome: r.nome, cnpj: r.documento, plano: r.plano, fiscal: r.fiscal,
   status: r.status, desde: r.desde, contato: r.contato, email: r.email, tel: r.telefone,
-  endereco: r.endereco, cep: r.cep,
+  endereco: r.endereco, numero: r.numero, cep: r.cep,
   unidade: nomeDaUnidade(r.unidade_id), unidadeId: r.unidade_id, docs: [],
 });
 

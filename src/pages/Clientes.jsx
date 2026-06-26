@@ -2,19 +2,20 @@ import React, { useState } from "react";
 import {
   Plus, Users, Briefcase, ChevronRight, ChevronLeft, FileText,
   Building, Mail, Phone, Upload, Download, FileCheck, FileClock,
-  AlertCircle, MapPin,
+  AlertCircle, MapPin, Edit3, Trash2,
 } from "lucide-react";
-import { Card, Badge, Btn, PageHead, Empty, Modal, Field } from "../components/ui.jsx";
+import { Card, Badge, Btn, PageHead, Empty, Modal, Field, ConfirmDialog } from "../components/ui.jsx";
 import { C, serif, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 import { buscarCnpj, buscarCep } from "../lib/lookup.js";
 
 export default function Clientes() {
-  const { clientes, addCliente, unidades } = useStore();
+  const { clientes, addCliente, updateCliente, removeCliente, unidades } = useStore();
   const [sel, setSel] = useState(null);
-  const [novo, setNovo] = useState(false);
+  const [editar, setEditar] = useState(null); // null | {} novo | cliente em edição
+  const [excluir, setExcluir] = useState(null);
   const cli = clientes.find((c) => c.id === sel);
-  if (cli) return <ClienteDetalhe cli={cli} onBack={() => setSel(null)} />;
+  if (cli) return <ClienteDetalhe cli={cli} onBack={() => setSel(null)} onEditar={() => { setSel(null); setEditar(cli); }} onExcluir={() => { setSel(null); setExcluir(cli); }} />;
 
   return (
     <div>
@@ -22,7 +23,7 @@ export default function Clientes() {
         title="Clientes"
         sub="Contratos, planos, documentos, faturas, reservas e histórico completo."
         action={
-          <Btn onClick={() => setNovo(true)}>
+          <Btn onClick={() => setEditar({})}>
             <Plus size={16} /> Novo cliente
           </Btn>
         }
@@ -84,6 +85,10 @@ export default function Clientes() {
                   {c.status}
                 </Badge>
               </div>
+              <div style={{ display: "flex", gap: 2 }} onClick={(e) => e.stopPropagation()}>
+                <button onClick={() => setEditar(c)} title="Editar" aria-label={`Editar ${c.nome}`} className="cw-btn" style={{ color: C.text3, padding: 6 }}><Edit3 size={16} /></button>
+                <button onClick={() => setExcluir(c)} title="Excluir" aria-label={`Excluir ${c.nome}`} className="cw-btn" style={{ color: C.red, padding: 6 }}><Trash2 size={16} /></button>
+              </div>
               <ChevronRight size={18} color={C.text4} />
             </div>
           );
@@ -91,17 +96,30 @@ export default function Clientes() {
       </Card>
       )}
 
-      {novo && (
-        <Modal title="Novo cliente" onClose={() => setNovo(false)} maxWidth={460}>
-          <NovoClienteForm unidades={unidades} onSalvar={(dados) => { addCliente(dados); setNovo(false); }} />
+      {editar && (
+        <Modal title={editar.id ? "Editar cliente" : "Novo cliente"} onClose={() => setEditar(null)} maxWidth={460}>
+          <NovoClienteForm inicial={editar} unidades={unidades} onSalvar={(dados) => { if (editar.id) updateCliente(editar.id, dados); else addCliente(dados); setEditar(null); }} />
         </Modal>
       )}
+
+      <ConfirmDialog
+        aberto={!!excluir}
+        titulo="Excluir cliente?"
+        mensagem={excluir ? `O cliente "${excluir.nome}" será removido. Esta ação não pode ser desfeita.` : ""}
+        onConfirmar={() => { removeCliente(excluir.id); setExcluir(null); }}
+        onCancelar={() => setExcluir(null)}
+      />
     </div>
   );
 }
 
-function NovoClienteForm({ unidades, onSalvar }) {
-  const [f, setF] = useState({ nome: "", cnpj: "", plano: "Sala Privativa", unidade: unidades[0]?.nome || "", fiscal: false, contato: "", email: "", tel: "", cep: "", endereco: "" });
+function NovoClienteForm({ inicial = {}, unidades, onSalvar }) {
+  const [f, setF] = useState({
+    nome: inicial.nome || "", cnpj: inicial.cnpj || "", plano: inicial.plano || "Sala Privativa",
+    unidade: inicial.unidade || unidades[0]?.nome || "", fiscal: inicial.fiscal || false,
+    contato: inicial.contato || "", email: inicial.email || "", tel: inicial.tel || "",
+    cep: inicial.cep || "", endereco: inicial.endereco || "", numero: inicial.numero || "",
+  });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const [buscando, setBuscando] = useState(false);
   const valido = f.nome.trim();
@@ -115,7 +133,8 @@ function NovoClienteForm({ unidades, onSalvar }) {
         email: p.email || r.email,
         tel: p.tel || r.telefone,
         cep: p.cep || r.cep,
-        endereco: p.endereco || [r.logradouro, r.numero, r.bairro, [r.municipio, r.uf].filter(Boolean).join("/")].filter(Boolean).join(", "),
+        numero: p.numero || r.numero,
+        endereco: p.endereco || [r.logradouro, r.bairro, [r.municipio, r.uf].filter(Boolean).join("/")].filter(Boolean).join(", "),
       })); }).finally(() => setBuscando(false));
     }
   };
@@ -146,38 +165,38 @@ function NovoClienteForm({ unidades, onSalvar }) {
         <input value={f.email} onChange={set("email")} style={inp} type="email" placeholder="contato@empresa.com.br" />
         <div style={{ fontSize: 11, color: C.text4, marginTop: 4 }}>Usado para enviar cobranças, boletos e notas fiscais ao cliente.</div>
       </Field>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 0.8fr", gap: 12 }}>
         <Field label="CEP"><input value={f.cep} onChange={onCep} style={inp} placeholder="00000-000" inputMode="numeric" aria-label="CEP do cliente" /></Field>
-        <Field label="Endereço"><input value={f.endereco} onChange={set("endereco")} style={inp} placeholder="Rua, número, bairro, cidade" /></Field>
+        <Field label="Endereço"><input value={f.endereco} onChange={set("endereco")} style={inp} placeholder="Rua, bairro, cidade" /></Field>
+        <Field label="Número"><input value={f.numero} onChange={set("numero")} style={inp} placeholder="Nº" aria-label="Número do endereço" /></Field>
       </div>
       {buscando && <div style={{ fontSize: 11, color: C.text4, marginTop: -6, marginBottom: 10 }}>Buscando dados…</div>}
       <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.text2, margin: "4px 0 14px", cursor: "pointer" }}>
         <input type="checkbox" checked={f.fiscal} onChange={(e) => setF({ ...f, fiscal: e.target.checked })} /> Usa endereço fiscal (recebe correspondências)
       </label>
-      <Btn style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.5 }} onClick={() => valido && onSalvar({ ...f, desde: String(new Date().getFullYear()) })}>
-        <Plus size={16} /> Cadastrar cliente
+      <Btn style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.5 }} onClick={() => valido && onSalvar({ ...f, desde: inicial.desde || String(new Date().getFullYear()) })}>
+        <Plus size={16} /> {inicial.id ? "Salvar cliente" : "Cadastrar cliente"}
       </Btn>
     </>
   );
 }
 
-function ClienteDetalhe({ cli, onBack }) {
+function ClienteDetalhe({ cli, onBack, onEditar, onExcluir }) {
   const [docs, setDocs] = useState(cli.docs);
   return (
     <div>
-      <button
-        onClick={onBack}
-        style={{
-          fontSize: 14,
-          color: C.text3,
-          marginBottom: 16,
-          display: "flex",
-          alignItems: "center",
-          gap: 4,
-        }}
-      >
-        <ChevronLeft size={16} /> Voltar para clientes
-      </button>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+        <button
+          onClick={onBack}
+          style={{ fontSize: 14, color: C.text3, display: "flex", alignItems: "center", gap: 4 }}
+        >
+          <ChevronLeft size={16} /> Voltar para clientes
+        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Btn variant="ghost" style={{ padding: "8px 12px", fontSize: 13 }} onClick={onEditar}><Edit3 size={14} /> Editar</Btn>
+          <Btn variant="ghost" style={{ padding: "8px 12px", fontSize: 13, color: C.red, borderColor: C.redPale }} onClick={onExcluir}><Trash2 size={14} /> Excluir</Btn>
+        </div>
+      </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: 16 }} className="cw-grid-stack">
         <Card>
           <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18 }}>
@@ -214,7 +233,7 @@ function ClienteDetalhe({ cli, onBack }) {
             [Users, "Contato", cli.contato],
             [Mail, "E-mail", cli.email],
             [Phone, "Telefone", cli.tel],
-            [MapPin, "Endereço", [cli.endereco, cli.cep].filter(Boolean).join(" · ")],
+            [MapPin, "Endereço", [[cli.endereco, cli.numero].filter(Boolean).join(", "), cli.cep].filter(Boolean).join(" · ")],
           ].map(([Ic, l, v], i) => (
             <div
               key={i}
