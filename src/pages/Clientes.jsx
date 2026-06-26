@@ -2,11 +2,12 @@ import React, { useState } from "react";
 import {
   Plus, Users, Briefcase, ChevronRight, ChevronLeft, FileText,
   Building, Mail, Phone, Upload, Download, FileCheck, FileClock,
-  AlertCircle,
+  AlertCircle, MapPin,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Empty, Modal, Field } from "../components/ui.jsx";
 import { C, serif, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
+import { buscarCnpj, buscarCep } from "../lib/lookup.js";
 
 export default function Clientes() {
   const { clientes, addCliente, unidades } = useStore();
@@ -100,14 +101,36 @@ export default function Clientes() {
 }
 
 function NovoClienteForm({ unidades, onSalvar }) {
-  const [f, setF] = useState({ nome: "", cnpj: "", plano: "Sala Privativa", unidade: unidades[0]?.nome || "", fiscal: false, contato: "", email: "", tel: "" });
+  const [f, setF] = useState({ nome: "", cnpj: "", plano: "Sala Privativa", unidade: unidades[0]?.nome || "", fiscal: false, contato: "", email: "", tel: "", cep: "", endereco: "" });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const [buscando, setBuscando] = useState(false);
   const valido = f.nome.trim();
+  const onCnpj = (e) => {
+    const v = e.target.value; setF((p) => ({ ...p, cnpj: v }));
+    if (v.replace(/\D/g, "").length === 14) {
+      setBuscando(true);
+      buscarCnpj(v).then((r) => { if (r) setF((p) => ({
+        ...p,
+        nome: p.nome || r.razaoSocial,
+        email: p.email || r.email,
+        tel: p.tel || r.telefone,
+        cep: p.cep || r.cep,
+        endereco: p.endereco || [r.logradouro, r.numero, r.bairro, [r.municipio, r.uf].filter(Boolean).join("/")].filter(Boolean).join(", "),
+      })); }).finally(() => setBuscando(false));
+    }
+  };
+  const onCep = (e) => {
+    const v = e.target.value; setF((p) => ({ ...p, cep: v }));
+    if (v.replace(/\D/g, "").length === 8) {
+      setBuscando(true);
+      buscarCep(v).then((r) => { if (r) setF((p) => ({ ...p, endereco: p.endereco || [r.logradouro, r.bairro, [r.cidade, r.uf].filter(Boolean).join("/")].filter(Boolean).join(", ") })); }).finally(() => setBuscando(false));
+    }
+  };
   return (
     <>
       <Field label="Nome / razão social"><input value={f.nome} onChange={set("nome")} style={inp} placeholder="Ex: Mendes Advocacia" /></Field>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <Field label="CPF / CNPJ"><input value={f.cnpj} onChange={set("cnpj")} style={inp} placeholder="00.000.000/0001-00" /></Field>
+        <Field label="CPF / CNPJ"><input value={f.cnpj} onChange={onCnpj} style={inp} placeholder="00.000.000/0001-00" /></Field>
         <Field label="Unidade">
           <select value={f.unidade} onChange={set("unidade")} style={inp}>
             {unidades.map((u) => <option key={u.id} value={u.nome}>{u.nome}</option>)}
@@ -119,7 +142,15 @@ function NovoClienteForm({ unidades, onSalvar }) {
         <Field label="Contato"><input value={f.contato} onChange={set("contato")} style={inp} placeholder="Pessoa de contato" /></Field>
         <Field label="Telefone"><input value={f.tel} onChange={set("tel")} style={inp} placeholder="(31) 9...." /></Field>
       </div>
-      <Field label="E-mail"><input value={f.email} onChange={set("email")} style={inp} type="email" placeholder="contato@empresa.com.br" /></Field>
+      <Field label="E-mail">
+        <input value={f.email} onChange={set("email")} style={inp} type="email" placeholder="contato@empresa.com.br" />
+        <div style={{ fontSize: 11, color: C.text4, marginTop: 4 }}>Usado para enviar cobranças, boletos e notas fiscais ao cliente.</div>
+      </Field>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 12 }}>
+        <Field label="CEP"><input value={f.cep} onChange={onCep} style={inp} placeholder="00000-000" inputMode="numeric" aria-label="CEP do cliente" /></Field>
+        <Field label="Endereço"><input value={f.endereco} onChange={set("endereco")} style={inp} placeholder="Rua, número, bairro, cidade" /></Field>
+      </div>
+      {buscando && <div style={{ fontSize: 11, color: C.text4, marginTop: -6, marginBottom: 10 }}>Buscando dados…</div>}
       <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.text2, margin: "4px 0 14px", cursor: "pointer" }}>
         <input type="checkbox" checked={f.fiscal} onChange={(e) => setF({ ...f, fiscal: e.target.checked })} /> Usa endereço fiscal (recebe correspondências)
       </label>
@@ -183,6 +214,7 @@ function ClienteDetalhe({ cli, onBack }) {
             [Users, "Contato", cli.contato],
             [Mail, "E-mail", cli.email],
             [Phone, "Telefone", cli.tel],
+            [MapPin, "Endereço", [cli.endereco, cli.cep].filter(Boolean).join(" · ")],
           ].map(([Ic, l, v], i) => (
             <div
               key={i}
