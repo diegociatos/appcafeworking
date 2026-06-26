@@ -56,6 +56,14 @@ export default function Salas() {
                     {s.cap} pessoas{s.bases > 0 ? ` · ${s.bases} bases` : ""} · {s.contratada && s.valorMensal ? `${fmt(s.valorMensal)}/mês` : (s.valor || "—")}
                   </div>
                   {s.descricao && <div style={{ fontSize: 12, color: C.text3, marginTop: 4, lineHeight: 1.45 }}>{s.descricao}</div>}
+                  {s.planos?.length > 0 && (
+                    <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 6 }}>
+                      {s.planos.slice(0, 5).map((p) => (
+                        <span key={p.id} style={{ fontSize: 10.5, color: C.cafe, background: C.cafePale, padding: "2px 8px", borderRadius: 10 }}>{p.nome} · {fmt(p.preco)}</span>
+                      ))}
+                      {s.planos.length > 5 && <span style={{ fontSize: 10.5, color: C.text4, alignSelf: "center" }}>+{s.planos.length - 5}</span>}
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                   <button onClick={() => setModal(s)} title="Editar" className="cw-btn" style={{ color: C.text3, padding: 6 }}><Edit3 size={16} /></button>

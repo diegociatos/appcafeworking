@@ -353,6 +353,16 @@ function SalasTab({ unidade, salas, store }) {
 
 const COMODIDADES_SALA = ["Ar-condicionado", "TV / Monitor", "Projetor", "Lousa branca", "Wi-Fi dedicado", "Café incluso", "Armário", "Cadeira ergonômica", "Videoconferência", "Sistema de som", "Microfone", "Mesa de reunião", "Palco"];
 const TIPOS_SALA = ["Privativa", "Reunião", "Compartilhada", "Auditório", "Atendimento"];
+// Períodos de cobrança de um plano de sala (coworking pode ter vários).
+const PERIODOS_SALA = [
+  { v: "hora", lb: "Por hora" },
+  { v: "turno", lb: "Turno (meio período)" },
+  { v: "dia", lb: "Diária" },
+  { v: "semana", lb: "Semanal" },
+  { v: "mes", lb: "Mensal" },
+  { v: "ano", lb: "Anual" },
+];
+const periodoLabel = (v) => (PERIODOS_SALA.find((p) => p.v === v)?.lb || v);
 
 function FotosGaleria({ fotos, onChange }) {
   return (
@@ -389,8 +399,16 @@ export function SalaForm({ inicial, unidade, onSave }) {
     contratada: inicial.contratada || false,
     contratante: inicial.contratante || "",
     valorMensal: inicial.valorMensal || 0,
+    planos: inicial.planos || [],
   });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const [np, setNp] = useState({ nome: "", periodo: "mes", preco: "" });
+  const addPlanoSala = () => {
+    if (!np.nome.trim() || !(+np.preco > 0)) return;
+    setF((p) => ({ ...p, planos: [...(p.planos || []), { id: "sp" + Date.now(), nome: np.nome.trim(), periodo: np.periodo, preco: +np.preco }] }));
+    setNp({ nome: "", periodo: np.periodo, preco: "" });
+  };
+  const removePlanoSala = (id) => setF((p) => ({ ...p, planos: (p.planos || []).filter((x) => x.id !== id) }));
   const clientesUnidade = clientesDe(unidade?.nome);
   const ehMensal = f.tipo === "Privativa" || f.tipo === "Compartilhada";
   const todasComodidades = Array.from(new Set([...COMODIDADES_SALA, ...f.comodidades]));
@@ -464,6 +482,42 @@ export function SalaForm({ inicial, unidade, onSave }) {
           O valor por hora contabiliza a reserva no financeiro automaticamente.
         </div>
       )}
+
+      {/* Planos / preços da sala (hora, turno, diária, semana, mês, ano) */}
+      <div style={{ background: C.cream2, borderRadius: 12, padding: 14, marginBottom: 14 }}>
+        <div style={{ fontSize: 13.5, fontWeight: 600 }}>Planos / preços desta sala</div>
+        <div style={{ fontSize: 11.5, color: C.text3, margin: "2px 0 10px" }}>
+          Cadastre quantos quiser — por hora, turno, diária, semana, mês ou ano (ex.: os planos de coworking da sala compartilhada).
+        </div>
+        {(f.planos || []).length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+            {f.planos.map((p) => (
+              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, background: "#fff", border: `1px solid ${C.border2}`, borderRadius: 9, padding: "8px 10px" }}>
+                <span style={{ flex: 1, fontSize: 13, fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.nome}</span>
+                <Badge color={C.teal}>{periodoLabel(p.periodo)}</Badge>
+                <span style={{ fontFamily: serif, fontSize: 14, color: C.cafe }}>{fmt(p.preco)}</span>
+                <button type="button" onClick={() => removePlanoSala(p.id)} title="Remover" aria-label={`Remover plano ${p.nome}`} className="cw-btn" style={{ color: C.red, padding: 4 }}><Trash2 size={14} /></button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 0.9fr auto", gap: 8, alignItems: "end" }}>
+          <Field label="Nome do plano" style={{ marginBottom: 0 }}>
+            <input value={np.nome} onChange={(e) => setNp({ ...np, nome: e.target.value })} style={inp} placeholder="Ex: Turno, Diária, FULL" aria-label="Nome do plano da sala" />
+          </Field>
+          <Field label="Período" style={{ marginBottom: 0 }}>
+            <select value={np.periodo} onChange={(e) => setNp({ ...np, periodo: e.target.value })} style={inp} aria-label="Período do plano">
+              {PERIODOS_SALA.map((p) => <option key={p.v} value={p.v}>{p.lb}</option>)}
+            </select>
+          </Field>
+          <Field label="Preço (R$)" style={{ marginBottom: 0 }}>
+            <input type="number" min="0" step="0.01" value={np.preco} onChange={(e) => setNp({ ...np, preco: e.target.value })} style={inp} placeholder="0,00" aria-label="Preço do plano" />
+          </Field>
+          <button type="button" onClick={addPlanoSala} className="cw-btn" style={{ height: 40, padding: "0 12px", borderRadius: 10, background: C.cafePale, color: C.cafe, fontWeight: 600, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
+            <Plus size={15} /> Add
+          </button>
+        </div>
+      </div>
 
       {/* Locação / contrato mensal */}
       <div style={{ background: C.cream2, borderRadius: 12, padding: 14, marginBottom: 14 }}>
