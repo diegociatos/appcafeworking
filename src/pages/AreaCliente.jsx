@@ -236,7 +236,7 @@ export default function AreaCliente({ section, go }) {
                   <div style={{ width: 40, height: 40, borderRadius: 10, background: C.cafePale, display: "grid", placeItems: "center" }}><CalendarDays size={18} color={C.cafe} /></div>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 14, fontWeight: 600 }}>{nomeSala(r.sala)}</div>
-                    <div style={{ fontSize: 12, color: C.text3 }}>{DIAS[r.dia] || "—"} · {HORARIOS[r.inicio]}–{HORARIOS[r.inicio + r.dur] || "23:00"}</div>
+                    <div style={{ fontSize: 12, color: C.text3 }}>{DIAS[r.dia] || "—"} · {HORARIOS[r.inicio]}–{HORARIOS[r.inicio + r.dur] || "23:00"}{r.base ? ` · Base ${r.base}` : ""}</div>
                   </div>
                   <Badge color={C.green}>Confirmada</Badge>
                 </div>
@@ -419,7 +419,7 @@ export default function AreaCliente({ section, go }) {
       {/* ===== MODAIS ===== */}
       {reservaSala && (
         <ReservaModal sala={reservaSala} reservas={reservas} onClose={() => setReservaSala(null)}
-          onConfirm={(dados) => { addReserva({ sala: reservaSala.id, dia: dados.dia, inicio: dados.inicio, dur: dados.dur, cliente: cli.nome, cor: C.cafe, origem: "app" }); setReservaSala(null); irPara("reservar"); }} />
+          onConfirm={(dados) => { addReserva({ sala: reservaSala.id, dia: dados.dia, inicio: dados.inicio, dur: dados.dur, base: dados.base, cliente: cli.nome, cor: C.cafe, origem: "app" }); setReservaSala(null); irPara("reservar"); }} />
       )}
       {pagarFatura && (
         <Modal title="Pagar com Pix" onClose={() => setPagarFatura(null)}>
@@ -511,38 +511,66 @@ function NotifPrefs({ prefs, onChange, email }) {
 }
 
 function ReservaModal({ sala, reservas = [], onClose, onConfirm }) {
-  const [f, setF] = useState({ dia: 0, inicio: 2, dur: 1 });
-  const conflito = reservas.find(
-    (r) => r.sala === sala.id && r.dia === f.dia && f.inicio < r.inicio + r.dur && r.inicio < f.inicio + f.dur
-  );
+  const compart = (sala.bases || 0) > 0; // sala compartilhada → reserva por base
+  const [f, setF] = useState({ dia: 0, inicio: 2, dur: 1, base: null });
+  const setTempo = (patch) => setF((p) => ({ ...p, ...patch, base: compart ? null : p.base }));
+  const overlaps = (r) => r.sala === sala.id && r.dia === f.dia && f.inicio < r.inicio + r.dur && r.inicio < f.inicio + f.dur;
+  const baseOcupada = (n) => reservas.some((r) => overlaps(r) && r.base === n);
+  const bases = compart ? Array.from({ length: sala.bases }, (_, i) => i + 1) : [];
+  const livres = bases.filter((n) => !baseOcupada(n)).length;
+  const conflito = compart ? (!f.base || baseOcupada(f.base)) : reservas.some((r) => overlaps(r));
+
   return (
     <Modal title={`Reservar ${sala.nome}`} onClose={onClose}>
       {sala.foto && <img src={sala.foto} alt={sala.nome} onError={(e) => (e.currentTarget.style.display = "none")} style={{ width: "100%", height: 140, objectFit: "cover", borderRadius: 12, marginBottom: 14, background: C.cream2 }} />}
-      <div style={{ fontSize: 13, color: C.text3, marginBottom: 14 }}>{sala.tipo} · {sala.cap} lugares · {sala.valor}</div>
+      <div style={{ fontSize: 13, color: C.text3, marginBottom: 14 }}>{sala.tipo} · {sala.cap} lugares{compart ? ` · ${sala.bases} bases` : ""} · {sala.valor}</div>
       <Field label="Dia">
-        <select value={f.dia} onChange={(e) => setF({ ...f, dia: +e.target.value })} style={inp}>
+        <select value={f.dia} onChange={(e) => setTempo({ dia: +e.target.value })} style={inp}>
           {DIAS.map((d, i) => <option key={i} value={i}>{d}</option>)}
         </select>
       </Field>
       <div style={{ display: "flex", gap: 12 }}>
         <Field label="Início" style={{ flex: 1 }}>
-          <select value={f.inicio} onChange={(e) => setF({ ...f, inicio: +e.target.value })} style={inp}>
+          <select value={f.inicio} onChange={(e) => setTempo({ inicio: +e.target.value })} style={inp}>
             {HORARIOS.map((h, i) => <option key={i} value={i}>{h}</option>)}
           </select>
         </Field>
         <Field label="Duração" style={{ flex: 1 }}>
-          <select value={f.dur} onChange={(e) => setF({ ...f, dur: +e.target.value })} style={inp}>
+          <select value={f.dur} onChange={(e) => setTempo({ dur: +e.target.value })} style={inp}>
             {[1, 2, 3, 4].map((d) => <option key={d} value={d}>{d}h</option>)}
           </select>
         </Field>
       </div>
+
+      {compart && (
+        <Field label={`Base de trabalho — ${livres} de ${sala.bases} livre${livres === 1 ? "" : "s"} neste horário`}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(46px,1fr))", gap: 8 }}>
+            {bases.map((n) => {
+              const ocup = baseOcupada(n); const sel = f.base === n;
+              return (
+                <button key={n} type="button" disabled={ocup} onClick={() => setF((p) => ({ ...p, base: n }))}
+                  title={ocup ? `Base ${n} ocupada` : `Base ${n} livre`} aria-label={`Base ${n}${ocup ? " ocupada" : " livre"}`}
+                  style={{ height: 44, borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: ocup ? "not-allowed" : "pointer",
+                    border: `1.5px solid ${sel ? C.cafe : ocup ? "transparent" : C.border}`,
+                    background: sel ? C.cafe : ocup ? C.redPale : C.white, color: sel ? "#fff" : ocup ? C.red : C.text2 }}>
+                  {n}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 11, color: C.text4, marginTop: 6 }}>Toque numa base livre (branca). Vermelho = ocupada nesse horário.</div>
+        </Field>
+      )}
+
       {conflito ? (
         <div style={{ background: C.redPale, color: C.red, borderRadius: 10, padding: "10px 12px", fontSize: 13, margin: "4px 0 12px" }}>
-          ⚠ Esse horário já está ocupado. Escolha outro horário com a agenda livre.
+          {compart
+            ? (livres === 0 ? "⚠ Todas as bases estão ocupadas nesse horário. Tente outro horário." : "⚠ Escolha uma base livre acima.")
+            : "⚠ Esse horário já está ocupado. Escolha outro horário com a agenda livre."}
         </div>
       ) : (
         <div style={{ fontSize: 12.5, color: C.green, margin: "4px 0 12px" }}>
-          ✓ Horário livre: {HORARIOS[f.inicio]}–{HORARIOS[f.inicio + f.dur] || "23:00"} · {DIAS[f.dia]}
+          ✓ {compart ? `Base ${f.base} livre` : "Horário livre"}: {HORARIOS[f.inicio]}–{HORARIOS[f.inicio + f.dur] || "23:00"} · {DIAS[f.dia]}
         </div>
       )}
       <Btn disabled={!!conflito} style={{ width: "100%", justifyContent: "center", marginTop: 6, opacity: conflito ? 0.5 : 1 }} onClick={() => !conflito && onConfirm(f)}><CheckCircle2 size={17} /> Confirmar reserva</Btn>

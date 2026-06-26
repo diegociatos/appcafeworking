@@ -244,7 +244,7 @@ function ReservaDetalhe({ reserva, sala, dias, onComplemento, onCancelar }) {
           {reserva.origem === "app" && <Badge color={C.teal}><Smartphone size={11} /> Reservou pelo app</Badge>}
         </div>
         <div style={{ fontSize: 13, color: C.text3, marginTop: 4 }}>
-          {sala?.nome} · {dias[reserva.dia]} · {HORARIOS[reserva.inicio]}–{horaFim(reserva.inicio, reserva.dur)} ({reserva.dur}h)
+          {sala?.nome}{reserva.base ? ` · Base ${reserva.base}` : ""} · {dias[reserva.dia]} · {HORARIOS[reserva.inicio]}–{horaFim(reserva.inicio, reserva.dur)} ({reserva.dur}h)
         </div>
         <div style={{ fontSize: 13, color: C.text2, marginTop: 6 }}>
           Valor da reserva: <b style={{ color: C.cafe }}>{fmt(reserva.valor || 0)}</b> · já lançado no financeiro (a receber)
@@ -281,15 +281,20 @@ function NovaReservaModal({ salas, clientes, dias, diaInicial, reservas, onClose
     modo: clientes.length ? "cadastrado" : "avulso",
     clienteId: clientes[0]?.id || "",
     nome: "", telefone: "", email: "",
-    dia: diaInicial || 0, inicio: 2, dur: 1,
+    dia: diaInicial || 0, inicio: 2, dur: 1, base: null,
   });
   const salaSel = salas.find((s) => s.id === f.sala);
+  const compart = (salaSel?.bases || 0) > 0; // sala compartilhada → reserva por base
   const clienteNome = f.modo === "cadastrado" ? (clientes.find((c) => c.id === f.clienteId)?.nome || "") : f.nome.trim();
-  const conflito = reservas.find(
-    (r) => r.sala === f.sala && r.dia === f.dia && f.inicio < r.inicio + r.dur && r.inicio < f.inicio + f.dur
-  );
-  const podeSalvar = clienteNome && f.sala && !conflito;
+  const overlaps = (r) => r.sala === f.sala && r.dia === f.dia && f.inicio < r.inicio + r.dur && r.inicio < f.inicio + f.dur;
+  const baseOcupada = (n) => reservas.some((r) => overlaps(r) && r.base === n);
+  const conflito = !compart ? reservas.find(overlaps) : null;
+  const bases = compart ? Array.from({ length: salaSel.bases }, (_, i) => i + 1) : [];
+  const livres = bases.filter((n) => !baseOcupada(n)).length;
+  const baseConflito = compart && (!f.base || baseOcupada(f.base));
+  const podeSalvar = clienteNome && f.sala && !conflito && !baseConflito;
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const setTempo = (patch) => setF((p) => ({ ...p, ...patch, base: null }));
 
   if (!salas.length) {
     return (
@@ -309,9 +314,9 @@ function NovaReservaModal({ salas, clientes, dias, diaInicial, reservas, onClose
   return (
     <Modal onClose={onClose} title="Nova reserva">
       <Field label="Sala">
-        <select value={f.sala} onChange={(e) => setF({ ...f, sala: e.target.value })} style={inp}>
+        <select value={f.sala} onChange={(e) => setF({ ...f, sala: e.target.value, base: null })} style={inp}>
           {salas.map((s) => (
-            <option key={s.id} value={s.id}>{s.nome} — {s.tipo}</option>
+            <option key={s.id} value={s.id}>{s.nome} — {s.tipo}{(s.bases || 0) > 0 ? ` (${s.bases} bases)` : ""}</option>
           ))}
         </select>
       </Field>
@@ -358,29 +363,52 @@ function NovaReservaModal({ salas, clientes, dias, diaInicial, reservas, onClose
 
       <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr", gap: 12 }}>
         <Field label="Dia">
-          <select value={f.dia} onChange={(e) => setF({ ...f, dia: +e.target.value })} style={inp}>
+          <select value={f.dia} onChange={(e) => setTempo({ dia: +e.target.value })} style={inp}>
             {dias.map((d, i) => <option key={i} value={i}>{d}</option>)}
           </select>
         </Field>
         <Field label="Início">
-          <select value={f.inicio} onChange={(e) => setF({ ...f, inicio: +e.target.value })} style={inp}>
+          <select value={f.inicio} onChange={(e) => setTempo({ inicio: +e.target.value })} style={inp}>
             {HORARIOS.map((h, i) => <option key={i} value={i}>{h}</option>)}
           </select>
         </Field>
         <Field label="Duração">
-          <select value={f.dur} onChange={(e) => setF({ ...f, dur: +e.target.value })} style={inp}>
+          <select value={f.dur} onChange={(e) => setTempo({ dur: +e.target.value })} style={inp}>
             {[1, 2, 3, 4].map((d) => <option key={d} value={d}>{d}h</option>)}
           </select>
         </Field>
       </div>
 
+      {compart && (
+        <Field label={`Base de trabalho — ${livres} de ${salaSel.bases} livre${livres === 1 ? "" : "s"} neste horário`}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(46px,1fr))", gap: 8 }}>
+            {bases.map((n) => {
+              const ocup = baseOcupada(n); const sel = f.base === n;
+              return (
+                <button key={n} type="button" disabled={ocup} onClick={() => setF((p) => ({ ...p, base: n }))}
+                  title={ocup ? `Base ${n} ocupada` : `Base ${n} livre`} aria-label={`Base ${n}${ocup ? " ocupada" : " livre"}`}
+                  style={{ height: 44, borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: ocup ? "not-allowed" : "pointer",
+                    border: `1.5px solid ${sel ? C.teal : ocup ? "transparent" : C.border}`,
+                    background: sel ? C.teal : ocup ? C.redPale : C.white, color: sel ? "#fff" : ocup ? C.red : C.text2 }}>
+                  {n}
+                </button>
+              );
+            })}
+          </div>
+        </Field>
+      )}
+
       {conflito ? (
         <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.redPale, color: C.red, borderRadius: 10, padding: "10px 12px", fontSize: 13, marginBottom: 12 }}>
           <AlertCircle size={16} /> Conflito: <b>{salaSel?.nome}</b> já está reservada nesse horário para <b>{conflito.cliente}</b>.
         </div>
+      ) : baseConflito ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.redPale, color: C.red, borderRadius: 10, padding: "10px 12px", fontSize: 13, marginBottom: 12 }}>
+          <AlertCircle size={16} /> {livres === 0 ? "Todas as bases estão ocupadas nesse horário." : "Escolha uma base livre acima."}
+        </div>
       ) : (
         <div style={{ fontSize: 12.5, color: C.green, marginBottom: 12 }}>
-          ✓ Horário livre: {HORARIOS[f.inicio]}–{horaFim(f.inicio, f.dur)} · {dias[f.dia]}
+          ✓ {compart ? `Base ${f.base} livre` : "Horário livre"}: {HORARIOS[f.inicio]}–{horaFim(f.inicio, f.dur)} · {dias[f.dia]}
         </div>
       )}
 
@@ -388,7 +416,7 @@ function NovaReservaModal({ salas, clientes, dias, diaInicial, reservas, onClose
         variant="teal"
         disabled={!podeSalvar}
         style={{ width: "100%", justifyContent: "center", opacity: podeSalvar ? 1 : 0.5 }}
-        onClick={() => podeSalvar && onSave({ sala: f.sala, dia: f.dia, inicio: f.inicio, dur: f.dur, cliente: clienteNome, avulso: f.modo === "avulso", telefone: f.telefone, email: f.email })}
+        onClick={() => podeSalvar && onSave({ sala: f.sala, dia: f.dia, inicio: f.inicio, dur: f.dur, base: f.base, cliente: clienteNome, avulso: f.modo === "avulso", telefone: f.telefone, email: f.email })}
       >
         <CheckCircle2 size={17} /> Confirmar reserva
       </Btn>
