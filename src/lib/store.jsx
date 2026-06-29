@@ -22,6 +22,7 @@ import {
   putAppState, delAppState,
 } from "./supabaseDb.js";
 import { getCurrentCompetencia, parseDateToCompetencia } from "./dateUtils.js";
+import { legacyReservaToDateRange, temConflito, TZ } from "./reservas.js";
 
 // Backend ligado? Em produção (Supabase configurado) o app não exibe os dados
 // de demonstração — parte vazio e hidrata do banco; mutações persistem.
@@ -501,13 +502,36 @@ export function StoreProvider({ children }) {
   const removeProduto = (id) => setProdutos((ps) => ps.filter((p) => p.id !== id));
 
   // Reservas ---------------------------------------------------------------
+  // addReserva — híbrido: aceita formato antigo (dia/inicio/dur) e novo
+  // (startAt/endAt). Calcula as datas reais, valida CONFLITO no store (não só no
+  // modal) e só lança no financeiro se a reserva for criada. Retorna
+  // { ok, reserva } ou { ok:false, error }.
   const addReserva = (r) => {
     const sala = salas.find((s) => s.id === r.sala);
     const unidadeId = r.unidadeId || sala?.unidadeId;
-    const valor = (sala?.valorHora || 0) * (r.dur || 1);
-    const id = "r" + Date.now();
+    // Datas reais: usa startAt/endAt se vierem; senão deriva do formato antigo.
+    let startAt = r.startAt, endAt = r.endAt;
+    if (!startAt || !endAt) {
+      const { start, end } = legacyReservaToDateRange(r);
+      startAt = start.toISOString(); endAt = end.toISOString();
+    }
+    const durHoras = Math.max(1, Math.round((new Date(endAt) - new Date(startAt)) / 3_600_000));
+    const valor = r.valor != null ? r.valor : (sala?.valorHora || 0) * (r.dur || durHoras);
+    const id = r.id || "r" + Date.now();
     const origem = r.origem || "recepcao";
-    setReservas((rs) => [...rs, { id, ...r, unidadeId, valor, origem, vista: origem !== "app" }]);
+    const nova = {
+      ...r, id, unidadeId, base: r.base ?? null,
+      startAt, endAt, timezone: TZ,
+      status: r.status || "confirmada", valor, origem,
+      paymentStatus: r.paymentStatus || "pendente",
+      createdAt: r.createdAt || new Date().toISOString(),
+      vista: origem !== "app",
+    };
+    // Conflito validado no STORE (defesa além do modal).
+    if (temConflito(nova, reservas, { salaTemBases: (sala?.bases || 0) > 0 })) {
+      return { ok: false, error: (sala?.bases || 0) > 0 ? "Essa base já está reservada nesse horário." : "Esse horário já está reservado para este espaço." };
+    }
+    setReservas((rs) => [...rs, nova]);
     if (unidadeId) enfileirarEmail(unidadeId, { cliente: r.cliente, evento: "reserva", dados: { sala: sala?.nome, quando: [r.dia, r.inicio].filter(Boolean).join(" ") } });
     // Contabiliza o valor da reserva no financeiro (conta a receber)
     if (valor > 0 && unidadeId) {
@@ -518,7 +542,7 @@ export function StoreProvider({ children }) {
         contaId: contas.find((c) => c.unidadeId === unidadeId)?.id, data: "—", status: "previsto",
       });
     }
-    return id;
+    return { ok: true, reserva: nova };
   };
   const marcarReservasVistas = (unidadeId) =>
     setReservas((rs) => rs.map((r) => (r.unidadeId === unidadeId && r.origem === "app" && !r.vista ? { ...r, vista: true } : r)));

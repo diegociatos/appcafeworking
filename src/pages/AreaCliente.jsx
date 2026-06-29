@@ -442,7 +442,7 @@ export default function AreaCliente({ section, go }) {
       {/* ===== MODAIS ===== */}
       {reservaSala && (
         <ReservaModal sala={reservaSala} reservas={reservas} onClose={() => setReservaSala(null)}
-          onConfirm={(dados) => { addReserva({ sala: reservaSala.id, dia: dados.dia, inicio: dados.inicio, dur: dados.dur, base: dados.base, cliente: cli.nome, cor: C.cafe, origem: "app" }); setReservaSala(null); irPara("reservar"); }} />
+          onConfirm={(dados) => { const res = addReserva({ sala: reservaSala.id, dia: dados.dia, inicio: dados.inicio, dur: dados.dur, base: dados.base, cliente: cli.nome, clienteId: cli.id, cor: C.cafe, origem: "app" }); if (res && res.ok === false) { alert(res.error || "Não foi possível reservar."); return; } setReservaSala(null); irPara("reservar"); }} />
       )}
       {pagarFatura && (
         <Modal title="Pagar com Pix" onClose={() => setPagarFatura(null)}>

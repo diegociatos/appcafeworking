@@ -199,7 +199,8 @@ export default function Reservas() {
           reservas={reservas}
           onClose={() => setModal(null)}
           onSave={(nr) => {
-            addReserva({ ...nr, cor: C.teal2 });
+            const res = addReserva({ ...nr, cor: C.teal2 });
+            if (res && res.ok === false) { alert(res.error || "Não foi possível reservar."); return; }
             setDiaSel(nr.dia);
             setModal(null);
           }}
