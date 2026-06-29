@@ -15,7 +15,7 @@ import { useStore } from "../lib/store.jsx";
 
 
 export default function Reservas() {
-  const { activeUnit, unidadeAtiva, salasDe, clientesDe, reservas, addReserva, removeReserva, marcarReservasVistas, addLancamento } = useStore();
+  const { activeUnit, unidadeAtiva, salasDe, clientesDe, reservas, criarReserva, removeReserva, marcarReservasVistas, addLancamento } = useStore();
   const [diaSel, setDiaSel] = useState(0);
   const [modal, setModal] = useState(null);
   const [detalhe, setDetalhe] = useState(null);
@@ -198,9 +198,9 @@ export default function Reservas() {
           diaInicial={diaSel}
           reservas={reservas}
           onClose={() => setModal(null)}
-          onSave={(nr) => {
-            const res = addReserva({ ...nr, cor: C.teal2 });
-            if (res && res.ok === false) { alert(res.error || "Não foi possível reservar."); return; }
+          onSave={async (nr) => {
+            const res = await criarReserva({ ...nr, cor: C.teal2 });
+            if (!res || res.ok === false) { alert(res?.error || "Não foi possível reservar."); return; }
             setDiaSel(nr.dia);
             setModal(null);
           }}

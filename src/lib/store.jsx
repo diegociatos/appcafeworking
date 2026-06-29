@@ -23,6 +23,7 @@ import {
 } from "./supabaseDb.js";
 import { getCurrentCompetencia, parseDateToCompetencia } from "./dateUtils.js";
 import { legacyReservaToDateRange, temConflito, TZ } from "./reservas.js";
+import { reservasApi } from "./reservasApi.js";
 
 // Backend ligado? Em produção (Supabase configurado) o app não exibe os dados
 // de demonstração — parte vazio e hidrata do banco; mutações persistem.
@@ -541,6 +542,37 @@ export function StoreProvider({ children }) {
         categoria: "Receita Operacional Bruta", subcategoria: sub, valor,
         contaId: contas.find((c) => c.unidadeId === unidadeId)?.id, data: "—", status: "previsto",
       });
+    }
+    return { ok: true, reserva: nova };
+  };
+
+  // Versão segura/transacional. Modo real → Edge Function (sem corrida,
+  // valida papel e conflito no banco). Modo demo → caminho local síncrono.
+  // Sempre assíncrona; retorna { ok, reserva } | { ok:false, error }.
+  const criarReserva = async (r) => {
+    if (!reservasApi.configured) return addReserva(r);
+    const sala = salas.find((s) => s.id === r.sala);
+    const unidadeId = r.unidadeId || sala?.unidadeId;
+    let startAt = r.startAt, endAt = r.endAt;
+    if (!startAt || !endAt) { const { start, end } = legacyReservaToDateRange(r); startAt = start.toISOString(); endAt = end.toISOString(); }
+    const durHoras = Math.max(1, Math.round((new Date(endAt) - new Date(startAt)) / 3_600_000));
+    const valor = r.valor != null ? r.valor : (sala?.valorHora || 0) * (r.dur || durHoras);
+    const resp = await reservasApi.criar({
+      unidade_id: unidadeId, sala_id: r.sala, cliente_id: r.clienteId ?? null,
+      cliente_nome: r.cliente, cliente_email: r.email ?? null,
+      start_at: startAt, end_at: endAt, base: r.base ?? null, origem: r.origem || "recepcao", valor,
+    });
+    if (!resp.ok) return resp;
+    const nova = {
+      ...r, id: resp.reserva.id, unidadeId, startAt, endAt, base: r.base ?? null,
+      status: "confirmada", valor, origem: r.origem || "recepcao",
+      paymentStatus: resp.reserva.payment_status || "pendente", vista: (r.origem || "recepcao") !== "app",
+    };
+    setReservas((rs) => [...rs, nova]);
+    if (unidadeId) enfileirarEmail(unidadeId, { cliente: r.cliente, evento: "reserva", dados: { sala: sala?.nome } });
+    if (valor > 0 && unidadeId) {
+      const sub = sala?.tipo === "Privativa" ? "Aluguel de Salas Privativas" : "Aluguel de Sala de Reunião";
+      addLancamento(unidadeId, { tipo: "entrada", descricao: `Reserva ${sala?.nome || ""} · ${r.cliente}`, categoria: "Receita Operacional Bruta", subcategoria: sub, valor, contaId: contas.find((c) => c.unidadeId === unidadeId)?.id, data: "—", status: "previsto" });
     }
     return { ok: true, reserva: nova };
   };
@@ -1181,7 +1213,7 @@ export function StoreProvider({ children }) {
       addUnidade, updateUnidade,
       addSala, updateSala, removeSala,
       addProduto, updateProduto, removeProduto,
-      addReserva, removeReserva, marcarReservasVistas,
+      addReserva, criarReserva, removeReserva, marcarReservasVistas,
       pedidos, addPedido, updatePedido, removePedido, pedidosDe,
       correspondencias, addCorrespondencia, updateCorrespondencia, removeCorrespondencia, correspondenciasDe,
       conversas, conversasDe, enviarMensagemCliente, responderConversa, marcarConversaLida,

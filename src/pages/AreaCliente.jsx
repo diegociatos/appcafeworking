@@ -33,7 +33,7 @@ function baixarArquivo(nome, conteudo) {
 }
 
 export default function AreaCliente({ section, go }) {
-  const { unidades, salasDe, produtosDe, addReserva, reservas, addPedido, pedidosDe, correspondenciasDe, conversasDe, enviarMensagemCliente, clienteNotifPrefs, updateClienteNotifPrefs, clientes, boletos, baixarBoleto } = useStore();
+  const { unidades, salasDe, produtosDe, criarReserva, reservas, addPedido, pedidosDe, correspondenciasDe, conversasDe, enviarMensagemCliente, clienteNotifPrefs, updateClienteNotifPrefs, clientes, boletos, baixarBoleto } = useStore();
   const meuEmail = (getUser()?.email || "").toLowerCase();
   // Em perfil cliente a navegação vem do sidebar (section = cli_*). Preview de
   // staff (não-clienteMode) e modo demo podem usar o primeiro cliente.
@@ -442,7 +442,7 @@ export default function AreaCliente({ section, go }) {
       {/* ===== MODAIS ===== */}
       {reservaSala && (
         <ReservaModal sala={reservaSala} reservas={reservas} onClose={() => setReservaSala(null)}
-          onConfirm={(dados) => { const res = addReserva({ sala: reservaSala.id, dia: dados.dia, inicio: dados.inicio, dur: dados.dur, base: dados.base, cliente: cli.nome, clienteId: cli.id, cor: C.cafe, origem: "app" }); if (res && res.ok === false) { alert(res.error || "Não foi possível reservar."); return; } setReservaSala(null); irPara("reservar"); }} />
+          onConfirm={async (dados) => { const res = await criarReserva({ sala: reservaSala.id, dia: dados.dia, inicio: dados.inicio, dur: dados.dur, base: dados.base, cliente: cli.nome, clienteId: cli.id, email: cli.email, cor: C.cafe, origem: "app" }); if (!res || res.ok === false) { alert(res?.error || "Não foi possível reservar."); return; } setReservaSala(null); irPara("reservar"); }} />
       )}
       {pagarFatura && (
         <Modal title="Pagar com Pix" onClose={() => setPagarFatura(null)}>
