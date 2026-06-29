@@ -7,10 +7,11 @@ import {
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, FileInput } from "../components/ui.jsx";
 import { C, serif, sans, fmt, fmtShort, inp } from "../lib/theme.js";
 import { useStore, SECOES } from "../lib/store.jsx";
+import { getCurrentCompetencia } from "../lib/dateUtils.js";
 
 const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-const MES_ATUAL = 5;
-const ANO_ATUAL = 2026;
+// Competência atual a partir da data real (sem datas fixas).
+const { mes: MES_ATUAL, ano: ANO_ATUAL } = getCurrentCompetencia();
 const TODOS_MESES = MESES.map((_, i) => i);
 const diaDe = (data) => parseInt((data || "").slice(0, 2), 10) || 0;
 

@@ -21,6 +21,7 @@ import {
   upsertConfigFiscal, insertCliente, patchCliente, deleteClienteDb,
   putAppState, delAppState,
 } from "./supabaseDb.js";
+import { getCurrentCompetencia, parseDateToCompetencia } from "./dateUtils.js";
 
 // Backend ligado? Em produção (Supabase configurado) o app não exibe os dados
 // de demonstração — parte vazio e hidrata do banco; mutações persistem.
@@ -221,7 +222,8 @@ const seedBoletos = [
 ];
 
 // Mês "atual" do app (modelo de demonstração, 0=Jan … 5=Jun).
-const MES_ATUAL = 5;
+// Competência atual (mês 0..11 + ano) a partir da data real — sem datas fixas.
+const { mes: MES_ATUAL, ano: ANO_ATUAL } = getCurrentCompetencia();
 
 // Contratos recorrentes: o sistema emite boleto todo mês até o fim do prazo;
 // ao vencer, o contrato é sinalizado para o financeiro renovar/atualizar valores.
@@ -609,8 +611,11 @@ export function StoreProvider({ children }) {
   const contasDe = (unidadeId) => contas.filter((c) => c.unidadeId === unidadeId);
 
   // Financeiro: lançamentos (fluxo de caixa) -------------------------------
-  const addLancamento = (unidadeId, l) =>
-    setLancamentos((ls) => [...ls, { id: "lc" + Date.now(), unidadeId, mes: 5, status: "pago", ...l }]);
+  const addLancamento = (unidadeId, l) => {
+    // Competência: usa l.mes se vier; senão deriva da data do lançamento (ou hoje).
+    const mes = l.mes != null ? l.mes : parseDateToCompetencia(l.data).mes;
+    setLancamentos((ls) => [...ls, { id: "lc" + Date.now(), unidadeId, status: "pago", ...l, mes }]);
+  };
   // Conta a pagar/receber recorrente: provisiona um lançamento "previsto" por mês.
   // boletoCfg (opcional, só p/ entrada): { gerar, bankAccountId, sacado, sacadoDocumento }
   // → emite 1 boleto por parcela e vincula lançamento ↔ boleto.
@@ -624,7 +629,8 @@ export function StoreProvider({ children }) {
       novos.forEach((lanc, i) => {
         const id = `bol_${ts}_${i}`;
         const dia = ((lanc.data || "10").split("/")[0] || "10").padStart(2, "0").slice(0, 2);
-        const venc = `2026-${String(lanc.mes + 1).padStart(2, "0")}-${dia}`;
+        const ano = ANO_ATUAL + Math.floor(lanc.mes / 12); // suporta virada de ano
+        const venc = `${ano}-${String((lanc.mes % 12) + 1).padStart(2, "0")}-${dia}`;
         novosBoletos.push({
           id, unidadeId, bankAccountId: boletoCfg.bankAccountId,
           sacado: boletoCfg.sacado || base.descricao, sacadoDocumento: boletoCfg.sacadoDocumento || "",
