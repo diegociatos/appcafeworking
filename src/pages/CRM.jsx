@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import {
   Plus, Instagram, Globe, MessageCircle, Search as SearchIcon,
   Tag, Settings2, Trash2, Check,

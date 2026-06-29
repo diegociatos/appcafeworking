@@ -1,8 +1,7 @@
-import React from "react";
 import {
   DollarSign, Users, CalendarDays, Coffee, TrendingUp, CircleDot,
   MapPin, ArrowUpRight, Building2, AlertCircle, Mail, DoorOpen, Target,
-  Receipt, FileCheck, Wallet,
+  Receipt,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead } from "../components/ui.jsx";
 import { C, serif, fmt, fmtShort } from "../lib/theme.js";

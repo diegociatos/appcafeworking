@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
   Coffee, Plus, Minus, ShoppingCart, QrCode, CreditCard, Banknote,
   CheckCircle2, TrendingUp, Percent, Box, Bell, Clock, Smartphone, ArrowRight,

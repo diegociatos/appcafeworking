@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from "react";
+import { useRef, useEffect } from "react";
 import { X, ImagePlus, Trash2, Repeat, Paperclip, FileText, AlertTriangle } from "lucide-react";
 import { C, sans, serif, shadow, radius } from "../lib/theme.js";
 

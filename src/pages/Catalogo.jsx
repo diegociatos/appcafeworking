@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Plus, Edit3, Trash2, Package, Repeat, Layers, Tag, Coffee, DoorOpen } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, ImageInput } from "../components/ui.jsx";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";

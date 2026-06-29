@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import {
   Plus, MapPin, Edit3, Building2, Trash2, ArrowLeft,
   Coffee, CalendarDays, DoorOpen, Check, ArrowRight, Package,
@@ -280,7 +280,7 @@ function GerenciarUnidade({ unidade, go, onBack }) {
 }
 
 // --- Aba Salas -------------------------------------------------------------
-function SalasTab({ unidade, salas, store }) {
+function _SalasTab({ unidade, salas, store }) {
   const [modal, setModal] = useState(null); // {} novo | sala editar
 
   return (
@@ -553,7 +553,7 @@ export function SalaForm({ inicial, unidade, onSave }) {
 // --- Aba Cafeteria (produtos) ---------------------------------------------
 // Os produtos da cafeteria agora são cadastrados em "Produtos e Serviços"
 // (catálogo, tipo "produto"). Aqui é só uma prévia + atalho para gerenciar.
-function CafeteriaTab({ unidade, produtos, go }) {
+function CafeteriaTab({ produtos, go }) {
   return (
     <Card style={{ padding: 0, overflow: "hidden" }}>
       <div style={{ padding: "14px 20px", borderBottom: `1px solid ${C.border2}`, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -588,7 +588,7 @@ function CafeteriaTab({ unidade, produtos, go }) {
   );
 }
 
-function ProdutoForm({ inicial, onSave }) {
+function _ProdutoForm({ inicial, onSave }) {
   const [f, setF] = useState({
     nome: inicial.nome || "",
     emoji: inicial.emoji || "☕",
@@ -701,7 +701,7 @@ function SecHeader({ titulo, botao, cor, onAdd }) {
   );
 }
 
-function LinhaItem({ emoji, foto, titulo, sub, badge, onEdit, onDelete }) {
+function _LinhaItem({ emoji, foto, titulo, sub, badge, onEdit, onDelete }) {
   return (
     <div
       style={{

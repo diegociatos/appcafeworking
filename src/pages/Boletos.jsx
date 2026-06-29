@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import {
   Barcode, Plus, Landmark, Copy, Check, Download, XCircle, CircleDollarSign,
   QrCode, Building2, ShieldCheck, Trash2, Info, RefreshCw, Plug, CheckCircle2, ExternalLink,
@@ -264,7 +264,7 @@ function BotaoBaixar({ boleto }) {
 }
 
 // ===========================================================================
-function ListaContas({ contas, onNova, onRemover, onIntegracao }) {
+function ListaContas({ contas, onRemover, onIntegracao }) {
   if (!contas.length) {
     return <Card><Empty icon={Landmark} title="Nenhuma conta bancária" sub="Cadastre a conta do franqueado ou do franqueador para emitir boletos." /></Card>;
   }

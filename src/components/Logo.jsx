@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { C, serif } from "../lib/theme.js";
 
 /**

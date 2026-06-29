@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Plus, Eye, Edit3, Trash2, ShieldCheck, Mail, Building2, Check } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, ConfirmDialog } from "../components/ui.jsx";
 import { C, serif, inp } from "../lib/theme.js";
@@ -20,7 +20,7 @@ const modulosDoPerfil = (perfil) =>
 
 export default function Equipe({ go }) {
   const {
-    usuarios, unidades, unidadesVisiveis, perfil,
+    usuarios, unidades, unidadesVisiveis,
     addUsuario, adicionarUsuario, updateUsuario, removeUsuario, verComoUsuario,
   } = useStore();
   const [modal, setModal] = useState(null);

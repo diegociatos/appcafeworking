@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Send, Paperclip, MessageSquare } from "lucide-react";
 import { Card, PageHead, Empty } from "../components/ui.jsx";
 import { C, serif, sans } from "../lib/theme.js";

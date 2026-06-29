@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import {
   Plus, Eye, Edit3, Trash2, Building2, Mail, FileText, Store, Phone, Paperclip,
 } from "lucide-react";

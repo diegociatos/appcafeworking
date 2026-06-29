@@ -13,7 +13,7 @@
 //
 // 🔌 Quando ligarmos ao banco Neon, as funções add/update/remove daqui
 // passam a fazer as chamadas async — as telas não precisam mudar.
-import React, { createContext, useContext, useMemo, useState, useRef, useEffect } from "react";
+import { createContext, useContext, useMemo, useState, useRef, useEffect } from "react";
 import { UNIDADES, SALAS, PRODUTOS, RESERVAS_INIT, CLIENTES, LEADS_INIT, ETAPAS_CRM, ORIGENS_INIT, EVENTOS } from "./data.js";
 import { boletosApi } from "./boletosApi.js";
 import { nfseApi } from "./nfseApi.js";
@@ -1179,6 +1179,10 @@ export function StoreProvider({ children }) {
       recibos, recibosDe, emitirRecibo, removeRecibo,
       syncErrors,
     }),
+    // As ações (addX/updateX/...) são closures estáveis recriadas a cada render;
+    // memorizamos o value apenas pelos ESTADOS. Incluir as funções nas deps
+    // anularia o useMemo (novo objeto a cada render) — comportamento indesejado.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, configFiscal, notasFiscais, planos, recibos, syncErrors, reservas, leads, crmEtapas, crmOrigens, eventos, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail, clienteNotifPrefs]
   );
 

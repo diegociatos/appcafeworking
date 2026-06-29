@@ -1,11 +1,11 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import {
-  Globe, Users, Lock, Palette, Plus, Save, Upload, Zap, UserCircle,
-  Landmark, CreditCard as CardIcon, MessageSquare, CalendarClock, Workflow,
-  Bell, Mail, Smartphone, Check, Receipt, Download, ChevronRight,
+  Globe, Lock, Palette, Save, Upload, Zap, UserCircle,
+  Landmark, CreditCard as CardIcon,
+  Bell, Mail, Smartphone, Check, Receipt, Download,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Field, ImageInput, Empty } from "../components/ui.jsx";
-import { C, serif, sans, fmt, inp } from "../lib/theme.js";
+import { C, serif, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 import Logo from "../components/Logo.jsx";
 

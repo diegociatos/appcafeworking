@@ -1,4 +1,3 @@
-import React from "react";
 import {
   Plus, Calendar, MapPin, Presentation, GraduationCap, Sparkles,
   Mic2, Ticket,

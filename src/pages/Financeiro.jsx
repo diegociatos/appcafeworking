@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import {
   Wallet, TrendingUp, Landmark, BarChart3, FileText, Tags,
   Plus, Edit3, Trash2, Check, X, ArrowUpRight, ArrowDownRight, Receipt, Paperclip, Download, Barcode, Copy, QrCode,
@@ -34,12 +34,11 @@ export const FIN_GRUPOS = [
   ] },
 ];
 
-export default function Financeiro({ finTab, setFinTab }) {
+export default function Financeiro({ finTab }) {
   const store = useStore();
   const { activeUnit, unidadeAtiva, categorias } = store;
-  const [tabInner, setTabInner] = useState("visao");
+  const [tabInner] = useState("visao");
   const tab = finTab ?? tabInner;
-  const setTab = setFinTab ?? setTabInner;
   const [lancModal, setLancModal] = useState(null);
   const [contaModal, setContaModal] = useState(null);
   const [contaPRModal, setContaPRModal] = useState(null);

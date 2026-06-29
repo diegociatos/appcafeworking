@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { CreditCard, Plus, Barcode, QrCode, Link2, CheckCircle2, Copy, ExternalLink, AlertTriangle, Wallet, KeyRound, ShieldCheck, FileText, Receipt } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
 import { C, serif, fmt, inp } from "../lib/theme.js";
@@ -31,7 +31,7 @@ const mapCob = (c) => ({
 
 export default function Cobrancas() {
   const store = useStore();
-  const { activeUnit, unidadeAtiva, clientesDe } = store;
+  const { activeUnit, unidadeAtiva } = store;
   const [lista, setLista] = useState([]);
   const [novo, setNovo] = useState(false);
   const [detalhe, setDetalhe] = useState(null);
@@ -40,7 +40,7 @@ export default function Cobrancas() {
 
   useEffect(() => {
     let vivo = true;
-    if (asaasApi.configured) fetchCobrancasDb().then((rows) => { if (vivo) setLista((rows || []).map(mapCob).filter((c) => true)); });
+    if (asaasApi.configured) fetchCobrancasDb().then((rows) => { if (vivo) setLista((rows || []).map(mapCob)); });
     else setLista([]);
     return () => { vivo = false; };
   }, [activeUnit]);
@@ -125,7 +125,7 @@ export default function Cobrancas() {
   );
 }
 
-function ConfigAsaas({ unidadeId, onClose }) {
+function ConfigAsaas({ unidadeId }) {
   const [apiKey, setApiKey] = useState("");
   const [ambiente, setAmbiente] = useState("producao");
   const [busy, setBusy] = useState(false);
@@ -337,7 +337,7 @@ function CobrancaForm({ store, onCriada }) {
 }
 
 function DetalheCobranca({ c, store, onRecibo }) {
-  const { activeUnit, emitirNFSe, emitirRecibo, configFiscalDe } = store;
+  const { activeUnit, emitirNFSe, emitirRecibo } = store;
   const [cop, setCop] = useState("");
   const [nfFeita, setNfFeita] = useState(false);
   const copiar = (txt, tag) => { navigator.clipboard?.writeText(txt); setCop(tag); setTimeout(() => setCop(""), 1500); };

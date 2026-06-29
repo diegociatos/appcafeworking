@@ -1,4 +1,3 @@
-import React from "react";
 import { Printer, Receipt } from "lucide-react";
 import { Btn } from "./ui.jsx";
 import { C, serif, fmt } from "../lib/theme.js";

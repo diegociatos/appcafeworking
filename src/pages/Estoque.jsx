@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import {
   Boxes, Plus, Edit3, Trash2, Minus, AlertTriangle, PackageSearch, Coins,
   ArrowDownUp, ShoppingCart, Coffee, ShoppingBag, Wrench, Store, DollarSign,

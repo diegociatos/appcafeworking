@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { LogIn, Lock, Mail, User, Phone, MapPin, Building2, Loader2, FileText, CreditCard, ExternalLink, CheckCircle2, Repeat, Zap, Copy } from "lucide-react";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
 import { Btn } from "../components/ui.jsx";
@@ -140,7 +140,6 @@ function SignupCard({ irParaLogin }) {
     fetchPlanosPublicos(unidadeId).then((ps) => { setPlanos(ps); setPlanoId(ps[0]?.id || ""); }).finally(() => setCarregandoPlanos(false));
   }, [unidadeId]);
 
-  const plano = planos.find((p) => p.id === planoId);
   const valido = f.nome.trim() && f.email.trim() && f.senha.length >= 6 && unidadeId && planoId && f.documento.trim();
 
   const cadastrar = async (e) => {
