@@ -8,7 +8,8 @@ import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/u
 import { C, serif, fmt, inp } from "../lib/theme.js";
 import { HORARIOS, DIAS } from "../lib/data.js";
 import { useStore } from "../lib/store.jsx";
-import { getUser } from "../lib/supabaseAuth.js";
+import { getUser, supabaseConfigured } from "../lib/supabaseAuth.js";
+import { getClienteAtualSeguro } from "../lib/clienteAtual.js";
 
 
 // Documentos do imóvel liberados a clientes com endereço fiscal
@@ -34,16 +35,19 @@ function baixarArquivo(nome, conteudo) {
 export default function AreaCliente({ section, go }) {
   const { unidades, salasDe, produtosDe, addReserva, reservas, addPedido, pedidosDe, correspondenciasDe, conversasDe, enviarMensagemCliente, clienteNotifPrefs, updateClienteNotifPrefs, clientes, boletos, baixarBoleto } = useStore();
   const meuEmail = (getUser()?.email || "").toLowerCase();
-  const cli = clientes.find((c) => meuEmail && (c.email || "").toLowerCase() === meuEmail)
-    || clientes[0] || { nome: "Cliente", unidade: "", plano: "—", fiscal: false, docs: [] };
+  // Em perfil cliente a navegação vem do sidebar (section = cli_*). Preview de
+  // staff (não-clienteMode) e modo demo podem usar o primeiro cliente.
+  const clienteMode = typeof section === "string" && section.startsWith("cli_");
+  const demoOuPreview = !supabaseConfigured || !clienteMode;
+  const cliReal = getClienteAtualSeguro({ email: meuEmail, clientes, demo: demoOuPreview });
+  const naoLocalizado = clienteMode && supabaseConfigured && !cliReal; // login real sem cadastro vinculado
+  const cli = cliReal || { nome: "Cliente", unidade: "", plano: "—", fiscal: false, docs: [] };
   const unidadeCli = unidades.find((u) => u.nome === cli.unidade) || unidades[0] || { id: "", nome: "" };
   const salas = salasDe(unidadeCli.id);
   // Salas de locação mensal (contratadas) não entram nas opções de reserva do cliente
   const salasDisponiveis = salas.filter((s) => !s.contratada);
   const produtos = produtosDe(unidadeCli.id).filter((p) => p.ativo !== false);
 
-  // Em perfil cliente a navegação vem do sidebar (section = cli_*); senão, abas internas
-  const clienteMode = typeof section === "string" && section.startsWith("cli_");
   const [tabInterno, setTabInterno] = useState("inicio");
   const sec = clienteMode ? section.slice(4) : tabInterno;
   const irPara = (s) => (clienteMode && go ? go(`cli_${s}`) : setTabInterno(s));
@@ -114,6 +118,25 @@ export default function AreaCliente({ section, go }) {
     { id: "notif", label: "Notificações", icon: Bell },
   ];
   const tituloSec = TABS.find((t) => t.id === sec)?.label || "Portal";
+
+  if (naoLocalizado) {
+    return (
+      <div>
+        <PageHead title="Portal do cliente" sub="Acesso do membro do coworking." />
+        <Card style={{ maxWidth: 520, margin: "8px auto", textAlign: "center", padding: "36px 28px" }}>
+          <div style={{ width: 52, height: 52, borderRadius: 14, background: C.amberPale, display: "grid", placeItems: "center", margin: "0 auto 14px" }}>
+            <Bell size={26} color={C.amber} />
+          </div>
+          <div style={{ fontFamily: serif, fontSize: 21, color: C.text, marginBottom: 8 }}>Cadastro não localizado</div>
+          <div style={{ fontSize: 14, color: C.text3, lineHeight: 1.6 }}>
+            Seu login <b>{meuEmail || "—"}</b> ainda não está vinculado a um cadastro de cliente nesta unidade.
+            Por segurança, não exibimos faturas, documentos nem reservas até que o vínculo seja confirmado.
+            <br /><br />Procure a <b>recepção</b> para concluir seu cadastro.
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div>

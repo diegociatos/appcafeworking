@@ -3,7 +3,7 @@ import {
   Coffee, Plus, Minus, ShoppingCart, QrCode, CreditCard, Banknote,
   CheckCircle2, TrendingUp, Percent, Box, Bell, Clock, Smartphone, ArrowRight,
 } from "lucide-react";
-import { Card, Badge, Btn, PageHead, Empty } from "../components/ui.jsx";
+import { Card, Badge, Btn, PageHead, Empty, Modal } from "../components/ui.jsx";
 import { C, serif, fmt } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 
@@ -16,10 +16,11 @@ const STATUS_INFO = {
 };
 
 export default function PDV() {
-  const { activeUnit, unidadeAtiva, produtosDe, pedidosDe, updatePedido, estoqueBaixoDe } = useStore();
+  const { activeUnit, unidadeAtiva, produtosDe, pedidosDe, addPedido, updatePedido, estoqueBaixoDe } = useStore();
   const [cart, setCart] = useState([]);
   const [cat, setCat] = useState("Todos");
   const [pago, setPago] = useState(null);
+  const [vendaOk, setVendaOk] = useState(null); // { total } após finalizar
 
   // KPIs reais (do banco) — zeram quando ainda não há vendas/produtos.
   const pedidosUnidade = pedidosDe(activeUnit);
@@ -51,6 +52,24 @@ export default function PDV() {
   const total = cart.reduce((s, i) => s + i.preco * i.q, 0);
   const totalCMV = cart.reduce((s, i) => s + i.cmv * i.q, 0);
   const margem = total > 0 ? ((total - totalCMV) / total) * 100 : 0;
+
+  const finalizarVenda = () => {
+    if (!pago || !cart.length) return;
+    addPedido(activeUnit, {
+      origem: "balcao",
+      status: "entregue",
+      cliente: "Balcão",
+      formaPagamento: pago,
+      itens: cart.map((i) => ({ nome: i.nome, preco: i.preco, q: i.q, emoji: i.emoji, cmv: i.cmv })),
+      total,
+      cmvTotal: totalCMV,
+      hora: "agora",
+      createdAt: new Date().toISOString(),
+    });
+    setVendaOk({ total });
+    setCart([]);
+    setPago(null);
+  };
 
   return (
     <div>
@@ -343,12 +362,7 @@ export default function PDV() {
                   opacity: pago ? 1 : 0.5,
                 }}
                 disabled={!pago}
-                onClick={() => {
-                  if (pago) {
-                    setCart([]);
-                    setPago(null);
-                  }
-                }}
+                onClick={finalizarVenda}
               >
                 <CheckCircle2 size={18} /> Finalizar venda
               </Btn>
@@ -356,6 +370,19 @@ export default function PDV() {
           )}
         </Card>
       </div>
+
+      {vendaOk && (
+        <Modal title="Venda registrada ✓" onClose={() => setVendaOk(null)} maxWidth={380}>
+          <div style={{ textAlign: "center", padding: "6px 0" }}>
+            <CheckCircle2 size={46} color={C.green} />
+            <div style={{ fontFamily: serif, fontSize: 24, color: C.cafe, marginTop: 10 }}>{fmt(vendaOk.total)}</div>
+            <div style={{ fontSize: 13, color: C.text3, marginTop: 4, marginBottom: 16 }}>
+              Pedido de balcão lançado: estoque baixado, receita e CMV no financeiro.
+            </div>
+            <Btn style={{ width: "100%", justifyContent: "center" }} onClick={() => setVendaOk(null)}>Nova venda</Btn>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
