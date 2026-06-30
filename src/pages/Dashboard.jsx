@@ -1,5 +1,5 @@
 import {
-  DollarSign, Users, Coffee, TrendingUp,
+  DollarSign, Users, Coffee, TrendingUp, CheckCircle2,
   MapPin, ArrowUpRight, Building2, AlertCircle, Mail, DoorOpen, Target,
   Receipt,
 } from "lucide-react";
@@ -92,12 +92,53 @@ export default function Dashboard({ go }) {
   const leadsNovos = leads.filter((l) => l.unidadeId === ativo && l.etapa === "novo");
   if (leadsNovos.length) alertas.push({ id: "leads", tipo: "lead", cor: C.cafe, titulo: `${leadsNovos.length} novo(s) lead(s)`, sub: "responder em < 1h aumenta a conversão" });
 
+  // Onboarding: primeiros passos da unidade (aparece só enquanto houver pendência).
+  const unidadeU = unidades.find((u) => u.id === ativo);
+  const planosU = store.planosDe ? store.planosDe(ativo) : [];
+  const usuariosU = store.usuariosDe ? store.usuariosDe(ativo) : [];
+  const cfgU = store.configFiscalDe ? store.configFiscalDe(ativo) : null;
+  const checklist = [
+    { ok: !!unidadeU?.endereco, label: "Dados e endereço da unidade", page: "unidades" },
+    { ok: salas.length > 0, label: "Cadastrar salas e espaços", page: "salas" },
+    { ok: planosU.length > 0, label: "Cadastrar planos e preços", page: "planos" },
+    { ok: usuariosU.length > 0, label: "Adicionar a equipe", page: "equipe" },
+    { ok: !!cfgU?.emissaoAtiva, label: "Ativar emissão fiscal (NFS-e)", page: "notafiscal" },
+  ];
+  const feitos = checklist.filter((c) => c.ok).length;
+  const pctOnb = Math.round((feitos / checklist.length) * 100);
+
   return (
     <div>
       <PageHead
         title="Centro de Comando"
         sub="Operação, vendas, cafeteria, reservas e experiência do cliente em uma única visão."
       />
+
+      {/* Onboarding — primeiros passos (some quando tudo configurado) */}
+      {feitos < checklist.length && (
+        <Card style={{ marginBottom: 22, background: C.cream }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+            <div>
+              <div style={{ fontFamily: serif, fontSize: 19, color: C.text }}>Primeiros passos · {unidadeU?.nome || ""}</div>
+              <div style={{ fontSize: 12.5, color: C.text3 }}>Conclua a configuração para operar com tudo funcionando.</div>
+            </div>
+            <Badge color={C.cafe}>{feitos}/{checklist.length} · {pctOnb}%</Badge>
+          </div>
+          <div style={{ height: 7, background: C.cream2, borderRadius: 10, overflow: "hidden", marginBottom: 14 }}>
+            <div style={{ width: `${pctOnb}%`, height: "100%", background: `linear-gradient(90deg,${C.cafe},${C.teal})`, borderRadius: 10, transition: "width .5s" }} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))", gap: 8 }}>
+            {checklist.map((c) => (
+              <button key={c.label} type="button" onClick={() => !c.ok && go(c.page)} disabled={c.ok}
+                style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 12px", borderRadius: 10, border: `1px solid ${c.ok ? `${C.green}44` : C.border}`, background: c.ok ? C.greenPale : "#fff", cursor: c.ok ? "default" : "pointer", textAlign: "left" }}>
+                {c.ok ? <CheckCircle2 size={17} color={C.green} /> : <span style={{ width: 16, height: 16, borderRadius: "50%", border: `2px solid ${C.gray}`, flexShrink: 0 }} />}
+                <span style={{ fontSize: 13, fontWeight: 600, color: c.ok ? C.text3 : C.text, flex: 1 }}>{c.label}</span>
+                {!c.ok && <ArrowUpRight size={14} color={C.text4} />}
+              </button>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* KPIs */}
       <div
