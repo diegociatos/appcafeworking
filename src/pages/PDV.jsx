@@ -155,6 +155,12 @@ export default function PDV() {
                       </div>
                     ))}
                   </div>
+                  {(p.entregaLocal === "sala" || p.observacao) && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                      {p.entregaLocal === "sala" && <Badge color={C.teal} bg={C.tealPale}>Levar na {p.salaNome || "sala"}</Badge>}
+                      {p.observacao && <Badge color={C.amber} bg={C.amberPale}>“{p.observacao}”</Badge>}
+                    </div>
+                  )}
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: `1px solid ${C.border2}`, paddingTop: 10 }}>
                     <span style={{ fontFamily: serif, fontSize: 17, color: C.cafe }}>{fmt(p.total)}</span>
                     <Btn

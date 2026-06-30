@@ -56,6 +56,8 @@ export default function AreaCliente({ section, go }) {
   const [reservaSala, setReservaSala] = useState(null);
   const [carrinho, setCarrinho] = useState([]);
   const [pedidoOk, setPedidoOk] = useState(false);
+  const [obsCafe, setObsCafe] = useState("");
+  const [entregaCafe, setEntregaCafe] = useState("balcao");
   // Faturas do cliente = boletos reais emitidos para ele (nada fictício).
   const faturas = (boletos || [])
     .filter((b) => b.sacado === cli.nome && b.status !== "cancelado")
@@ -89,13 +91,19 @@ export default function AreaCliente({ section, go }) {
   const meusPedidos = pedidosDe(unidadeCli.id).filter((p) => p.cliente === cli.nome);
   const STATUS_PEDIDO = { recebido: ["Recebido", C.blue], preparo: ["Em preparo", C.amber], pronto: ["Pronto p/ retirada", C.green], entregue: ["Entregue", C.text3] };
   const finalizarPedido = () => {
+    const naSala = entregaCafe === "sala" && minhasReservas[0];
     addPedido(unidadeCli.id, {
       cliente: cli.nome,
       itens: carrinho.map((i) => ({ nome: i.nome, preco: i.preco, q: i.q, emoji: i.emoji })),
       total: totalCafe,
       hora: "agora",
+      origem: "app",
+      observacao: obsCafe.trim() || undefined,
+      entregaLocal: entregaCafe,
+      salaId: naSala ? naSala.sala : undefined,
+      salaNome: naSala ? salas.find((s) => s.id === naSala.sala)?.nome : undefined,
     });
-    setCarrinho([]);
+    setCarrinho([]); setObsCafe(""); setEntregaCafe("balcao");
     setPedidoOk(true);
   };
   const pagar = (id) => { baixarBoleto?.(id); setPagarFatura(null); };
@@ -322,6 +330,18 @@ export default function AreaCliente({ section, go }) {
                     <button onClick={() => addCafe(i)} style={{ width: 26, height: 26, borderRadius: 8, background: C.cafePale, display: "grid", placeItems: "center" }}><Plus size={14} color={C.cafe} /></button>
                   </div>
                 ))}
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: 11.5, color: C.text3, fontWeight: 600, marginBottom: 6 }}>ENTREGA</div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    {[["balcao", "Retiro no balcão"], ...(minhasReservas.length ? [["sala", `Levar na ${salas.find((s) => s.id === minhasReservas[0].sala)?.nome || "sala"}`]] : [])].map(([v, lb]) => (
+                      <button key={v} type="button" onClick={() => setEntregaCafe(v)}
+                        style={{ flex: 1, padding: "9px 6px", borderRadius: 10, fontSize: 12.5, fontWeight: 600, border: `1px solid ${entregaCafe === v ? C.cafe : C.border}`, background: entregaCafe === v ? C.cafePale : C.white, color: entregaCafe === v ? C.cafe : C.text2 }}>
+                        {lb}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <input value={obsCafe} onChange={(e) => setObsCafe(e.target.value)} placeholder="Observação (ex.: sem açúcar)" aria-label="Observação do pedido" style={{ ...inp, marginTop: 10 }} />
                 <div style={{ display: "flex", justifyContent: "space-between", margin: "14px 0" }}><span style={{ fontSize: 15, color: C.text3 }}>Total</span><span style={{ fontFamily: serif, fontSize: 24, color: C.cafe }}>{fmt(totalCafe)}</span></div>
                 <Btn style={{ width: "100%", justifyContent: "center" }} onClick={finalizarPedido}><CheckCircle2 size={17} /> Pedir agora</Btn>
               </>
