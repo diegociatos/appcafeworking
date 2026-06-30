@@ -1,11 +1,12 @@
 import {
-  DollarSign, Users, CalendarDays, Coffee, TrendingUp, CircleDot,
+  DollarSign, Users, Coffee, TrendingUp,
   MapPin, ArrowUpRight, Building2, AlertCircle, Mail, DoorOpen, Target,
   Receipt,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead } from "../components/ui.jsx";
 import { C, serif, fmt, fmtShort } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
+import { getCurrentCompetencia, MESES_BR as MESES } from "../lib/dateUtils.js";
 import { Store } from "lucide-react";
 
 const ICONS = { fatura: Receipt, corresp: Mail, sala: DoorOpen, lead: Target, estoque: AlertCircle };
@@ -16,31 +17,69 @@ export default function Dashboard({ go }) {
   // O Administrador da plataforma tem um painel próprio (não opera coworking)
   if (perfil === "franqueador") return <DashboardPlataforma franqueados={franqueados} unidades={unidades} go={go} />;
 
-  // KPIs calculados dos DADOS REAIS do banco (zeram quando não há movimento).
-  const lancs = store.lancamentos || [];
-  const clientes = store.clientes || [];
-  const reservas = store.reservas || [];
-  const pedidos = store.pedidos || [];
-  const boletos = store.boletos || [];
-  const leads = store.leads || [];
+  // KPIs executivos calculados dos DADOS REAIS (competência atual). Zeram sem movimento.
   const ativo = store.activeUnit;
+  const comp = getCurrentCompetencia();
+  const daUnidade = (arr) => (arr || []).filter((x) => !x.unidadeId || x.unidadeId === ativo);
+  const lancs = daUnidade(store.lancamentos);
+  const clientes = daUnidade(store.clientes);
+  const reservas = daUnidade(store.reservas);
+  const pedidos = daUnidade(store.pedidos);
+  const boletos = daUnidade(store.boletos);
+  const leads = daUnidade(store.leads);
+  const salas = store.salasDe ? store.salasDe(ativo) : [];
+  const contratos = store.contratosDe ? store.contratosDe(ativo).filter((c) => c.status === "ativo") : [];
 
-  const totalReceita = lancs.filter((l) => l.tipo === "entrada" && l.status === "pago").reduce((s, l) => s + (l.valor || 0), 0);
+  // Fluxo real de 12 meses (entradas pagas) — substitui o gráfico procedural.
+  const fluxo = MESES.map((label, m) => ({
+    label,
+    valor: lancs.filter((l) => l.mes === m && l.tipo === "entrada" && l.status === "pago").reduce((s, l) => s + (l.valor || 0), 0),
+  }));
+  const maxFluxo = Math.max(1, ...fluxo.map((f) => f.valor));
+  const receitaMes = fluxo[comp.mes]?.valor || 0;
+  const receitaAnterior = fluxo[(comp.mes + 11) % 12]?.valor || 0;
+  const deltaMes = receitaAnterior > 0 ? Math.round(((receitaMes - receitaAnterior) / receitaAnterior) * 100) : 0;
+
+  const recorrenteMes = contratos.reduce((s, c) => s + (c.valorMensal || 0), 0);
+  const avulsaMes = Math.max(0, receitaMes - recorrenteMes);
+  const aReceber = lancs.filter((l) => l.tipo === "entrada" && l.status === "previsto").reduce((s, l) => s + (l.valor || 0), 0);
+
+  const hoje = new Date();
+  const vencidos = boletos.filter((b) => b.status !== "pago" && b.status !== "cancelado" && b.vencimento && new Date(b.vencimento) < hoje);
+  const inadimplentes = new Set(vencidos.map((b) => b.sacado)).size;
+
   const totalMembros = clientes.filter((c) => c.status !== "inativo").length;
-  const reservasHoje = reservas.length;
-  const salasEmUso = new Set(reservas.map((r) => r.sala)).size;
-  const cafeteriaHoje = pedidos.reduce((s, p) => s + (p.total || 0), 0);
-  const pedidosHoje = pedidos.length;
+  const salasTotal = salas.length;
+  const ocupacao = salasTotal ? Math.round((salas.filter((s) => s.contratada).length / salasTotal) * 100) : 0;
+  const horasReservadas = reservas.reduce((s, r) => s + (r.dur || 0), 0);
+
+  const cafeteriaMes = pedidos.reduce((s, p) => s + (p.total || 0), 0);
+  const cmvMes = pedidos.reduce((s, p) => s + (p.cmvTotal || 0), 0);
+  const margemCafe = cafeteriaMes > 0 ? Math.round(((cafeteriaMes - cmvMes) / cafeteriaMes) * 100) : 0;
+  const ticketCafe = pedidos.length ? cafeteriaMes / pedidos.length : 0;
+
+  const leadsNovosN = leads.filter((l) => l.etapa === "novo").length;
+  const conversao = leads.length ? Math.round((leads.filter((l) => l.etapa === "fechado").length / leads.length) * 100) : 0;
+
+  // Top salas (por nº de reservas) e top produtos (por quantidade vendida).
+  const nomeSala = (id) => salas.find((s) => s.id === id)?.nome || "Sala";
+  const topSalas = Object.entries(reservas.reduce((a, r) => ((a[r.sala] = (a[r.sala] || 0) + 1), a), {}))
+    .sort((a, b) => b[1] - a[1]).slice(0, 4).map(([id, n]) => ({ nome: nomeSala(id), n }));
+  const topProdutos = Object.entries(pedidos.flatMap((p) => p.itens || []).reduce((a, it) => ((a[it.nome] = (a[it.nome] || 0) + (it.q || 1)), a), {}))
+    .sort((a, b) => b[1] - a[1]).slice(0, 4).map(([nome, n]) => ({ nome, n }));
 
   const stats = [
-    { label: "Receita do mês", val: fmtShort(totalReceita), delta: "lançamentos pagos", icon: DollarSign, cor: C.green },
-    { label: "Membros ativos", val: totalMembros, delta: totalMembros === 1 ? "1 cliente" : `${totalMembros} clientes`, icon: Users, cor: C.teal },
-    { label: "Reservas", val: reservasHoje, delta: `${salasEmUso} sala(s) em uso`, icon: CalendarDays, cor: C.cafe },
-    { label: "Cafeteria", val: fmtShort(cafeteriaHoje), delta: `${pedidosHoje} pedido(s)`, icon: Coffee, cor: C.amber },
+    { label: `Receita ${MESES[comp.mes]}`, val: fmtShort(receitaMes), delta: deltaMes >= 0 ? `▲ ${deltaMes}% vs mês anterior` : `▼ ${Math.abs(deltaMes)}% vs mês anterior`, icon: DollarSign, cor: deltaMes >= 0 ? C.green : C.red },
+    { label: "Receita recorrente", val: fmtShort(recorrenteMes), delta: `avulsa ${fmtShort(avulsaMes)}`, icon: TrendingUp, cor: C.teal },
+    { label: "Contas a receber", val: fmtShort(aReceber), delta: `${vencidos.length} boleto(s) vencido(s)`, icon: Receipt, cor: vencidos.length ? C.red : C.cafe },
+    { label: "Inadimplentes", val: inadimplentes, delta: inadimplentes ? "acionar cobrança" : "em dia", icon: AlertCircle, cor: inadimplentes ? C.red : C.green },
+    { label: "Ocupação de salas", val: `${ocupacao}%`, delta: `${horasReservadas}h reservadas`, icon: DoorOpen, cor: C.cafe },
+    { label: "Cafeteria (mês)", val: fmtShort(cafeteriaMes), delta: `margem ${margemCafe}% · tkt ${fmtShort(ticketCafe)}`, icon: Coffee, cor: C.amber },
+    { label: "Clientes ativos", val: totalMembros, delta: totalMembros === 1 ? "1 cliente" : `${totalMembros} clientes`, icon: Users, cor: C.teal },
+    { label: "Leads / conversão", val: leadsNovosN, delta: `${conversao}% convertidos`, icon: Target, cor: C.cafe2 || C.cafe },
   ];
 
   // Alertas inteligentes derivados do estado real (vazio = tudo em dia).
-  const hoje = new Date();
   const alertas = [];
   boletos
     .filter((b) => b.status !== "pago" && b.status !== "cancelado" && b.vencimento && new Date(b.vencimento) < hoje)
@@ -52,9 +91,6 @@ export default function Dashboard({ go }) {
   if (corrAg.length) alertas.push({ id: "corr", tipo: "corresp", cor: C.teal2, titulo: `${corrAg.length} correspondência(s) a tratar`, sub: corrAg[0].cliente + (corrAg.length > 1 ? " e outros" : "") });
   const leadsNovos = leads.filter((l) => l.unidadeId === ativo && l.etapa === "novo");
   if (leadsNovos.length) alertas.push({ id: "leads", tipo: "lead", cor: C.cafe, titulo: `${leadsNovos.length} novo(s) lead(s)`, sub: "responder em < 1h aumenta a conversão" });
-
-  // Sparkline procedural (12 meses)
-  const sparkData = [42, 55, 48, 67, 60, 78, 72, 88, 82, 95, 90, 100];
 
   return (
     <div>
@@ -122,57 +158,22 @@ export default function Dashboard({ go }) {
         <Card className="cw-fade cw-fade-2">
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 18 }}>
             <div>
-              <div style={{ fontFamily: serif, fontSize: 20, color: C.text }}>Receita por unidade</div>
-              <div style={{ fontSize: 13, color: C.text3 }}>Últimos 12 meses</div>
+              <div style={{ fontFamily: serif, fontSize: 20, color: C.text }}>Receita do ano</div>
+              <div style={{ fontSize: 13, color: C.text3 }}>Entradas pagas, mês a mês · {unidades.find((u) => u.id === ativo)?.nome || ""}</div>
             </div>
-            <Badge color={C.green}>+12,4% no período</Badge>
+            <Badge color={deltaMes >= 0 ? C.green : C.red}>{deltaMes >= 0 ? "▲" : "▼"} {Math.abs(deltaMes)}% no mês</Badge>
           </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "flex-end",
-              gap: 6,
-              height: 160,
-              padding: "0 4px",
-            }}
-          >
-            {sparkData.map((h, i) => (
-              <div
-                key={i}
-                style={{
-                  flex: 1,
-                  display: "flex",
-                  flexDirection: "column",
-                  justifyContent: "flex-end",
-                  gap: 3,
-                }}
-              >
-                <div
-                  style={{
-                    height: `${h}%`,
-                    background: `linear-gradient(180deg,${C.cafe},${C.cafe3})`,
-                    borderRadius: "4px 4px 0 0",
-                    transition: "all .3s",
-                  }}
-                />
-                <div
-                  style={{
-                    height: `${h * 0.6}%`,
-                    background: `linear-gradient(180deg,${C.teal2},${C.teal3})`,
-                    borderRadius: "0 0 4px 4px",
-                    opacity: 0.9,
-                  }}
-                />
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 160, padding: "0 4px" }}>
+            {fluxo.map((f, i) => (
+              <div key={f.label} title={`${f.label}: ${fmt(f.valor)}`} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+                <div style={{ height: `${Math.max(2, (f.valor / maxFluxo) * 100)}%`, background: i === comp.mes ? `linear-gradient(180deg,${C.cafe},${C.cafe3})` : `linear-gradient(180deg,${C.teal2},${C.teal3})`, borderRadius: "4px 4px 0 0", transition: "all .3s", opacity: f.valor ? 1 : 0.35 }} />
               </div>
             ))}
           </div>
-          <div style={{ display: "flex", gap: 20, marginTop: 14, fontSize: 12, color: C.text3 }}>
-            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <CircleDot size={11} color={C.cafe} /> Luxemburgo
-            </span>
-            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <CircleDot size={11} color={C.teal2} /> Estoril
-            </span>
+          <div style={{ display: "flex", gap: 4, marginTop: 8 }}>
+            {fluxo.map((f, i) => (
+              <div key={f.label} style={{ flex: 1, textAlign: "center", fontSize: 9.5, color: i === comp.mes ? C.cafe : C.text4, fontWeight: i === comp.mes ? 700 : 400 }}>{f.label[0]}</div>
+            ))}
           </div>
         </Card>
 
@@ -224,6 +225,30 @@ export default function Dashboard({ go }) {
             );
           })}
         </Card>
+      </div>
+
+      {/* Destaques operacionais */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 22 }} className="cw-grid-stack">
+        {[
+          { titulo: "Salas mais reservadas", icon: DoorOpen, cor: C.cafe, itens: topSalas, vazio: "Sem reservas ainda.", acao: "reservas" },
+          { titulo: "Produtos mais vendidos", icon: Coffee, cor: C.amber, itens: topProdutos, vazio: "Sem vendas ainda.", acao: "pdv" },
+        ].map((p) => (
+          <Card key={p.titulo} className="cw-fade cw-fade-4" style={{ cursor: "pointer" }} onClick={() => go(p.acao)}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <p.icon size={18} color={p.cor} />
+              <span style={{ fontFamily: serif, fontSize: 18, color: C.text }}>{p.titulo}</span>
+            </div>
+            {p.itens.length === 0 ? (
+              <div style={{ fontSize: 13, color: C.text4, padding: "10px 0" }}>{p.vazio}</div>
+            ) : p.itens.map((it, i) => (
+              <div key={it.nome} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < p.itens.length - 1 ? `1px solid ${C.border2}` : "none" }}>
+                <span style={{ width: 22, height: 22, borderRadius: 7, background: `${p.cor}16`, color: p.cor, display: "grid", placeItems: "center", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{i + 1}</span>
+                <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.nome}</span>
+                <span style={{ fontSize: 12, color: C.text3 }}>{it.n}{p.acao === "pdv" ? " vend." : " reserva(s)"}</span>
+              </div>
+            ))}
+          </Card>
+        ))}
       </div>
 
       {/* Unidades */}
