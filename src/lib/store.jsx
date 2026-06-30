@@ -19,7 +19,7 @@ import { boletosApi } from "./boletosApi.js";
 import { nfseApi } from "./nfseApi.js";
 import {
   upsertConfigFiscal, insertCliente, patchCliente, deleteClienteDb,
-  putAppState, delAppState, upsertSalaDb, deleteSalaDb,
+  putAppState, delAppState, upsertSalaDb, deleteSalaDb, insertCreditoDb,
 } from "./supabaseDb.js";
 import { getCurrentCompetencia, parseDateToCompetencia } from "./dateUtils.js";
 import { legacyReservaToDateRange, dateRangeToLegacy, temConflito, TZ } from "./reservas.js";
@@ -391,7 +391,9 @@ export function StoreProvider({ children }) {
   useSync("eventos", eventos);
   useSync("planos", planos);
   useSync("recibos", recibos);
-  useSync("creditLedger", creditLedger);
+  // creditLedger NÃO usa app_state: em produção a fonte da verdade é a tabela
+  // relacional creditos_ledger (Fase 2 — consumo gravado server-side). Em demo
+  // fica só em memória.
 
   const [activeUnit, setActiveUnit] = useState(UNIDADES[0].id);
   const [viewAs, setViewAs] = useState(null); // id do franqueado, ou null = franqueador
@@ -579,18 +581,33 @@ export function StoreProvider({ children }) {
       start_at: startAt, end_at: endAt, base: r.base ?? null, origem: r.origem || "recepcao", valor,
     });
     if (!resp.ok) return resp;
+    // O servidor pode ter consumido crédito do plano e recalculado o valor para
+    // cobrar só o excedente — usamos esse valor como fonte da verdade.
+    const valorFinal = resp.reserva?.valor != null ? Number(resp.reserva.valor) : valor;
     const nova = {
       ...r, id: resp.reserva.id, unidadeId, startAt, endAt, base: r.base ?? null,
-      status: "confirmada", valor, origem: r.origem || "recepcao",
+      status: "confirmada", valor: valorFinal, origem: r.origem || "recepcao",
       paymentStatus: resp.reserva.payment_status || "pendente", vista: (r.origem || "recepcao") !== "app",
     };
     setReservas((rs) => [...rs, nova]);
-    if (unidadeId) enfileirarEmail(unidadeId, { cliente: r.cliente, evento: "reserva", dados: { sala: sala?.nome } });
-    if (valor > 0 && unidadeId) {
-      const sub = sala?.tipo === "Privativa" ? "Aluguel de Salas Privativas" : "Aluguel de Sala de Reunião";
-      addLancamento(unidadeId, { tipo: "entrada", descricao: `Reserva ${sala?.nome || ""} · ${r.cliente}`, categoria: "Receita Operacional Bruta", subcategoria: sub, valor, contaId: contas.find((c) => c.unidadeId === unidadeId)?.id, data: "—", status: "previsto" });
+    // Reflete o consumo de crédito no ledger local (o débito já foi gravado no
+    // banco pela Edge Function; aqui só atualiza a tela sem novo fetch).
+    const cr = resp.credito;
+    if (cr && cr.cobertas > 0) {
+      setCreditLedger((ls) => [{
+        id: "cl_" + Date.now() + Math.floor(Math.random() * 1000), unidadeId,
+        clienteId: r.clienteId || null, clienteEmail: r.email || null, tipo: cr.tipo,
+        quantidade: -cr.cobertas, saldoApos: cr.saldoApos, origem: "consumo",
+        motivo: `Reserva ${sala?.nome || ""}`.trim(), referenciaId: resp.reserva.id,
+        createdAt: new Date().toISOString(),
+      }, ...ls]);
     }
-    return { ok: true, reserva: nova };
+    if (unidadeId) enfileirarEmail(unidadeId, { cliente: r.cliente, evento: "reserva", dados: { sala: sala?.nome } });
+    if (valorFinal > 0 && unidadeId) {
+      const sub = sala?.tipo === "Privativa" ? "Aluguel de Salas Privativas" : "Aluguel de Sala de Reunião";
+      addLancamento(unidadeId, { tipo: "entrada", descricao: `Reserva ${sala?.nome || ""} · ${r.cliente}`, categoria: "Receita Operacional Bruta", subcategoria: sub, valor: valorFinal, contaId: contas.find((c) => c.unidadeId === unidadeId)?.id, data: "—", status: "previsto" });
+    }
+    return { ok: true, reserva: nova, credito: cr || null };
   };
   const marcarReservasVistas = (unidadeId) =>
     setReservas((rs) => rs.map((r) => (r.unidadeId === unidadeId && r.origem === "app" && !r.vista ? { ...r, vista: true } : r)));
@@ -957,13 +974,17 @@ export function StoreProvider({ children }) {
     CREDITO_TIPOS.reduce((a, t) => ((a[t] = saldoCreditos(clienteId, t)), a), {});
   const lancarCredito = (unidadeId, clienteId, tipo, quantidade, origem, motivo, referenciaId) => {
     if (!clienteId || !tipo || !quantidade) return null;
+    const cli = clientes.find((c) => c.id === clienteId);
     const reg = {
-      id: "cl_" + Date.now() + Math.floor(Math.random() * 1000), unidadeId, clienteId, tipo,
+      id: "cl_" + Date.now() + Math.floor(Math.random() * 1000), unidadeId, clienteId,
+      clienteEmail: cli?.email || null, tipo,
       quantidade, saldoApos: saldoCreditos(clienteId, tipo) + quantidade,
       origem: origem || "ajuste_manual", motivo: motivo || "", referenciaId: referenciaId || null,
       createdAt: new Date().toISOString(),
     };
     setCreditLedger((ls) => [reg, ...ls]);
+    // Produção: persiste no ledger relacional (fonte da verdade). Best-effort.
+    if (REAL) insertCreditoDb(reg).catch(() => {});
     return reg;
   };
   // Direito do plano → tipo de crédito.
@@ -1237,7 +1258,7 @@ export function StoreProvider({ children }) {
 
   // Hidrata as entidades operacionais (app_state) + as de tabela própria
   // (boletos, notas, config fiscal). Chamado pelo App.jsx após o login.
-  const hydrateOperacional = ({ appState, boletos: bs, notas, config, reservas: reservasDb } = {}) => {
+  const hydrateOperacional = ({ appState, boletos: bs, notas, config, reservas: reservasDb, creditos } = {}) => {
     if (appState?.length) {
       const byEntity = {};
       for (const r of appState) (byEntity[r.entity] ||= []).push(r.doc);
@@ -1255,7 +1276,8 @@ export function StoreProvider({ children }) {
       apply("patrimonio", setPatrimonio); apply("contratos", setContratos);
       apply("correspondencias", setCorrespondencias); apply("pedidos", setPedidos);
       apply("conversas", setConversas); apply("leads", setLeads); apply("eventos", setEventos);
-      apply("planos", setPlanos); apply("recibos", setRecibos); apply("creditLedger", setCreditLedger);
+      apply("planos", setPlanos); apply("recibos", setRecibos);
+      // creditLedger NÃO vem do app_state (migrado para a tabela relacional).
       // Backfill: as salas vivem no app_state; garante que existam também na
       // tabela relacional (a função criar_reserva_segura valida a sala lá).
       if (REAL && byEntity.salas) byEntity.salas.forEach((s) => upsertSalaDb(s).catch(() => {}));
@@ -1276,6 +1298,8 @@ export function StoreProvider({ children }) {
       const ids = new Set(mapped.map((m) => m.id));
       setReservas((prev) => [...prev.filter((r) => !ids.has(r.id)), ...mapped]);
     }
+    // Créditos do plano (ledger relacional). Substitui qualquer estado anterior.
+    if (creditos) setCreditLedger(creditos);
   };
 
   // Unidades visíveis no modo atual

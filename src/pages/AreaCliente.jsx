@@ -478,7 +478,7 @@ export default function AreaCliente({ section, go }) {
       {/* ===== MODAIS ===== */}
       {reservaSala && (
         <ReservaModal sala={reservaSala} reservas={reservas} onClose={() => setReservaSala(null)}
-          onConfirm={async (dados) => { const res = await criarReserva({ sala: reservaSala.id, dia: dados.dia, inicio: dados.inicio, dur: dados.dur, base: dados.base, cliente: cli.nome, clienteId: cli.id, email: cli.email, cor: C.cafe, origem: "app" }); if (!res || res.ok === false) { alert(res?.error || "Não foi possível reservar."); return; } setReservaSala(null); irPara("reservar"); }} />
+          onConfirm={async (dados) => { const res = await criarReserva({ sala: reservaSala.id, dia: dados.dia, inicio: dados.inicio, dur: dados.dur, base: dados.base, cliente: cli.nome, clienteId: cli.id, email: cli.email, cor: C.cafe, origem: "app" }); if (!res || res.ok === false) { alert(res?.error || "Não foi possível reservar."); return; } const cr = res.credito; if (cr && cr.cobertas > 0) { const ex = cr.valorExcedente > 0 ? ` ${cr.excedente}h de excedente a cobrar (${fmt(cr.valorExcedente)}).` : " Sem excedente."; alert(`Reserva confirmada. Usamos ${cr.cobertas}h do seu plano (${CRED_LB[cr.tipo] || cr.tipo}).${ex}`); } setReservaSala(null); irPara("reservar"); }} />
       )}
       {pagarFatura && (
         <Modal title="Pagar com Pix" onClose={() => setPagarFatura(null)}>

@@ -10,7 +10,7 @@ const ANON = import.meta.env?.VITE_SUPABASE_ANON_KEY || "";
 
 export const reservasApi = {
   configured: supabaseConfigured,
-  // Retorna { ok:true, reserva } ou { ok:false, error }.
+  // Retorna { ok:true, reserva, credito } ou { ok:false, error }.
   criar: async (dados) => {
     try {
       const token = await getAccessToken();
@@ -21,7 +21,7 @@ export const reservasApi = {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return { ok: false, error: data?.error || `Falha ao reservar (${res.status})` };
-      return { ok: true, reserva: data.reserva };
+      return { ok: true, reserva: data.reserva, credito: data.credito || null };
     } catch (e) {
       return { ok: false, error: e?.message || "Falha de rede ao reservar." };
     }

@@ -163,6 +163,27 @@ export async function fetchAuditLogsDb() {
   return (await getJson("audit_logs?select=*&order=created_at.desc&limit=500")) || [];
 }
 
+// Créditos do plano (ledger relacional, Fase 2). RLS: cliente vê só os próprios.
+const mapCredito = (r) => ({
+  id: r.id, unidadeId: r.unidade_id, clienteId: r.cliente_id, clienteEmail: r.cliente_email,
+  tipo: r.tipo, quantidade: Number(r.quantidade), saldoApos: r.saldo_apos != null ? Number(r.saldo_apos) : null,
+  origem: r.origem, motivo: r.motivo, referenciaId: r.referencia_id, createdAt: r.created_at,
+});
+const creditoToRow = (e) => ({
+  id: e.id, unidade_id: e.unidadeId, cliente_id: e.clienteId ?? null, cliente_email: e.clienteEmail ?? null,
+  tipo: e.tipo, quantidade: e.quantidade, saldo_apos: e.saldoApos ?? null,
+  origem: e.origem ?? null, motivo: e.motivo ?? null, referencia_id: e.referenciaId ?? null,
+});
+export async function fetchCreditosDb() {
+  return ((await getJson("creditos_ledger?select=*&order=created_at.desc")) || []).map(mapCredito);
+}
+/** Grava uma movimentação de crédito (concessão/ajuste). Cliente não tem insert
+ *  por RLS — só staff/admin. Consumos de reserva são gravados pela Edge Function. */
+export async function insertCreditoDb(entry) {
+  if (!entry?.id || !entry?.unidadeId) return null;
+  return await writeJson("creditos_ledger", "POST", creditoToRow(entry), "return=minimal");
+}
+
 // Sala (camelCase do store) → linha da tabela relacional salas.
 function salaToRow(s) {
   const row = {

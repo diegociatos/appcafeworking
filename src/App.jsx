@@ -10,7 +10,7 @@ import Logo from "./components/Logo.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import Login from "./pages/Login.jsx";
 import { supabaseConfigured, getSession, onAuthChange, signOut } from "./lib/supabaseAuth.js";
-import { fetchMemberships, fetchTenant, fetchAppState, fetchBoletosDb, fetchNotasDb, fetchConfigFiscalDb, fetchIsPlatformAdmin, fetchReservasDb } from "./lib/supabaseDb.js";
+import { fetchMemberships, fetchTenant, fetchAppState, fetchBoletosDb, fetchNotasDb, fetchConfigFiscalDb, fetchIsPlatformAdmin, fetchReservasDb, fetchCreditosDb } from "./lib/supabaseDb.js";
 
 import Dashboard from "./pages/Dashboard.jsx";
 import CRM from "./pages/CRM.jsx";
@@ -111,9 +111,9 @@ export default function App() {
     Promise.all([fetchMemberships(), fetchIsPlatformAdmin()])
       .then(([membros, isAdmin]) => { if (vivo) aplicarSessaoUsuario(membros, isAdmin, ident); });
     // Estado operacional (salas, reservas, financeiro, estoque…) + tabelas próprias.
-    Promise.all([fetchAppState(), fetchBoletosDb(), fetchNotasDb(), fetchConfigFiscalDb(), fetchReservasDb()])
-      .then(([appState, boletos, notas, config, reservas]) => {
-        if (vivo) hydrateOperacional({ appState, boletos, notas, config, reservas });
+    Promise.all([fetchAppState(), fetchBoletosDb(), fetchNotasDb(), fetchConfigFiscalDb(), fetchReservasDb(), fetchCreditosDb()])
+      .then(([appState, boletos, notas, config, reservas, creditos]) => {
+        if (vivo) hydrateOperacional({ appState, boletos, notas, config, reservas, creditos });
       });
     return () => { vivo = false; };
   }, [session]); // eslint-disable-line react-hooks/exhaustive-deps

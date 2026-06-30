@@ -16,6 +16,15 @@ import { handleOptions, json } from "../_shared/cors.ts";
 import { userClient, adminClient } from "../_shared/supabaseAdmin.ts";
 import { registrarAuditoria, ipDaReq } from "../_shared/audit.ts";
 
+// Tipo de sala → tipo de crédito do plano. Salas que não casam (ex.: privativa)
+// não consomem crédito e são cobradas pelo valor cheio.
+function mapTipoCredito(tipoSala?: string | null): string | null {
+  const t = (tipoSala || "").toLowerCase();
+  if (t.includes("reuni")) return "sala_reuniao";
+  if (t.includes("compartilh") || t.includes("cowork")) return "coworking";
+  return null;
+}
+
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
@@ -81,6 +90,45 @@ Deno.serve(async (req) => {
       return json({ error: chave ? amigavel[chave] : `Falha ao reservar: ${msg}` }, status);
     }
 
+    // --- Consumo de crédito do plano + excedente (fail-safe) ----------------
+    // Nunca derruba a reserva: qualquer erro aqui apenas mantém o valor cheio.
+    let credito: Record<string, unknown> | null = null;
+    try {
+      const alvoEmail = String(b.cliente_email || "").toLowerCase();
+      if (alvoEmail) {
+        const { data: sala } = await admin.from("salas").select("tipo, valor_hora").eq("id", b.sala_id).maybeSingle();
+        const tipoCred = mapTipoCredito(sala?.tipo as string | null);
+        if (tipoCred) {
+          const horas = Math.max(1, Math.ceil((new Date(b.end_at).getTime() - new Date(b.start_at).getTime()) / 3_600_000));
+          const { data: movs } = await admin.from("creditos_ledger")
+            .select("quantidade")
+            .eq("unidade_id", b.unidade_id).eq("cliente_email", alvoEmail).eq("tipo", tipoCred);
+          const saldo = (movs || []).reduce((s: number, m: { quantidade: number }) => s + Number(m.quantidade || 0), 0);
+          const cobertas = Math.max(0, Math.min(saldo, horas));
+          const excedente = horas - cobertas;
+          if (cobertas > 0) {
+            await admin.from("creditos_ledger").insert({
+              id: "cl_" + Date.now() + Math.floor(Math.random() * 1000),
+              unidade_id: b.unidade_id, cliente_id: b.cliente_id ?? null, cliente_email: alvoEmail,
+              tipo: tipoCred, quantidade: -cobertas, saldo_apos: saldo - cobertas,
+              origem: "consumo", motivo: `Reserva ${sala?.tipo || ""}`.trim(), referencia_id: data?.id ?? null,
+              created_by: auth.user.id,
+            });
+          }
+          const valorHora = Number(sala?.valor_hora || 0);
+          const valorExcedente = excedente * valorHora;
+          // Só reescreve o valor quando há preço por hora — evita zerar um valor fixo.
+          if (data?.id && valorHora > 0) {
+            await admin.from("reservas").update({ valor: valorExcedente }).eq("id", data.id);
+            (data as { valor?: number }).valor = valorExcedente;
+          }
+          credito = { tipo: tipoCred, horas, cobertas, excedente, saldoAntes: saldo, saldoApos: saldo - cobertas, valorExcedente };
+        }
+      }
+    } catch (e) {
+      console.error("[criar-reserva] consumo de crédito falhou (segue sem debitar)", e);
+    }
+
     await registrarAuditoria(admin, {
       unidade_id: b.unidade_id,
       ator_id: auth.user.id,
@@ -91,12 +139,13 @@ Deno.serve(async (req) => {
       detalhe: {
         sala_id: b.sala_id, base: b.base ?? null, start_at: b.start_at, end_at: b.end_at,
         cliente_nome: b.cliente_nome, cliente_email: b.cliente_email ?? null,
-        origem: b.origem ?? "recepcao", valor: data?.valor ?? b.valor ?? null,
+        origem: b.origem ?? "recepcao", valor: (data as { valor?: number })?.valor ?? b.valor ?? null,
+        credito,
       },
       ip: ipDaReq(req),
     });
 
-    return json({ ok: true, reserva: data }, 201);
+    return json({ ok: true, reserva: data, credito }, 201);
   } catch (e) {
     console.error(e);
     return json({ error: (e as Error).message ?? "Erro interno" }, 500);
