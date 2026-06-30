@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   Plus, Instagram, Globe, MessageCircle, Search as SearchIcon,
-  Tag, Settings2, Trash2, Check,
+  Tag, Settings2, Trash2, Check, CheckCircle2,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field } from "../components/ui.jsx";
 import { C, serif, sans, fmt, fmtShort, inp } from "../lib/theme.js";
@@ -28,8 +28,20 @@ const PALETA = [C.text3, C.blue, C.amber, C.cafe, C.green, C.teal, C.red, C.cafe
 const origemCor = (o) => ORIGEM_COR[o] || C.cafe2;
 const origemIcon = (o) => ORIGEM_ICON[o] || Tag;
 
-export default function CRM() {
-  const { activeUnit, leads: leadsAll, setLeads, crmEtapas: etapas, setCrmEtapas: setEtapas, crmOrigens: origens, setCrmOrigens: setOrigens } = useStore();
+export default function CRM({ go }) {
+  const { activeUnit, unidadeAtiva, leads: leadsAll, setLeads, crmEtapas: etapas, setCrmEtapas: setEtapas, crmOrigens: origens, setCrmOrigens: setOrigens, addCliente, planosDe } = useStore();
+  const [convertido, setConvertido] = useState(null); // { cliente, lead }
+
+  const converterEmCliente = (l) => {
+    const planos = planosDe ? planosDe(activeUnit) : [];
+    const planoMatch = planos.find((p) => (l.interesse || "").toLowerCase().includes((p.nome || "").toLowerCase()) || (p.nome || "").toLowerCase().includes((l.interesse || "").toLowerCase()));
+    const cli = addCliente({
+      nome: l.nome, plano: planoMatch?.nome || l.interesse || "Plano", unidade: unidadeAtiva?.nome,
+      tel: l.tel || "", email: l.email || "", cnpj: l.documento || "", contato: l.nome, fiscal: false,
+    });
+    setLeads((ls) => ls.map((x) => (x.id === l.id ? { ...x, etapa: "fechado" } : x)));
+    setConvertido({ cliente: cli, lead: l });
+  };
   // Funil por unidade: cada coworking tem seus próprios leads.
   const leads = leadsAll.filter((l) => l.unidadeId === activeUnit);
   const [modal, setModal] = useState(null);
@@ -242,6 +254,17 @@ export default function CRM() {
                           {l.prob}%
                         </Badge>
                       </div>
+                      {l.etapa !== "fechado" && (
+                        <button
+                          type="button"
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={() => converterEmCliente(l)}
+                          title="Cria o cliente, vincula a unidade e fecha o lead"
+                          style={{ width: "100%", marginTop: 10, padding: "7px 0", borderRadius: 9, border: `1px solid ${C.teal}`, background: C.tealPale, color: C.teal, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+                        >
+                          + Converter em cliente
+                        </button>
+                      )}
                     </div>
                   );
                 })}
@@ -320,6 +343,22 @@ export default function CRM() {
             onSave={saveEtapa}
             onDelete={() => removeEtapa(etapaModal.id)}
           />
+        </Modal>
+      )}
+
+      {convertido && (
+        <Modal title="Lead convertido ✓" onClose={() => setConvertido(null)} maxWidth={400}>
+          <div style={{ textAlign: "center", padding: "6px 0" }}>
+            <CheckCircle2 size={44} color={C.green} />
+            <div style={{ fontFamily: serif, fontSize: 18, marginTop: 10 }}>{convertido.cliente?.nome}</div>
+            <div style={{ fontSize: 13, color: C.text3, marginTop: 4, marginBottom: 16 }}>
+              Cliente criado em <b>{unidadeAtiva?.nome}</b> · plano <b>{convertido.cliente?.plano}</b>. O lead foi marcado como <b>fechado</b>.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn variant="ghost" style={{ flex: 1, justifyContent: "center" }} onClick={() => { setConvertido(null); go && go("clientes"); }}>Ver cliente</Btn>
+              <Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setConvertido(null); go && go("cobrancas"); }}>Criar cobrança</Btn>
+            </div>
+          </div>
         </Modal>
       )}
     </div>
