@@ -157,6 +157,11 @@ export async function fetchReservasDb() {
 export async function fetchSalasDb() {
   return (await getJson("salas?select=*")) || [];
 }
+// Trilha de auditoria. RLS: admin vê tudo, staff vê a própria unidade, cliente
+// não vê nada. Limita às últimas 500 linhas para não pesar.
+export async function fetchAuditLogsDb() {
+  return (await getJson("audit_logs?select=*&order=created_at.desc&limit=500")) || [];
+}
 
 // Sala (camelCase do store) → linha da tabela relacional salas.
 function salaToRow(s) {

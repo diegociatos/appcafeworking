@@ -14,6 +14,7 @@
 
 import { handleOptions, json } from "../_shared/cors.ts";
 import { userClient, adminClient } from "../_shared/supabaseAdmin.ts";
+import { registrarAuditoria, ipDaReq } from "../_shared/audit.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -79,6 +80,21 @@ Deno.serve(async (req) => {
       const status = msg.includes("CONFLITO") ? 409 : 400;
       return json({ error: chave ? amigavel[chave] : `Falha ao reservar: ${msg}` }, status);
     }
+
+    await registrarAuditoria(admin, {
+      unidade_id: b.unidade_id,
+      ator_id: auth.user.id,
+      ator_email: email,
+      acao: "reserva.criada",
+      entidade: "reserva",
+      entidade_id: data?.id ?? null,
+      detalhe: {
+        sala_id: b.sala_id, base: b.base ?? null, start_at: b.start_at, end_at: b.end_at,
+        cliente_nome: b.cliente_nome, cliente_email: b.cliente_email ?? null,
+        origem: b.origem ?? "recepcao", valor: data?.valor ?? b.valor ?? null,
+      },
+      ip: ipDaReq(req),
+    });
 
     return json({ ok: true, reserva: data }, 201);
   } catch (e) {

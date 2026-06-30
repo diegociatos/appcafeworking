@@ -18,6 +18,7 @@ import { getFiscalCredentials } from "../_shared/fiscalVault.ts";
 import { uploadNfseFile } from "../_shared/storage.ts";
 import { getNfseProvider, FiscalError, type ConfigFiscal, type EmitirNfseInput } from "../_shared/nfse/index.ts";
 import { dispatchNotificacao } from "../_shared/notify/index.ts";
+import { registrarAuditoria, ipDaReq } from "../_shared/audit.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -113,6 +114,21 @@ Deno.serve(async (req) => {
         dados: { numero: nota.numero, valor: input.valor, descricao: input.descricao, pdfUrl: nota.pdf_url || result.pdfUrl },
       });
     }
+
+    await registrarAuditoria(admin, {
+      unidade_id: config.unidade_id,
+      ator_id: auth.user.id,
+      ator_email: (auth.user.email || "").toLowerCase(),
+      acao: "nfse.emitida",
+      entidade: "nota_fiscal",
+      entidade_id: nota.id,
+      detalhe: {
+        numero: nota.numero, rps_numero: rpsNumero, valor: input.valor,
+        tomador: input.tomador.nome, tomador_documento: input.tomador.documento,
+        emissor: config.emissor, status: result.status, boleto_id: input.boletoId,
+      },
+      ip: ipDaReq(req),
+    });
 
     return json({ nota }, 201);
   } catch (e) {

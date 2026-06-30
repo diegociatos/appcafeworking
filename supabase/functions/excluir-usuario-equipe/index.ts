@@ -11,6 +11,7 @@
 
 import { handleOptions, json } from "../_shared/cors.ts";
 import { userClient, adminClient } from "../_shared/supabaseAdmin.ts";
+import { registrarAuditoria, ipDaReq } from "../_shared/audit.ts";
 
 async function acharAuthUserIdPorEmail(admin: any, email: string): Promise<string | null> {
   const alvo = email.toLowerCase().trim();
@@ -56,6 +57,17 @@ Deno.serve(async (req) => {
       try { await admin.auth.admin.deleteUser(alvoId); } catch (_) { /* segue */ }
     }
     await admin.from("usuarios").delete().eq("id", body.usuario_id);
+
+    await registrarAuditoria(admin, {
+      unidade_id: usuario.unidade_id,
+      ator_id: auth.user.id,
+      ator_email: (auth.user.email || "").toLowerCase(),
+      acao: "usuario.excluido",
+      entidade: "usuario",
+      entidade_id: body.usuario_id,
+      detalhe: { email: usuario.email ?? null, nome: usuario.nome ?? null, role: usuario.role ?? null, removidoLogin: Boolean(alvoId) },
+      ip: ipDaReq(req),
+    });
 
     return json({ ok: true, removidoLogin: Boolean(alvoId) }, 200);
   } catch (e) {
