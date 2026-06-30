@@ -305,6 +305,7 @@ export function StoreProvider({ children }) {
   const [notasFiscais, setNotasFiscais] = useState(seedOr(seedNotasFiscais));
   const [planos, setPlanos] = useState(seedOr(seedPlanos));
   const [recibos, setRecibos] = useState(seedOr([]));
+  const [creditLedger, setCreditLedger] = useState(seedOr([]));
   const [reservas, setReservas] = useState(seedOr(RESERVAS_INIT));
   // CRM: leads são dados (por unidade, persistem); etapas/origens são a
   // estrutura do funil (config padrão, compartilhada — não some no modo real).
@@ -390,6 +391,7 @@ export function StoreProvider({ children }) {
   useSync("eventos", eventos);
   useSync("planos", planos);
   useSync("recibos", recibos);
+  useSync("creditLedger", creditLedger);
 
   const [activeUnit, setActiveUnit] = useState(UNIDADES[0].id);
   const [viewAs, setViewAs] = useState(null); // id do franqueado, ou null = franqueador
@@ -928,6 +930,46 @@ export function StoreProvider({ children }) {
   };
   const removeRecibo = (id) => setRecibos((rs) => rs.filter((r) => r.id !== id));
 
+  // Créditos do plano — ledger auditável (saldo = soma das movimentações) ------
+  const CREDITO_TIPOS = ["sala_reuniao", "coworking", "daypass", "correspondencia"];
+  const ledgerDe = (clienteId) => creditLedger.filter((e) => e.clienteId === clienteId);
+  const saldoCreditos = (clienteId, tipo) =>
+    creditLedger.filter((e) => e.clienteId === clienteId && e.tipo === tipo).reduce((s, e) => s + (e.quantidade || 0), 0);
+  const saldosCliente = (clienteId) =>
+    CREDITO_TIPOS.reduce((a, t) => ((a[t] = saldoCreditos(clienteId, t)), a), {});
+  const lancarCredito = (unidadeId, clienteId, tipo, quantidade, origem, motivo, referenciaId) => {
+    if (!clienteId || !tipo || !quantidade) return null;
+    const reg = {
+      id: "cl_" + Date.now() + Math.floor(Math.random() * 1000), unidadeId, clienteId, tipo,
+      quantidade, saldoApos: saldoCreditos(clienteId, tipo) + quantidade,
+      origem: origem || "ajuste_manual", motivo: motivo || "", referenciaId: referenciaId || null,
+      createdAt: new Date().toISOString(),
+    };
+    setCreditLedger((ls) => [reg, ...ls]);
+    return reg;
+  };
+  // Direito do plano → tipo de crédito.
+  const DIREITO_CREDITO = { horasReuniao: "sala_reuniao", horasCoworking: "coworking", dayPass: "daypass", correspondencias: "correspondencia" };
+  const concederCreditosPlano = (cliente, plano) => {
+    if (!cliente?.id || !plano) return 0;
+    const d = plano.direitos || {};
+    let n = 0;
+    Object.entries(DIREITO_CREDITO).forEach(([campo, tipo]) => {
+      const q = Number(d[campo] || 0);
+      if (q > 0) { lancarCredito(cliente.unidadeId, cliente.id, tipo, q, "plano", `Plano ${plano.nome}`, plano.id); n++; }
+    });
+    return n;
+  };
+  const consumirCredito = (clienteId, tipo, quantidade = 1, referenciaId) => {
+    const saldo = saldoCreditos(clienteId, tipo);
+    if (saldo < quantidade) return { ok: false, saldo };
+    const cli = clientes.find((c) => c.id === clienteId);
+    lancarCredito(cli?.unidadeId, clienteId, tipo, -quantidade, "consumo", "", referenciaId);
+    return { ok: true, saldo: saldo - quantidade };
+  };
+  const ajustarCredito = (unidadeId, clienteId, tipo, quantidade, motivo) =>
+    lancarCredito(unidadeId, clienteId, tipo, quantidade, "ajuste_manual", motivo);
+
   // Boletos / contas bancárias --------------------------------------------
   // ⚠️ Demonstração: em produção, addBankAccount manda a credencial pro Vault
   // e emitirBoleto/cancelarBoleto chamam as Edge Functions (boletosApi.js).
@@ -1195,7 +1237,7 @@ export function StoreProvider({ children }) {
       apply("patrimonio", setPatrimonio); apply("contratos", setContratos);
       apply("correspondencias", setCorrespondencias); apply("pedidos", setPedidos);
       apply("conversas", setConversas); apply("leads", setLeads); apply("eventos", setEventos);
-      apply("planos", setPlanos); apply("recibos", setRecibos);
+      apply("planos", setPlanos); apply("recibos", setRecibos); apply("creditLedger", setCreditLedger);
       // Backfill: as salas vivem no app_state; garante que existam também na
       // tabela relacional (a função criar_reserva_segura valida a sala lá).
       if (REAL && byEntity.salas) byEntity.salas.forEach((s) => upsertSalaDb(s).catch(() => {}));
@@ -1263,13 +1305,14 @@ export function StoreProvider({ children }) {
       configFiscal, configFiscalDe, updateConfigFiscal, salvarConfigFiscal, notasFiscais, notasFiscaisDe, emitirNFSe, cancelarNF, salvarCertificadoFiscal,
       planos, planosDe, addPlano, updatePlano, removePlano,
       recibos, recibosDe, emitirRecibo, removeRecibo,
+      creditLedger, CREDITO_TIPOS, ledgerDe, saldoCreditos, saldosCliente, concederCreditosPlano, consumirCredito, ajustarCredito,
       syncErrors,
     }),
     // As ações (addX/updateX/...) são closures estáveis recriadas a cada render;
     // memorizamos o value apenas pelos ESTADOS. Incluir as funções nas deps
     // anularia o useMemo (novo objeto a cada render) — comportamento indesejado.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, configFiscal, notasFiscais, planos, recibos, syncErrors, reservas, leads, crmEtapas, crmOrigens, eventos, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail, clienteNotifPrefs]
+    [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, configFiscal, notasFiscais, planos, recibos, creditLedger, syncErrors, reservas, leads, crmEtapas, crmOrigens, eventos, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail, clienteNotifPrefs]
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

@@ -181,6 +181,48 @@ function NovoClienteForm({ inicial = {}, unidades, onSalvar }) {
   );
 }
 
+const CREDITO_LABEL = { sala_reuniao: "Sala reunião (h)", coworking: "Coworking (h)", daypass: "Day-pass", correspondencia: "Correspond." };
+
+function CreditosCliente({ cli }) {
+  const { saldosCliente, planosDe, concederCreditosPlano, ajustarCredito, CREDITO_TIPOS, ledgerDe } = useStore();
+  const [aj, setAj] = useState({ tipo: "sala_reuniao", qtd: "", motivo: "" });
+  const [feito, setFeito] = useState("");
+  const saldos = saldosCliente(cli.id);
+  const planos = planosDe ? planosDe(cli.unidadeId) : [];
+  const plano = planos.find((p) => p.nome === cli.plano);
+  const temDireitos = plano && plano.direitos && Object.values(plano.direitos).some((v) => typeof v === "number" && v > 0);
+  const mov = ledgerDe(cli.id).length;
+  const conceder = () => { const n = concederCreditosPlano(cli, plano); if (n) setFeito(`Créditos do plano "${plano.nome}" gerados.`); };
+  const ajustar = () => { if (!+aj.qtd) return; ajustarCredito(cli.unidadeId, cli.id, aj.tipo, +aj.qtd, aj.motivo.trim()); setAj({ ...aj, qtd: "", motivo: "" }); setFeito("Ajuste lançado."); };
+
+  return (
+    <div style={{ marginTop: 16, borderTop: `1px solid ${C.border2}`, paddingTop: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: C.text3, letterSpacing: 0.3 }}>CRÉDITOS DO PLANO</span>
+        {temDireitos && <button type="button" onClick={conceder} style={{ fontSize: 12, fontWeight: 600, color: C.teal, background: C.tealPale, border: "none", borderRadius: 8, padding: "5px 10px", cursor: "pointer" }}>+ Gerar do plano</button>}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+        {CREDITO_TIPOS.map((t) => (
+          <div key={t} style={{ background: C.cream2, borderRadius: 10, padding: "8px 10px" }}>
+            <div style={{ fontSize: 10.5, color: C.text3 }}>{CREDITO_LABEL[t]}</div>
+            <div style={{ fontFamily: serif, fontSize: 18, color: saldos[t] > 0 ? C.cafe : C.text4 }}>{saldos[t]}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 0.7fr auto", gap: 6 }}>
+        <select value={aj.tipo} onChange={(e) => setAj({ ...aj, tipo: e.target.value })} style={{ ...inp, padding: "8px 10px" }}>
+          {CREDITO_TIPOS.map((t) => <option key={t} value={t}>{CREDITO_LABEL[t]}</option>)}
+        </select>
+        <input type="number" value={aj.qtd} onChange={(e) => setAj({ ...aj, qtd: e.target.value })} placeholder="±qtd" style={{ ...inp, padding: "8px 10px" }} aria-label="Quantidade do ajuste" />
+        <button type="button" onClick={ajustar} style={{ padding: "9px 12px", borderRadius: 9, border: `1px solid ${C.border}`, background: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Ajustar</button>
+      </div>
+      <input value={aj.motivo} onChange={(e) => setAj({ ...aj, motivo: e.target.value })} placeholder="Motivo do ajuste (auditável)" style={{ ...inp, padding: "8px 10px", marginTop: 6 }} aria-label="Motivo do ajuste" />
+      {feito && <div style={{ fontSize: 11.5, color: C.green, marginTop: 6 }}>{feito}</div>}
+      <div style={{ fontSize: 10.5, color: C.text4, marginTop: 6 }}>{mov} movimentação(ões) registradas.</div>
+    </div>
+  );
+}
+
 function ClienteDetalhe({ cli, onBack, onEditar, onExcluir }) {
   const [docs, setDocs] = useState(cli.docs);
   return (
@@ -270,6 +312,7 @@ function ClienteDetalhe({ cli, onBack, onEditar, onExcluir }) {
               </div>
             </div>
           )}
+          <CreditosCliente cli={cli} />
         </Card>
 
         <Card>

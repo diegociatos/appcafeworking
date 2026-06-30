@@ -91,8 +91,13 @@ function PlanoForm({ inicial, onSave }) {
   const [f, setF] = useState({
     nome: inicial.nome || "", preco: inicial.preco ?? "", recorrencia: inicial.recorrencia || "mensal",
     emiteNF: inicial.emiteNF !== false, descricao: inicial.descricao || "",
+    direitos: {
+      horasReuniao: 0, horasCoworking: 0, dayPass: 0, correspondencias: 0,
+      cafeIncluso: false, descontoSala: 0, descontoCafe: 0, ...(inicial.direitos || {}),
+    },
   });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const setD = (k) => (e) => setF({ ...f, direitos: { ...f.direitos, [k]: e.target.type === "checkbox" ? e.target.checked : +e.target.value } });
   const valido = f.nome.trim() && +f.preco > 0;
 
   return (
@@ -117,6 +122,21 @@ function PlanoForm({ inicial, onSave }) {
         <FileText size={16} color={C.teal} />
         <span style={{ fontSize: 13.5, fontWeight: 600 }}>Emitir nota fiscal (NFS-e) ao receber</span>
       </label>
+      <div style={{ background: C.cream2, borderRadius: 12, padding: 14, marginBottom: 14 }}>
+        <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 2 }}>Direitos do plano (créditos mensais)</div>
+        <div style={{ fontSize: 11.5, color: C.text3, marginBottom: 10 }}>Gerados a cada ciclo. O cliente consome ao reservar; excedente vira cobrança.</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <Field label="Horas sala de reunião / mês" style={{ marginBottom: 0 }}><input type="number" min="0" value={f.direitos.horasReuniao} onChange={setD("horasReuniao")} style={inp} /></Field>
+          <Field label="Horas coworking / mês" style={{ marginBottom: 0 }}><input type="number" min="0" value={f.direitos.horasCoworking} onChange={setD("horasCoworking")} style={inp} /></Field>
+          <Field label="Day-pass / mês" style={{ marginBottom: 0 }}><input type="number" min="0" value={f.direitos.dayPass} onChange={setD("dayPass")} style={inp} /></Field>
+          <Field label="Correspondências / mês" style={{ marginBottom: 0 }}><input type="number" min="0" value={f.direitos.correspondencias} onChange={setD("correspondencias")} style={inp} /></Field>
+          <Field label="Desconto sala (%)" style={{ marginBottom: 0 }}><input type="number" min="0" max="100" value={f.direitos.descontoSala} onChange={setD("descontoSala")} style={inp} /></Field>
+          <Field label="Desconto cafeteria (%)" style={{ marginBottom: 0 }}><input type="number" min="0" max="100" value={f.direitos.descontoCafe} onChange={setD("descontoCafe")} style={inp} /></Field>
+        </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.text2, marginTop: 10, cursor: "pointer" }}>
+          <input type="checkbox" checked={f.direitos.cafeIncluso} onChange={setD("cafeIncluso")} /> Café incluso
+        </label>
+      </div>
       <Btn style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.5 }} onClick={() => valido && onSave({ ...f, preco: +f.preco })}>
         {inicial.id ? "Salvar plano" : "Criar plano"}
       </Btn>

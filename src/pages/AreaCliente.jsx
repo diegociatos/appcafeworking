@@ -33,7 +33,8 @@ function baixarArquivo(nome, conteudo) {
 }
 
 export default function AreaCliente({ section, go }) {
-  const { unidades, salasDe, produtosDe, criarReserva, reservas, addPedido, pedidosDe, correspondenciasDe, conversasDe, enviarMensagemCliente, clienteNotifPrefs, updateClienteNotifPrefs, clientes, boletos, baixarBoleto } = useStore();
+  const { unidades, salasDe, produtosDe, criarReserva, reservas, addPedido, pedidosDe, correspondenciasDe, conversasDe, enviarMensagemCliente, clienteNotifPrefs, updateClienteNotifPrefs, clientes, boletos, baixarBoleto, saldosCliente, CREDITO_TIPOS } = useStore();
+  const CRED_LB = { sala_reuniao: "Reunião (h)", coworking: "Coworking (h)", daypass: "Day-pass", correspondencia: "Corresp." };
   const meuEmail = (getUser()?.email || "").toLowerCase();
   // Em perfil cliente a navegação vem do sidebar (section = cli_*). Preview de
   // staff (não-clienteMode) e modo demo podem usar o primeiro cliente.
@@ -185,6 +186,21 @@ export default function AreaCliente({ section, go }) {
                   <div style={{ fontSize: 13, color: C.text3 }}>{cli.unidade} · ativo desde {cli.desde}</div>
                 </div>
               </div>
+              {(() => {
+                const cr = cli.id && saldosCliente ? saldosCliente(cli.id) : {};
+                const ativos = (CREDITO_TIPOS || []).filter((t) => cr[t] > 0);
+                if (!ativos.length) return null;
+                return (
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ fontSize: 11, color: C.text4, marginBottom: 6, fontWeight: 600 }}>SEUS CRÉDITOS NESTE CICLO</div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {ativos.map((t) => (
+                        <span key={t} style={{ fontSize: 11.5, color: C.cafe, background: C.cafePale, padding: "4px 9px", borderRadius: 10, fontWeight: 600 }}>{cr[t]} · {CRED_LB[t]}</span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
               <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
                 <Btn variant="ghost" style={{ flex: 1, justifyContent: "center", minWidth: 130 }} onClick={() => irPara("reservar")}><CalendarDays size={15} /> Reservar sala</Btn>
                 <Btn variant="ghost" style={{ flex: 1, justifyContent: "center", minWidth: 130 }} onClick={() => irPara("cafe")}><Coffee size={15} /> Pedir café</Btn>
