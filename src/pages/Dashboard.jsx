@@ -15,7 +15,7 @@ export default function Dashboard({ go }) {
   const store = useStore();
   const { perfil, franqueados, unidades } = store;
   // O Administrador da plataforma tem um painel próprio (não opera coworking)
-  if (perfil === "franqueador") return <DashboardPlataforma franqueados={franqueados} unidades={unidades} go={go} />;
+  if (perfil === "franqueador") return <DashboardPlataforma franqueados={franqueados} unidades={unidades} go={go} entrarConta={store.enterViewAs} />;
 
   // KPIs executivos calculados dos DADOS REAIS (competência atual). Zeram sem movimento.
   const ativo = store.activeUnit;
@@ -376,13 +376,15 @@ export default function Dashboard({ go }) {
 }
 
 // Painel do Administrador da plataforma (vendedor do app) — não opera coworking
-function DashboardPlataforma({ franqueados, unidades, go }) {
+function DashboardPlataforma({ franqueados, unidades, go, entrarConta }) {
   const mrr = franqueados.reduce((s, f) => s + (f.mensalidade || 0), 0);
+  const comUnidade = franqueados.filter((f) => unidades.some((u) => u.franqueadoId === f.id)).length;
+  const ticketConta = franqueados.length ? mrr / franqueados.length : 0;
   const kpis = [
-    { label: "Contas (coworkings)", val: franqueados.length, icon: Store, cor: C.cafe },
-    { label: "Unidades na plataforma", val: unidades.length, icon: Building2, cor: C.teal },
-    { label: "MRR da plataforma", val: fmt(mrr), icon: DollarSign, cor: C.green },
-    { label: "ARR estimado", val: fmt(mrr * 12), icon: TrendingUp, cor: C.amber },
+    { label: "Contas (coworkings)", val: franqueados.length, icon: Store, cor: C.cafe, sub: `${comUnidade} com unidade ativa` },
+    { label: "Unidades na plataforma", val: unidades.length, icon: Building2, cor: C.teal, sub: "" },
+    { label: "MRR da plataforma", val: fmt(mrr), icon: DollarSign, cor: C.green, sub: `ARR ${fmt(mrr * 12)}` },
+    { label: "Ticket médio / conta", val: fmt(ticketConta), icon: TrendingUp, cor: C.amber, sub: "mensalidade média" },
   ];
   return (
     <div>
@@ -394,6 +396,7 @@ function DashboardPlataforma({ franqueados, unidades, go }) {
               <div>
                 <div style={{ fontSize: 13, color: C.text3 }}>{k.label}</div>
                 <div style={{ fontFamily: serif, fontSize: 26, color: C.text, marginTop: 6 }}>{k.val}</div>
+                {k.sub && <div style={{ fontSize: 11, color: C.text4, marginTop: 4 }}>{k.sub}</div>}
               </div>
               <div style={{ width: 42, height: 42, borderRadius: 12, background: `${k.cor}16`, display: "grid", placeItems: "center" }}>
                 <k.icon size={20} color={k.cor} />
@@ -409,14 +412,23 @@ function DashboardPlataforma({ franqueados, unidades, go }) {
         </div>
         {franqueados.map((f, i) => {
           const nUnid = unidades.filter((u) => u.franqueadoId === f.id).length;
+          const saudavel = nUnid > 0;
           return (
-            <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: 16, borderBottom: i < franqueados.length - 1 ? `1px solid ${C.border2}` : "none" }}>
-              <div style={{ width: 42, height: 42, borderRadius: "50%", background: "#B8862F", color: "#fff", display: "grid", placeItems: "center", fontFamily: serif, fontSize: 18 }}>{f.nome.charAt(0)}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 15, fontWeight: 600 }}>{f.nome}</div>
+            <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: 16, borderBottom: i < franqueados.length - 1 ? `1px solid ${C.border2}` : "none", flexWrap: "wrap" }}>
+              <div style={{ width: 42, height: 42, borderRadius: "50%", background: "#B8862F", color: "#fff", display: "grid", placeItems: "center", fontFamily: serif, fontSize: 18, flexShrink: 0 }}>{f.nome.charAt(0)}</div>
+              <div style={{ flex: 1, minWidth: 160 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 15, fontWeight: 600 }}>{f.nome}</span>
+                  <span title={saudavel ? "Operando" : "Sem unidade configurada"} style={{ width: 8, height: 8, borderRadius: "50%", background: saudavel ? C.green : C.amber, flexShrink: 0 }} />
+                </div>
                 <div style={{ fontSize: 12, color: C.text3 }}>Master: {f.master || "—"} · {nUnid} unidade{nUnid === 1 ? "" : "s"}</div>
               </div>
               <Badge color={C.green}>{f.plano} · {fmt(f.mensalidade || 0)}/mês</Badge>
+              {entrarConta && (
+                <Btn variant="ghost" style={{ padding: "8px 12px", fontSize: 13 }} onClick={() => { entrarConta(f.id); go("dash"); }}>
+                  <ArrowUpRight size={14} /> Entrar
+                </Btn>
+              )}
             </div>
           );
         })}
