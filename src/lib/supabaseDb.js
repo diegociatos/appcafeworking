@@ -151,6 +151,31 @@ export async function fetchNotasDb() {
 export async function fetchCobrancasDb() {
   return (await getJson("cobrancas?select=*&order=created_at.desc")) || [];
 }
+export async function fetchReservasDb() {
+  return (await getJson("reservas?select=*&order=start_at.asc")) || [];
+}
+export async function fetchSalasDb() {
+  return (await getJson("salas?select=*")) || [];
+}
+
+// Sala (camelCase do store) → linha da tabela relacional salas.
+function salaToRow(s) {
+  const row = {
+    id: s.id, unidade_id: s.unidadeId, nome: s.nome, tipo: s.tipo, capacidade: s.cap,
+    bases: s.bases ?? 0, descricao: s.descricao, comodidades: s.comodidades || [], fotos: s.fotos || [],
+    valor_hora: s.valorHora ?? null, valor_mensal: s.valorMensal ?? null,
+    contratada: !!s.contratada, active: s.active !== false,
+  };
+  Object.keys(row).forEach((k) => row[k] === undefined && delete row[k]);
+  return row;
+}
+export async function upsertSalaDb(s) {
+  if (!s?.id || !s?.unidadeId) return null;
+  return await writeJson("salas?on_conflict=id", "POST", salaToRow(s), "resolution=merge-duplicates,return=minimal");
+}
+export async function deleteSalaDb(id) {
+  return await writeJson(`salas?id=eq.${encodeURIComponent(id)}`, "DELETE", null, "return=minimal");
+}
 
 // Cliente: front (camelCase) → linha do banco (snake_case). cnpj→documento,
 // tel→telefone, unidade(nome) resolvido para unidade_id pelo chamador.

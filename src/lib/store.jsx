@@ -19,10 +19,10 @@ import { boletosApi } from "./boletosApi.js";
 import { nfseApi } from "./nfseApi.js";
 import {
   upsertConfigFiscal, insertCliente, patchCliente, deleteClienteDb,
-  putAppState, delAppState,
+  putAppState, delAppState, upsertSalaDb, deleteSalaDb,
 } from "./supabaseDb.js";
 import { getCurrentCompetencia, parseDateToCompetencia } from "./dateUtils.js";
-import { legacyReservaToDateRange, temConflito, TZ } from "./reservas.js";
+import { legacyReservaToDateRange, dateRangeToLegacy, temConflito, TZ } from "./reservas.js";
 import { reservasApi } from "./reservasApi.js";
 
 // Backend ligado? Em produção (Supabase configurado) o app não exibe os dados
@@ -489,11 +489,25 @@ export function StoreProvider({ children }) {
     setUnidades((us) => us.map((u) => (u.id === id ? { ...u, ...patch } : u)));
 
   // Salas (por unidade) ----------------------------------------------------
-  const addSala = (unidadeId, s) =>
-    setSalas((ss) => [...ss, { id: "s" + Date.now(), unidadeId, ...s }]);
+  // Salas: estado local (app_state) + write-through na tabela relacional (modo
+  // real), para a reserva transacional encontrar a sala.
+  const addSala = (unidadeId, s) => {
+    const nova = { id: "s" + Date.now(), unidadeId, ...s };
+    setSalas((ss) => [...ss, nova]);
+    if (REAL) upsertSalaDb(nova).catch(() => {});
+    return nova.id;
+  };
   const updateSala = (id, patch) =>
-    setSalas((ss) => ss.map((s) => (s.id === id ? { ...s, ...patch } : s)));
-  const removeSala = (id) => setSalas((ss) => ss.filter((s) => s.id !== id));
+    setSalas((ss) => ss.map((s) => {
+      if (s.id !== id) return s;
+      const u = { ...s, ...patch };
+      if (REAL) upsertSalaDb(u).catch(() => {});
+      return u;
+    }));
+  const removeSala = (id) => {
+    setSalas((ss) => ss.filter((s) => s.id !== id));
+    if (REAL) deleteSalaDb(id).catch(() => {});
+  };
 
   // Produtos da cafeteria (por unidade) ------------------------------------
   const addProduto = (unidadeId, p) =>
@@ -1163,7 +1177,7 @@ export function StoreProvider({ children }) {
 
   // Hidrata as entidades operacionais (app_state) + as de tabela própria
   // (boletos, notas, config fiscal). Chamado pelo App.jsx após o login.
-  const hydrateOperacional = ({ appState, boletos: bs, notas, config } = {}) => {
+  const hydrateOperacional = ({ appState, boletos: bs, notas, config, reservas: reservasDb } = {}) => {
     if (appState?.length) {
       const byEntity = {};
       for (const r of appState) (byEntity[r.entity] ||= []).push(r.doc);
@@ -1182,10 +1196,26 @@ export function StoreProvider({ children }) {
       apply("correspondencias", setCorrespondencias); apply("pedidos", setPedidos);
       apply("conversas", setConversas); apply("leads", setLeads); apply("eventos", setEventos);
       apply("planos", setPlanos); apply("recibos", setRecibos);
+      // Backfill: as salas vivem no app_state; garante que existam também na
+      // tabela relacional (a função criar_reserva_segura valida a sala lá).
+      if (REAL && byEntity.salas) byEntity.salas.forEach((s) => upsertSalaDb(s).catch(() => {}));
     }
     if (bs?.length) setBoletos(bs.map((b) => _mapApiBoleto(b, b.unidade_id)));
     if (notas?.length) setNotasFiscais(notas.map(_mapApiNota));
     if (config?.length) setConfigFiscal(config.map(_mapConfigFiscal));
+    // Reservas relacionais (tabela) — fonte das reservas novas. Mescla com as do
+    // app_state por id (a relacional prevalece).
+    if (reservasDb?.length) {
+      const mapped = reservasDb.map((r) => ({
+        id: r.id, unidadeId: r.unidade_id, sala: r.sala_id, base: r.base ?? null,
+        cliente: r.cliente_nome, clienteId: r.cliente_id, email: r.cliente_email,
+        startAt: r.start_at, endAt: r.end_at, ...dateRangeToLegacy(r.start_at, r.end_at),
+        status: r.status, origem: r.origem, valor: Number(r.valor || 0),
+        paymentStatus: r.payment_status, vista: r.origem !== "app",
+      }));
+      const ids = new Set(mapped.map((m) => m.id));
+      setReservas((prev) => [...prev.filter((r) => !ids.has(r.id)), ...mapped]);
+    }
   };
 
   // Unidades visíveis no modo atual

@@ -29,6 +29,16 @@ export function legacyReservaToDateRange(r, semanaReferencia = new Date()) {
   return { start, end };
 }
 
+/** startAt/endAt → { dia 0..6, inicio (índice HORARIOS), dur } para a agenda semanal. */
+export function dateRangeToLegacy(startAt, endAt) {
+  const start = new Date(startAt);
+  const end = new Date(endAt);
+  const dia = (start.getDay() + 6) % 7; // 0 = segunda
+  const inicio = Math.max(0, start.getHours() - 7); // HORARIOS começa às 07:00
+  const dur = Math.max(1, Math.round((end - start) / 3_600_000));
+  return { dia, inicio, dur };
+}
+
 export function getReservaStart(r) {
   return r.startAt ? new Date(r.startAt) : legacyReservaToDateRange(r).start;
 }
