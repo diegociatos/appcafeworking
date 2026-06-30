@@ -139,8 +139,9 @@ function Mini({ label, valor, icon: Icon, cor }) {
 }
 
 function ItemForm({ inicial, onSave }) {
-  const { activeUnit, salasDe } = useStore();
+  const { activeUnit, salasDe, estoqueDe } = useStore();
   const salas = salasDe(activeUnit);
+  const insumos = estoqueDe(activeUnit);
   const [f, setF] = useState({
     nome: inicial.nome || "",
     tipo: inicial.tipo || "plano",
@@ -152,12 +153,25 @@ function ItemForm({ inicial, onSave }) {
     emoji: inicial.emoji || "☕",
     foto: inicial.foto || "",
     salaId: inicial.salaId || "",
+    ficha: inicial.ficha || [],
   });
   const ehProduto = f.tipo === "produto";
   const escolherSala = (id) => {
     const s = salas.find((x) => x.id === id);
     setF({ ...f, salaId: id, preco: f.preco || s?.valorMensal || 0, nome: f.nome || (s ? s.nome : "") });
   };
+  // Ficha técnica: ao alterar, recalcula o custo do produto pelo custo dos insumos.
+  const setFicha = (ficha) => setF((p) => {
+    if (!ficha.length) return { ...p, ficha };
+    const custo = ficha.reduce((s, r) => {
+      const e = insumos.find((x) => x.nome === r.nome);
+      return s + (e ? e.custo * (r.qtd || 0) : 0);
+    }, 0);
+    return { ...p, ficha, custo: Math.round(custo * 100) / 100 };
+  });
+  const addFichaRow = () => setFicha([...(f.ficha || []), { nome: insumos[0]?.nome || "", qtd: 1 }]);
+  const updFichaRow = (i, patch) => setFicha(f.ficha.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const delFichaRow = (i) => setFicha(f.ficha.filter((_, j) => j !== i));
   return (
     <>
       <Field label="Tipo">
@@ -209,6 +223,37 @@ function ItemForm({ inicial, onSave }) {
           <select value={f.categoria} onChange={(e) => setF({ ...f, categoria: e.target.value })} style={inp}>
             {["Café", "Salgados", "Doces", "Bebidas", "Outros"].map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
+        </Field>
+      )}
+
+      {ehProduto && (
+        <Field label="Ficha técnica (insumos do estoque — baixa automática e CMV real na venda)">
+          {insumos.length === 0 ? (
+            <div style={{ fontSize: 11.5, color: C.text4 }}>
+              Cadastre insumos no menu <b>Estoque</b> para montar a ficha. Sem ficha, a venda baixa o próprio produto do estoque.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 8 }}>
+              {(f.ficha || []).map((r, i) => (
+                <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 92px 30px", gap: 8, alignItems: "center" }}>
+                  <select value={r.nome} onChange={(ev) => updFichaRow(i, { nome: ev.target.value })} style={inp}>
+                    {insumos.map((x) => <option key={x.id} value={x.nome}>{x.nome} ({x.unidade})</option>)}
+                  </select>
+                  <input type="number" min="0" step="0.01" value={r.qtd} onChange={(ev) => updFichaRow(i, { qtd: +ev.target.value })} style={inp} placeholder="qtd" />
+                  <button type="button" onClick={() => delFichaRow(i)} className="cw-btn" style={{ color: C.red, padding: 6 }}><Trash2 size={15} /></button>
+                </div>
+              ))}
+              <button type="button" onClick={addFichaRow} className="cw-btn"
+                style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 12.5, fontWeight: 600, color: C.cafe, border: `1px dashed ${C.border}`, borderRadius: 9, padding: "7px 0", background: C.white }}>
+                <Plus size={14} /> Adicionar insumo
+              </button>
+              {f.ficha?.length > 0 && (
+                <div style={{ fontSize: 11.5, color: C.text3 }}>
+                  Custo pela ficha: <b style={{ color: C.text2 }}>{fmt(f.custo)}</b> — preenche o custo automaticamente e baixa cada insumo a cada venda.
+                </div>
+              )}
+            </div>
+          )}
         </Field>
       )}
 

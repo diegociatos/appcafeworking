@@ -600,20 +600,38 @@ export function StoreProvider({ children }) {
   const addPedido = (unidadeId, p) => {
     const id = "pd" + Date.now();
     setPedidos((ps) => [{ id, unidadeId, status: "recebido", origem: "app", ...p }, ...ps]);
-    // Baixa automática de estoque + cálculo do CMV (custo do que foi vendido).
+    // Baixa automática de estoque + CMV. Quando o produto tem ficha técnica,
+    // consome cada insumo (qtd da ficha × quantidade vendida) e calcula o CMV
+    // pelo custo dos insumos. Sem ficha, baixa pelo próprio nome (comportamento
+    // legado), preservando produtos cadastrados antes da ficha técnica.
     let cmv = 0;
     if (p.itens?.length) {
+      const consumo = {}; // nome do insumo → quantidade total a baixar
+      p.itens.forEach((x) => {
+        const prod = catalogo.find(
+          (it) => it.tipo === "produto" && it.unidadeId === unidadeId && it.nome === x.nome
+        );
+        const ficha = prod?.ficha;
+        const q = x.q || 1;
+        if (ficha && ficha.length) {
+          ficha.forEach((f) => {
+            if (!f.nome) return;
+            consumo[f.nome] = (consumo[f.nome] || 0) + (f.qtd || 1) * q;
+          });
+        } else {
+          consumo[x.nome] = (consumo[x.nome] || 0) + q;
+        }
+      });
       setEstoque((es) => es.map((it) => {
-        if (it.unidadeId !== unidadeId) return it;
-        const vendido = p.itens.find((x) => x.nome === it.nome);
-        if (!vendido) return it;
-        return { ...it, quantidade: Math.max(0, it.quantidade - (vendido.q || 1)) };
+        if (it.unidadeId !== unidadeId || !(it.nome in consumo)) return it;
+        return { ...it, quantidade: Math.max(0, it.quantidade - consumo[it.nome]) };
       }));
-      cmv = p.itens.reduce((s, x) => {
-        const it = estoque.find((e) => e.unidadeId === unidadeId && e.nome === x.nome);
-        const custo = it ? it.custo : (x.cmv || 0);
-        return s + custo * (x.q || 1);
+      cmv = Object.entries(consumo).reduce((s, [nome, qtd]) => {
+        const e = estoque.find((x) => x.unidadeId === unidadeId && x.nome === nome);
+        return s + (e ? e.custo * qtd : 0);
       }, 0);
+      // Fallback: nenhum insumo bateu no estoque → usa o CMV informado nos itens.
+      if (cmv === 0) cmv = p.itens.reduce((s, x) => s + (x.cmv || 0) * (x.q || 1), 0);
     }
     // Integração com o Financeiro: receita da venda (entrada) + CMV (custo direto).
     const caixa = contas.find((c) => c.unidadeId === unidadeId && /caixa/i.test(c.banco))?.id
@@ -744,7 +762,7 @@ export function StoreProvider({ children }) {
         id: it.id, unidadeId: it.unidadeId, nome: it.nome,
         cat: it.categoria || "Outros", preco: it.preco,
         emoji: it.emoji || "🛍️", cmv: it.custo || 0,
-        foto: it.foto || "", ativo: it.ativo,
+        foto: it.foto || "", ativo: it.ativo, ficha: it.ficha || [],
       }));
   const unidadesDe = (franqueadoId) => unidades.filter((u) => u.franqueadoId === franqueadoId);
 
