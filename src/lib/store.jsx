@@ -40,13 +40,13 @@ export const PERFIS = {
   master: {
     label: "Master (coworking)",
     cor: "#B8862F",
-    modules: ["dash", "equipe", "crm", "planos", "unidades", "salas", "patrimonio", "reservas", "corresp", "pdv", "catalogo", "estoque", "clientes", "chat", "financeiro", "boletos", "cobrancas", "notafiscal", "eventos", "auditoria"],
+    modules: ["dash", "equipe", "crm", "planos", "unidades", "salas", "patrimonio", "reservas", "corresp", "pdv", "kds", "catalogo", "estoque", "clientes", "chat", "financeiro", "boletos", "cobrancas", "notafiscal", "eventos", "auditoria"],
     landing: "dash",
   },
   recepcao: {
     label: "Recepção",
     cor: "#335C81",
-    modules: ["salas", "reservas", "pdv", "catalogo", "estoque", "crm", "corresp", "clientes", "chat"],
+    modules: ["salas", "reservas", "pdv", "kds", "catalogo", "estoque", "crm", "corresp", "clientes", "chat"],
     landing: "reservas",
   },
   financeiro: {

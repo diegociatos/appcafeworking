@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   LayoutDashboard, KanbanSquare, Building2, CalendarDays, Mail, Coffee,
   Users, Wallet, Mic2, MessageSquare, UserCircle, Settings,
-  Search, Bell, Menu, X, ChevronDown, Check, Store, Eye, LogOut, ShieldCheck, Package, Home, FileText, Barcode, Boxes, Landmark, Tags, DoorOpen, ScrollText,
+  Search, Bell, Menu, X, ChevronDown, Check, Store, Eye, LogOut, ShieldCheck, Package, Home, FileText, Barcode, Boxes, Landmark, Tags, DoorOpen, ScrollText, ChefHat,
 } from "lucide-react";
 import { C, sans, serif, fmt, shadow } from "./lib/theme.js";
 import { useStore, PERFIS } from "./lib/store.jsx";
@@ -36,6 +36,7 @@ import Planos from "./pages/Planos.jsx";
 import Salas from "./pages/Salas.jsx";
 import Configuracoes from "./pages/Configuracoes.jsx";
 import Auditoria from "./pages/Auditoria.jsx";
+import KDS from "./pages/KDS.jsx";
 
 const NAV = [
   { id: "dash", label: "Dashboard", icon: LayoutDashboard, group: "principal" },
@@ -50,6 +51,7 @@ const NAV = [
   { id: "reservas", label: "Reservas", icon: CalendarDays, group: "operacao" },
   { id: "corresp", label: "Correspondências", icon: Mail, group: "operacao" },
   { id: "pdv", label: "Cafeteria · PDV", icon: Coffee, group: "operacao" },
+  { id: "kds", label: "Cozinha · KDS", icon: ChefHat, group: "operacao" },
   { id: "catalogo", label: "Produtos e Serviços", icon: Package, group: "operacao" },
   { id: "estoque", label: "Estoque", icon: Boxes, group: "operacao" },
   { id: "eventos", label: "Eventos", icon: Mic2, group: "operacao" },
@@ -77,7 +79,7 @@ const PAGES = {
   dash: Dashboard, franqueados: Franqueados, crm: CRM, unidades: Unidades,
   reservas: Reservas, corresp: Correspondencias, pdv: PDV, clientes: Clientes,
   financeiro: Financeiro, boletos: Boletos, cobrancas: Cobrancas, notafiscal: NotaFiscal, estoque: Estoque, patrimonio: Patrimonio, eventos: Eventos, chat: Chat,
-  area: AreaCliente, equipe: Equipe, catalogo: Catalogo, planos: Planos, salas: Salas, config: Configuracoes, auditoria: Auditoria,
+  area: AreaCliente, equipe: Equipe, catalogo: Catalogo, planos: Planos, salas: Salas, config: Configuracoes, auditoria: Auditoria, kds: KDS,
   cli_inicio: AreaCliente, cli_reservar: AreaCliente, cli_cafe: AreaCliente,
   cli_faturas: AreaCliente, cli_docs: AreaCliente, cli_fiscal: AreaCliente, cli_chat: AreaCliente, cli_notif: AreaCliente,
 };
