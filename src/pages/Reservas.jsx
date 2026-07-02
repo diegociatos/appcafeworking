@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, CheckCircle2, CalendarOff, AlertCircle, Trash2, Smartphone, DollarSign } from "lucide-react";
+import { Plus, CheckCircle2, CalendarOff, AlertCircle, Trash2, Smartphone, DollarSign, Percent, CalendarClock, TrendingUp, LayoutGrid } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
 import { HORARIOS, DIAS } from "../lib/data.js";
@@ -29,8 +29,21 @@ export default function Reservas() {
   const salaIds = new Set(salasUnidade.map((s) => s.id));
   const reservasDoDia = reservas.filter((r) => r.dia === diaSel && salaIds.has(r.sala));
 
+  // KPIs premium do dia selecionado -----------------------------------------
+  const contagemDia = (i) => reservas.filter((r) => r.dia === i && salaIds.has(r.sala)).length;
+  const slotsTotais = Math.max(1, salasReservaveis.length * HORARIOS.length);
+  const horasOcupadas = reservasDoDia.reduce((s, r) => s + (r.dur || 1), 0);
+  const ocupacaoDia = Math.round((horasOcupadas / slotsTotais) * 100);
+  // Carga por horário (quantas salas ocupadas em cada faixa) → horário de pico.
+  const cargaHora = HORARIOS.map((_, hi) => reservasDoDia.filter((r) => r.inicio <= hi && hi < r.inicio + r.dur).length);
+  const cargaMax = Math.max(0, ...cargaHora);
+  const pico = cargaMax > 0 ? HORARIOS[cargaHora.indexOf(cargaMax)] : "—";
+  // Clique numa célula vazia → abre o modal já com sala + horário preenchidos.
+  const abrirNovaEm = (salaId, inicio) => setModal({ sala: salaId, inicio, dia: diaSel });
+
   return (
     <div>
+      <style>{`.cw-slot:hover{background:${C.tealPale};box-shadow:inset 0 0 0 1px ${C.tealLine};}`}</style>
       <PageHead
         title="Agenda de Salas"
         sub={`Agenda da unidade ${unidadeAtiva?.nome || ""} · disponibilidade por sala e horário.`}
@@ -40,27 +53,46 @@ export default function Reservas() {
           </Btn>
         }
       />
+      {salasReservaveis.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 14, marginBottom: 16 }}>
+          <MiniKpi label={`Ocupação · ${dias[diaSel]}`} valor={`${ocupacaoDia}%`} icon={Percent} cor={C.teal} />
+          <MiniKpi label="Reservas no dia" valor={reservasDoDia.length} icon={LayoutGrid} cor={C.cafe} />
+          <MiniKpi label="Horário de pico" valor={pico} sub={cargaMax > 0 ? `${cargaMax} sala${cargaMax > 1 ? "s" : ""} ocupada${cargaMax > 1 ? "s" : ""}` : "sem reservas"} icon={TrendingUp} cor={C.amber} />
+          <MiniKpi label="Salas reserváveis" valor={salasReservaveis.length} icon={CalendarClock} cor={C.blue} />
+        </div>
+      )}
       <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
-        {dias.map((d, i) => (
-          <button
-            key={i}
-            onClick={() => setDiaSel(i)}
-            className="cw-btn"
-            style={{
-              flex: 1,
-              minWidth: 90,
-              padding: "12px 0",
-              borderRadius: 12,
-              border: `1px solid ${diaSel === i ? C.teal : C.border}`,
-              background: diaSel === i ? C.teal : C.white,
-              color: diaSel === i ? "#fff" : C.text2,
-              fontWeight: 600,
-              fontSize: 14,
-            }}
-          >
-            {d}
-          </button>
-        ))}
+        {dias.map((d, i) => {
+          const n = contagemDia(i);
+          const ativo = diaSel === i;
+          return (
+            <button
+              key={i}
+              onClick={() => setDiaSel(i)}
+              className="cw-btn"
+              style={{
+                flex: 1,
+                minWidth: 90,
+                padding: "10px 0",
+                borderRadius: 12,
+                border: `1px solid ${ativo ? C.teal : C.border}`,
+                background: ativo ? C.teal : C.white,
+                color: ativo ? "#fff" : C.text2,
+                fontWeight: 600,
+                fontSize: 14,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 2,
+              }}
+            >
+              {d}
+              <span style={{ fontSize: 10.5, fontWeight: 600, color: ativo ? "rgba(255,255,255,.85)" : n > 0 ? C.teal : C.text4 }}>
+                {n > 0 ? `${n} reserva${n > 1 ? "s" : ""}` : "livre"}
+              </span>
+            </button>
+          );
+        })}
       </div>
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <div style={{ overflowX: "auto" }}>
@@ -119,7 +151,13 @@ export default function Reservas() {
                   </div>
                 </div>
                 {HORARIOS.map((_, hi) => (
-                  <div key={hi} style={{ borderLeft: `1px solid ${C.border2}` }} />
+                  <div
+                    key={hi}
+                    onClick={s.contratada ? undefined : () => abrirNovaEm(s.id, hi)}
+                    title={s.contratada ? undefined : `Reservar ${s.nome} às ${HORARIOS[hi]}`}
+                    className={s.contratada ? undefined : "cw-slot"}
+                    style={{ borderLeft: `1px solid ${C.border2}`, cursor: s.contratada ? "default" : "pointer" }}
+                  />
                 ))}
                 {s.contratada && (
                   <div
@@ -195,7 +233,9 @@ export default function Reservas() {
           salas={salasReservaveis}
           clientes={clientesDe(unidadeAtiva?.nome)}
           dias={dias}
-          diaInicial={diaSel}
+          diaInicial={modal.dia ?? diaSel}
+          salaInicial={modal.sala}
+          inicioInicial={modal.inicio}
           reservas={reservas}
           onClose={() => setModal(null)}
           onSave={async (nr) => {
@@ -228,6 +268,23 @@ export default function Reservas() {
         </Modal>
       )}
     </div>
+  );
+}
+
+function MiniKpi({ label, valor, sub, icon: Icon, cor }) {
+  return (
+    <Card style={{ padding: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 12, color: C.text3 }}>{label}</div>
+          <div style={{ fontFamily: serif, fontSize: 22, color: C.text, marginTop: 3 }}>{valor}</div>
+          {sub && <div style={{ fontSize: 11, color: C.text4, marginTop: 1 }}>{sub}</div>}
+        </div>
+        <div style={{ width: 38, height: 38, borderRadius: 11, background: `${cor}16`, display: "grid", placeItems: "center", flexShrink: 0 }}>
+          <Icon size={18} color={cor} />
+        </div>
+      </div>
+    </Card>
   );
 }
 
@@ -276,13 +333,13 @@ function ReservaDetalhe({ reserva, sala, dias, onComplemento, onCancelar }) {
   );
 }
 
-function NovaReservaModal({ salas, clientes, dias, diaInicial, reservas, onClose, onSave }) {
+function NovaReservaModal({ salas, clientes, dias, diaInicial, salaInicial, inicioInicial, reservas, onClose, onSave }) {
   const [f, setF] = useState({
-    sala: salas[0]?.id || "",
+    sala: (salaInicial && salas.some((s) => s.id === salaInicial) ? salaInicial : salas[0]?.id) || "",
     modo: clientes.length ? "cadastrado" : "avulso",
     clienteId: clientes[0]?.id || "",
     nome: "", telefone: "", email: "",
-    dia: diaInicial || 0, inicio: 2, dur: 1, base: null,
+    dia: diaInicial || 0, inicio: inicioInicial ?? 2, dur: 1, base: null,
   });
   const salaSel = salas.find((s) => s.id === f.sala);
   const compart = (salaSel?.bases || 0) > 0; // sala compartilhada → reserva por base
