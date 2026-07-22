@@ -109,7 +109,7 @@ export async function fetchAppState() {
 
 // Escrita que LANÇA em falha (para o sync engine fazer retry/backoff e sinalizar
 // erro). Sem backend/sessão é no-op silencioso (modo demo trata antes).
-async function writeOrThrow(pathQuery, method, body, prefer = "return=minimal") {
+async function writeOrThrow(pathQuery, method, body, prefer = "return=minimal", opts = {}) {
   if (!URL || !ANON) return;
   const token = await getAccessToken();
   if (!token) throw new Error("Sessão indisponível");
@@ -117,17 +117,21 @@ async function writeOrThrow(pathQuery, method, body, prefer = "return=minimal") 
     method,
     headers: { apikey: ANON, authorization: `Bearer ${token}`, "content-type": "application/json", Prefer: prefer },
     body: body ? JSON.stringify(body) : undefined,
+    // keepalive: mantém a requisição viva quando a página está sendo descarregada
+    // (flush do debounce no unload). Só para writes pequenos como app_state.
+    keepalive: opts.keepalive === true,
   });
   if (!res.ok) throw new Error(`${method} ${res.status}: ${(await res.text().catch(() => "")).slice(0, 140)}`);
 }
 
 /** Upsert de um item (doc JSON) por (unidade_id, entity, item_id). Lança em falha. */
-export async function putAppState(entity, unidadeId, itemId, doc) {
+export async function putAppState(entity, unidadeId, itemId, doc, opts) {
   return writeOrThrow(
     "app_state?on_conflict=unidade_id,entity,item_id",
     "POST",
     { unidade_id: unidadeId, entity, item_id: String(itemId), doc },
     "resolution=merge-duplicates,return=minimal",
+    opts,
   );
 }
 /** Remove um item. Lança em falha. */

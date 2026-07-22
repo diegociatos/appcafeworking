@@ -111,18 +111,45 @@ export function StoreProvider({ children }) {
   const _agendarPut = (entity, unidadeId, id, item) => {
     const k = _syncKey(entity, id);
     const ant = syncTimersRef.current.get(k);
-    if (ant) clearTimeout(ant);
+    if (ant) clearTimeout(ant.t);
     const t = setTimeout(() => {
       syncTimersRef.current.delete(k);
       _comBackoff(() => putAppState(entity, unidadeId, id, item), entity, unidadeId, id);
     }, 600);
-    syncTimersRef.current.set(k, t);
+    // Guarda o timer + como gravar IMEDIATAMENTE (keepalive) caso a página seja
+    // recarregada/fechada antes do debounce — senão a escrita se perde ("some
+    // após F5"). O flush é disparado em visibilitychange(hidden)/pagehide.
+    syncTimersRef.current.set(k, {
+      t,
+      flush: () => putAppState(entity, unidadeId, id, item, { keepalive: true }).catch(() => {}),
+    });
   };
   const _cancelarPut = (entity, id) => {
     const k = _syncKey(entity, id);
-    const t = syncTimersRef.current.get(k);
-    if (t) { clearTimeout(t); syncTimersRef.current.delete(k); }
+    const v = syncTimersRef.current.get(k);
+    if (v) { clearTimeout(v.t); syncTimersRef.current.delete(k); }
   };
+  // Rede de segurança: ao ocultar/fechar/recarregar a página, grava na hora
+  // (keepalive) tudo que ainda estava no debounce. Cobre F5, fechar aba e
+  // navegar — o CafeWorking não tem cache local, então sem isso a última
+  // edição não sincronizada some. Deletes já são imediatos (não entram aqui).
+  useEffect(() => {
+    if (!REAL) return;
+    const flush = () => {
+      for (const [, v] of syncTimersRef.current) {
+        clearTimeout(v.t);
+        try { v.flush?.(); } catch (_) { /* ignore */ }
+      }
+      syncTimersRef.current.clear();
+    };
+    const onVis = () => { if (document.visibilityState === "hidden") flush(); };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pagehide", flush);
+    };
+  }, []);
 
   const useSync = (entity, list) => useEffect(() => {
     if (!REAL) return;
