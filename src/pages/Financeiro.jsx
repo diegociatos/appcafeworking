@@ -741,22 +741,30 @@ function RenovarForm({ contrato, onSalvar }) {
 // ===== EXTRATO (por conta, com saldo corrente) =============================
 function Extrato({ contas, lancamentos, onAbrir }) {
   const [contaSel, setContaSel] = useState(contas[0]?.id || "");
+  const [mesSel, setMesSel] = useState(MES_ATUAL); // 0..11 ou "todos" (ano inteiro)
   const conta = contas.find((c) => c.id === contaSel);
 
   if (!conta) return <Card><Empty icon={Wallet} title="Nenhuma conta" sub="Cadastre uma conta em Bancos." /></Card>;
 
-  // Extrato do mês corrente (igual um extrato bancário por período)
-  const movs = lancamentos
-    .filter((l) => l.contaId === contaSel && l.status === "pago" && l.mes === MES_ATUAL)
+  // Extrato por período (mês selecionado ou ano inteiro), estilo extrato bancário.
+  const anoTodo = mesSel === "todos";
+  const pagosConta = lancamentos.filter((l) => l.contaId === contaSel && l.status === "pago");
+  const netMes = (m) => pagosConta.filter((l) => l.mes === m).reduce((s, l) => s + (l.tipo === "entrada" ? l.valor : -l.valor), 0);
+  const movs = (anoTodo ? pagosConta : pagosConta.filter((l) => l.mes === mesSel))
     .slice()
-    .sort((a, b) => diaDe(a.data) - diaDe(b.data));
-  const liquido = movs.reduce((s, l) => s + (l.tipo === "entrada" ? l.valor : -l.valor), 0);
-  const saldoAnterior = conta.saldo - liquido;
+    .sort((a, b) => (a.mes - b.mes) || (diaDe(a.data) - diaDe(b.data)));
+  // Saldo de abertura do período: parte do saldo atual e desconta o próprio
+  // período em diante — assim o mês corrente segue idêntico e meses passados
+  // fecham com o saldo histórico correto.
+  let desde = 0;
+  for (let k = anoTodo ? 0 : mesSel; k <= 11; k++) desde += netMes(k);
+  const saldoAnterior = conta.saldo - desde;
   let run = saldoAnterior;
   const linhas = movs.map((l) => {
     run += l.tipo === "entrada" ? l.valor : -l.valor;
     return { ...l, saldoCorrente: run };
   });
+  const saldoFimPeriodo = run;
   const previstos = lancamentos.filter((l) => l.contaId === contaSel && l.status === "previsto");
 
   const col = "78px 110px 110px 130px 1fr";
@@ -778,14 +786,21 @@ function Extrato({ contas, lancamentos, onAbrir }) {
       </div>
 
       <Card style={{ padding: 0, overflow: "hidden" }}>
-        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border2}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border2}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
           <div>
             <div style={{ fontFamily: serif, fontSize: 19 }}>{conta.banco}</div>
-            <div style={{ fontSize: 12, color: C.text3 }}>{conta.tipo} · extrato de {MESES[MES_ATUAL]}</div>
+            <div style={{ fontSize: 12, color: C.text3 }}>{conta.tipo} · extrato de {anoTodo ? `${ANO_ATUAL} (ano todo)` : `${MESES[mesSel]}/${ANO_ATUAL}`}</div>
           </div>
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 11, color: C.text3 }}>Saldo atual</div>
-            <div style={{ fontFamily: serif, fontSize: 22, color: conta.saldo >= 0 ? C.teal : C.red }}>{fmt(conta.saldo)}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <select value={String(mesSel)} onChange={(e) => setMesSel(e.target.value === "todos" ? "todos" : +e.target.value)}
+              style={{ ...inp, width: "auto", padding: "8px 12px", fontSize: 13 }}>
+              <option value="todos">Ano todo ({ANO_ATUAL})</option>
+              {MESES.map((m, i) => <option key={i} value={i}>{m}/{ANO_ATUAL}</option>)}
+            </select>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 11, color: C.text3 }}>Saldo atual</div>
+              <div style={{ fontFamily: serif, fontSize: 22, color: conta.saldo >= 0 ? C.teal : C.red }}>{fmt(conta.saldo)}</div>
+            </div>
           </div>
         </div>
 
@@ -820,14 +835,14 @@ function Extrato({ contas, lancamentos, onAbrir }) {
           </div>
         ))}
 
-        {linhas.length === 0 && <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: C.text4 }}>Nenhuma movimentação realizada nesta conta.</div>}
+        {linhas.length === 0 && <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: C.text4 }}>Nenhuma movimentação em {anoTodo ? ANO_ATUAL : `${MESES[mesSel]}/${ANO_ATUAL}`} nesta conta. Troque o mês acima para procurar em outro período.</div>}
 
-        {/* saldo final */}
+        {/* saldo final do período */}
         <div style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "13px 20px", background: C.cream, fontWeight: 700 }}>
           <Cel />
           <Cel /><Cel />
-          <Cel style={{ textAlign: "right", fontFamily: serif, fontSize: 16, color: C.teal }}>{fmt(conta.saldo)}</Cel>
-          <Cel style={{ fontFamily: serif, fontSize: 15 }}>Saldo final</Cel>
+          <Cel style={{ textAlign: "right", fontFamily: serif, fontSize: 16, color: saldoFimPeriodo >= 0 ? C.teal : C.red }}>{fmt(saldoFimPeriodo)}</Cel>
+          <Cel style={{ fontFamily: serif, fontSize: 15 }}>Saldo ao fim {anoTodo ? `de ${ANO_ATUAL}` : `de ${MESES[mesSel]}`}</Cel>
         </div>
       </Card>
 
