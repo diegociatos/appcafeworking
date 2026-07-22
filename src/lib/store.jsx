@@ -516,6 +516,18 @@ export function StoreProvider({ children }) {
     const mes = l.mes != null ? l.mes : parseDateToCompetencia(l.data).mes;
     setLancamentos((ls) => [...ls, { id: "lc" + Date.now(), unidadeId, status: "pago", ...l, mes }]);
   };
+  // Importação em lote (planilha de fluxo de caixa). Um único setState → cada
+  // item ganha id/unidadeId e persiste pelo useSync. Retorna quantos entraram.
+  const addLancamentosBulk = (unidadeId, lista) => {
+    if (!unidadeId || !lista?.length) return 0;
+    const base = Date.now();
+    const novos = lista.map((l, i) => {
+      const mes = l.mes != null ? l.mes : parseDateToCompetencia(l.data).mes;
+      return { id: `lc${base}_${i}`, unidadeId, status: "pago", ...l, mes };
+    });
+    setLancamentos((ls) => [...ls, ...novos]);
+    return novos.length;
+  };
   // Conta a pagar/receber recorrente: provisiona um lançamento "previsto" por mês.
   // boletoCfg (opcional, só p/ entrada): { gerar, bankAccountId, sacado, sacadoDocumento }
   // → emite 1 boleto por parcela e vincula lançamento ↔ boleto.
@@ -1127,7 +1139,7 @@ export function StoreProvider({ children }) {
       salasDe, produtosDe, unidadesDe,
       contas, lancamentos, catalogo, categorias,
       addConta, updateConta, removeConta, contasDe,
-      addLancamento, addContaRecorrente, updateLancamento, removeLancamento, lancamentosDe,
+      addLancamento, addLancamentosBulk, addContaRecorrente, updateLancamento, removeLancamento, lancamentosDe,
       addItemCatalogo, updateItemCatalogo, removeItemCatalogo, catalogoDe,
       addCategoria, updateCategoria, removeCategoria,
       bankAccounts, boletos,

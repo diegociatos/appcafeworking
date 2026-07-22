@@ -2,12 +2,13 @@ import { useState } from "react";
 import {
   Wallet, TrendingUp, Landmark, BarChart3, FileText, Tags,
   Plus, Edit3, Trash2, Check, X, ArrowUpRight, ArrowDownRight, Receipt, Paperclip, Download, Barcode, Copy, QrCode,
-  FileSignature, RefreshCw, AlertTriangle,
+  FileSignature, RefreshCw, AlertTriangle, Upload, CheckCircle2, AlertCircle,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, FileInput } from "../components/ui.jsx";
 import { C, serif, sans, fmt, fmtShort, inp } from "../lib/theme.js";
 import { useStore, SECOES } from "../lib/store.jsx";
 import { getCurrentCompetencia } from "../lib/dateUtils.js";
+import { gerarModeloFluxo, lerPlanilhaFluxo, validarLinhas } from "../lib/fluxoImport.js";
 
 const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 // Competência atual a partir da data real (sem datas fixas).
@@ -43,6 +44,7 @@ export default function Financeiro({ finTab }) {
   const [contaModal, setContaModal] = useState(null);
   const [contaPRModal, setContaPRModal] = useState(null);
   const [detalheLanc, setDetalheLanc] = useState(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   const contas = store.contasDe(activeUnit);
   const lancamentos = store.lancamentosDe(activeUnit).slice().sort((a, b) => b.mes - a.mes || diaDe(b.data) - diaDe(a.data));
@@ -68,9 +70,14 @@ export default function Financeiro({ finTab }) {
         title={secaoAtual ? `Financeiro · ${secaoAtual.label}` : "Financeiro"}
         sub={`Gestão financeira da unidade ${unidadeAtiva?.nome || ""} · fluxo de caixa, contas, DRE e bancos.`}
         action={
-          <Btn onClick={() => setLancModal({})}>
-            <Plus size={16} /> Novo lançamento
-          </Btn>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Btn variant="soft" onClick={() => setImportOpen(true)}>
+              <Upload size={16} /> Importar Excel
+            </Btn>
+            <Btn onClick={() => setLancModal({})}>
+              <Plus size={16} /> Novo lançamento
+            </Btn>
+          </div>
         }
       />
 
@@ -109,6 +116,15 @@ export default function Financeiro({ finTab }) {
             onSave={(d) => { if (lancModal.id) store.updateLancamento(lancModal.id, d); else store.addLancamento(activeUnit, d); setLancModal(null); }} />
         </Modal>
       )}
+      {importOpen && (
+        <ImportarFluxoModal
+          contas={contas}
+          categorias={categorias}
+          unidadeNome={unidadeAtiva?.nome || ""}
+          onClose={() => setImportOpen(false)}
+          onImportar={(validos) => store.addLancamentosBulk(activeUnit, validos)}
+        />
+      )}
       {contaModal && (
         <Modal title={contaModal.id ? "Editar conta" : "Nova conta bancária"} onClose={() => setContaModal(null)}>
           <ContaForm inicial={contaModal} onSave={(d) => { if (contaModal.id) store.updateConta(contaModal.id, d); else store.addConta(activeUnit, d); setContaModal(null); }} />
@@ -137,6 +153,110 @@ export default function Financeiro({ finTab }) {
         />
       )}
     </div>
+  );
+}
+
+// ===== IMPORTAÇÃO DE FLUXO DE CAIXA (Excel/CSV) ============================
+function ImportarFluxoModal({ contas, categorias, unidadeNome, onClose, onImportar }) {
+  const [estado, setEstado] = useState("inicial"); // inicial | lendo | previa | importado | erro
+  const [previa, setPrevia] = useState({ validos: [], erros: [] });
+  const [erroMsg, setErroMsg] = useState("");
+  const [nomeArquivo, setNomeArquivo] = useState("");
+  const [qtd, setQtd] = useState(0);
+
+  const baixarModelo = () =>
+    gerarModeloFluxo({ contas, categorias, unidadeNome }).catch((e) => setErroMsg("Não foi possível gerar o modelo: " + (e?.message || e)));
+
+  const aoEscolher = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // permite reenviar o mesmo arquivo
+    if (!file) return;
+    setNomeArquivo(file.name);
+    setErroMsg("");
+    setEstado("lendo");
+    try {
+      const rows = await lerPlanilhaFluxo(file);
+      setPrevia(validarLinhas(rows, { contas, categorias }));
+      setEstado("previa");
+    } catch (err) {
+      setErroMsg("Não consegui ler a planilha. Confira se é um .xlsx/.csv válido e se a aba se chama \"Lançamentos\". (" + (err?.message || err) + ")");
+      setEstado("erro");
+    }
+  };
+
+  const confirmar = () => {
+    const n = onImportar(previa.validos) || previa.validos.length;
+    setQtd(n);
+    setEstado("importado");
+  };
+
+  if (estado === "importado") {
+    return (
+      <Modal title="Importar Fluxo de Caixa" onClose={onClose} maxWidth={620}>
+        <div style={{ textAlign: "center", padding: "8px 4px" }}>
+          <CheckCircle2 size={40} color={C.green} style={{ marginBottom: 10 }} />
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>{qtd} lançamento(s) importado(s)</div>
+          <div style={{ fontSize: 13, color: C.text3, marginBottom: 16 }}>Já aparecem no Fluxo de caixa e na Visão geral, no mês de cada data.</div>
+          <Btn style={{ justifyContent: "center", width: "100%" }} onClick={onClose}>Concluir</Btn>
+        </div>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal title="Importar Fluxo de Caixa (Excel)" onClose={onClose} maxWidth={620}>
+      <div style={{ fontSize: 13, color: C.text2, marginBottom: 14 }}>
+        <b>1.</b> Baixe o modelo, preencha e salve. <b>2.</b> Envie o arquivo — validamos tudo antes de importar. A aba <b>Instruções</b> do modelo lista as contas e categorias válidas desta unidade.
+      </div>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+        <Btn variant="soft" onClick={baixarModelo}><Download size={16} /> Baixar modelo (.xlsx)</Btn>
+        <label className="cw-btn" style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 16px", borderRadius: 12, fontWeight: 600, fontSize: 14, background: C.cafe, color: "#fff", cursor: "pointer" }}>
+          <Upload size={16} /> {estado === "lendo" ? "Lendo…" : "Escolher planilha"}
+          <input type="file" accept=".xlsx,.xls,.csv" onChange={aoEscolher} style={{ display: "none" }} />
+        </label>
+      </div>
+
+      {nomeArquivo && <div style={{ fontSize: 12, color: C.text3, marginBottom: 10 }}>Arquivo: <b>{nomeArquivo}</b></div>}
+
+      {erroMsg && (
+        <div style={{ display: "flex", gap: 8, background: C.redPale, color: C.red, borderRadius: 10, padding: "10px 12px", fontSize: 13, marginBottom: 12 }}>
+          <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} /> <span>{erroMsg}</span>
+        </div>
+      )}
+
+      {estado === "previa" && (
+        <>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+            <Badge color={C.green}>{previa.validos.length} válido(s)</Badge>
+            {previa.erros.length > 0 && <Badge color={C.red}>{previa.erros.length} com erro</Badge>}
+          </div>
+
+          {previa.erros.length > 0 && (
+            <div style={{ maxHeight: 190, overflowY: "auto", border: `1px solid ${C.border2}`, borderRadius: 10, marginBottom: 12 }}>
+              {previa.erros.map((e, i) => (
+                <div key={i} style={{ padding: "8px 12px", borderBottom: i < previa.erros.length - 1 ? `1px solid ${C.border2}` : "none", fontSize: 12.5 }}>
+                  <b>Linha {e.linha}</b>{e.descricao ? ` · ${e.descricao}` : ""}: <span style={{ color: C.red }}>{e.motivo}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {previa.validos.length > 0 ? (
+            <>
+              <Btn style={{ width: "100%", justifyContent: "center" }} onClick={confirmar}>
+                <Check size={16} /> Importar {previa.validos.length} lançamento(s)
+              </Btn>
+              {previa.erros.length > 0 && (
+                <div style={{ fontSize: 11.5, color: C.text4, marginTop: 8, textAlign: "center" }}>As linhas com erro serão ignoradas.</div>
+              )}
+            </>
+          ) : (
+            <div style={{ fontSize: 13, color: C.text3, textAlign: "center", padding: "6px 0" }}>Nenhuma linha válida. Corrija os erros acima e reenvie a planilha.</div>
+          )}
+        </>
+      )}
+    </Modal>
   );
 }
 
