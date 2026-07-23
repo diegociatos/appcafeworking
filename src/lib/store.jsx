@@ -88,6 +88,7 @@ export function StoreProvider({ children }) {
   const syncedRef = useRef({});          // entity -> Map(id -> { unidadeId, json })
   const syncTimersRef = useRef(new Map()); // "entity:id" -> timeoutId (debounce)
   const [syncErrors, setSyncErrors] = useState([]); // [{ entity, id, unidadeId, erro }]
+  const planoContasHidratadoRef = useRef(!REAL); // só sincroniza o plano de contas após hidratar (evita sobrescrever com o seed)
 
   const _syncKey = (entity, id) => entity + ":" + id;
   const _markSyncErr = (entity, id, unidadeId, erro) =>
@@ -189,6 +190,16 @@ export function StoreProvider({ children }) {
   // fica só em memória.
 
   const [activeUnit, setActiveUnit] = useState(UNIDADES[0].id);
+
+  // Plano de contas (categorias) é global e não tem unidadeId, então não entra
+  // no useSync por-item. Persistimos o array inteiro como um doc de app_state
+  // (reusa o _agendarPut → debounce + flush no unload). Só sincroniza depois de
+  // hidratar, para não sobrescrever o que já está salvo com o seed padrão.
+  useEffect(() => {
+    if (!REAL || !planoContasHidratadoRef.current || !activeUnit) return;
+    _agendarPut("planoContas", activeUnit, "geral", { itens: categorias });
+  }, [categorias, activeUnit]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [viewAs, setViewAs] = useState(null); // id do franqueado, ou null = franqueador
   const [perfil, setPerfilState] = useState("franqueador"); // perfil de acesso previewado
   const [meuPerfil, setMeuPerfil] = useState({
@@ -1082,6 +1093,8 @@ export function StoreProvider({ children }) {
       apply("correspondencias", setCorrespondencias); apply("pedidos", setPedidos);
       apply("conversas", setConversas); apply("leads", setLeads); apply("eventos", setEventos);
       apply("planos", setPlanos); apply("recibos", setRecibos);
+      // Plano de contas (categorias) — doc único; carrega se houver salvo.
+      if (byEntity.planoContas?.[0]?.itens?.length) setCategorias(byEntity.planoContas[0].itens);
       // creditLedger NÃO vem do app_state (migrado para a tabela relacional).
       // Backfill: as salas vivem no app_state; garante que existam também na
       // tabela relacional (a função criar_reserva_segura valida a sala lá).
@@ -1105,6 +1118,8 @@ export function StoreProvider({ children }) {
     }
     // Créditos do plano (ledger relacional). Substitui qualquer estado anterior.
     if (creditos) setCreditLedger(creditos);
+    // A partir daqui o plano de contas pode sincronizar (já hidratou).
+    planoContasHidratadoRef.current = true;
   };
 
   // Unidades visíveis no modo atual
