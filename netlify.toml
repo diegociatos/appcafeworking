@@ -6,12 +6,13 @@
   command = "npm run build"
   publish = "dist"
 
-  # ECONOMIA DE BUILD: só rebuilda quando o FRONT-END muda. Commits que mexem
-  # só em supabase/ (Edge Functions/SQL), *.md, docs ou memória NÃO disparam
-  # build (o site não muda). A Netlify cancela o build quando este comando
-  # retorna 0 (= sem mudanças nos caminhos do front-end entre o último build
-  # publicado e o commit atual).
-  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- src public index.html package.json package-lock.json vite.config.js netlify.toml"
+  # NOTA (2026-07-22): a regra `ignore` foi REMOVIDA. Ela usava
+  #   git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- src public index.html ...
+  # e estava CANCELANDO builds legítimos de front-end ("Canceled build due to no
+  # content change") — commits com mudança em src/ ficavam sem publicar. Sem a
+  # regra, todo push pra main builda e publica (o build Vite leva ~15-20s).
+  # Se quiser reativar a economia de build no futuro, teste que o
+  # $CACHED_COMMIT_REF esteja disponível no clone raso da Netlify antes.
 
 [build.environment]
   NODE_VERSION = "22"

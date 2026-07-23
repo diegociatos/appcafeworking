@@ -1001,7 +1001,8 @@ function calcDRE(lancs, categorias) {
     const cat = categorias.find((c) => c.nome === l.categoria);
     const key = cat?.secao || (l.tipo === "entrada" ? "receita_bruta" : "despesa_operacional");
     const b = sec[key] || sec.despesa_operacional;
-    const signed = key === "movimentacao" ? (l.tipo === "entrada" ? l.valor : -l.valor) : l.valor;
+    const abaixoLinha = key === "movimentacao" || key === "investimentos";
+    const signed = abaixoLinha ? (l.tipo === "entrada" ? l.valor : -l.valor) : l.valor;
     b.total += signed;
     const s = l.subcategoria || "—";
     b.subs[s] = (b.subs[s] || 0) + signed;
@@ -1013,7 +1014,7 @@ function calcDRE(lancs, categorias) {
   const lucroBruto = recLiq - cd;
   const dop = sec.despesa_operacional.total;
   const lucroLiq = lucroBruto - dop;
-  return { sec, rb, trib, recLiq, cd, lucroBruto, dop, lucroLiq, mov: sec.movimentacao.total };
+  return { sec, rb, trib, recLiq, cd, lucroBruto, dop, lucroLiq, inv: sec.investimentos.total, mov: sec.movimentacao.total };
 }
 
 function DRE({ lancamentos, categorias }) {
@@ -1081,6 +1082,7 @@ function DRE({ lancamentos, categorias }) {
       { label: "= Lucro Bruto", get: (d) => d.lucroBruto, t: "b" },
       { label: "(−) Despesas Operacionais", get: (d) => -d.dop, t: "n" },
       { label: "= Lucro Líquido", get: (d) => d.lucroLiq, t: "f" },
+      { label: "Investimentos/Dividendos", get: (d) => d.inv, t: "m" },
       { label: "Conta Movimentação", get: (d) => d.mov, t: "m" },
     ];
     const grid = `220px repeat(${MESES.length + 1}, minmax(74px,1fr))`;
@@ -1149,6 +1151,7 @@ function DRE({ lancamentos, categorias }) {
       <div style={{ textAlign: "right", fontSize: 12.5, color: C.text3, marginBottom: 18 }}>
         Margem líquida: <b style={{ color: dre.lucroLiq >= 0 ? C.green : C.red }}>{margem.toFixed(1)}%</b>
       </div>
+      <Secao titulo="INVESTIMENTOS / DIVIDENDOS (não afeta o resultado)" total={dre.inv} subs={dre.sec.investimentos.subs} cor={C.text3} sinal="" />
       <Secao titulo="CONTA MOVIMENTAÇÃO (não afeta o resultado)" total={dre.mov} subs={dre.sec.movimentacao.subs} cor={C.text3} sinal="" />
     </Card>
   );
@@ -1157,7 +1160,7 @@ function DRE({ lancamentos, categorias }) {
 // ===== CATEGORIAS ==========================================================
 function Categorias({ categorias, store }) {
   const [modal, setModal] = useState(null);
-  const corSecao = (k) => (k === "receita_bruta" ? C.green : k === "movimentacao" ? C.text3 : C.red);
+  const corSecao = (k) => (k === "receita_bruta" ? C.green : (k === "movimentacao" || k === "investimentos") ? C.text3 : C.red);
 
   return (
     <>

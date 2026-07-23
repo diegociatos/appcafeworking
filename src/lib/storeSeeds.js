@@ -97,6 +97,8 @@ export const SECOES = [
   { key: "tributos", label: "Tributos", tipo: "saida" },
   { key: "custo_direto", label: "Custo Direto", tipo: "saida" },
   { key: "despesa_operacional", label: "Despesas Operacionais", tipo: "saida" },
+  // Abaixo da linha do resultado (não afetam o Lucro Líquido):
+  { key: "investimentos", label: "Investimentos/Dividendos", tipo: "ambos" },
   { key: "movimentacao", label: "Conta Movimentação", tipo: "ambos" },
 ];
 
@@ -106,6 +108,7 @@ export const seedCategorias = [
   { id: "cat_trib", secao: "tributos", nome: "Tributos", subs: ["Simples Nacional", "ISS", "Taxas"] },
   { id: "cat_cd", secao: "custo_direto", nome: "Custo Direto", subs: ["Insumos cafeteria", "Comissões", "Material de consumo"] },
   { id: "cat_do", secao: "despesa_operacional", nome: "Despesas Operacionais", subs: ["Aluguel do imóvel", "Folha de pagamento", "Energia e água", "Internet", "Marketing", "Limpeza"] },
+  { id: "cat_inv", secao: "investimentos", nome: "Investimentos/Dividendos", subs: ["Dividendos (distribuição de lucros)", "Aplicação financeira", "Resgate de aplicação", "Compra de FII/Ações", "Venda de FII/Ações", "Rendimentos de aplicações", "Compra de equipamentos"] },
   { id: "cat_mov", secao: "movimentacao", nome: "Conta Movimentação", subs: ["Transferência entre contas", "Aporte de sócio", "Retirada de sócio", "Empréstimo"] },
 ];
 
