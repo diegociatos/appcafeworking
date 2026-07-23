@@ -1104,16 +1104,27 @@ export function StoreProvider({ children }) {
       apply("correspondencias", setCorrespondencias); apply("pedidos", setPedidos);
       apply("conversas", setConversas); apply("leads", setLeads); apply("eventos", setEventos);
       apply("planos", setPlanos); apply("recibos", setRecibos);
-      // Docs globais (doc único). Plano de contas: mescla categorias-padrão novas
-      // que ainda não existam no doc salvo (ex.: seção nova) preservando as customizações.
-      if (byEntity.planoContas?.[0]?.itens?.length) {
-        const salvos = byEntity.planoContas[0].itens;
+      // Docs globais (doc único). PREFERE o doc da unidade REAL — nunca um id
+      // seed órfão (ex.: "lux"), que teria os padrões e apagaria as customizações.
+      const seedUnitIds = new Set(UNIDADES.map((u) => u.id));
+      const pickDocGlobal = (entity) => {
+        const rows = appState.filter((r) => r.entity === entity);
+        if (!rows.length) return null;
+        return (rows.find((r) => !seedUnitIds.has(r.unidade_id)) || rows[0]).doc;
+      };
+      // Plano de contas: mescla categorias-padrão novas que ainda não existam no
+      // doc salvo (ex.: seção nova) preservando as customizações do usuário.
+      const pcDoc = pickDocGlobal("planoContas");
+      if (pcDoc?.itens?.length) {
+        const salvos = pcDoc.itens;
         const ids = new Set(salvos.map((c) => c.id));
         const faltantes = seedCategorias.filter((s) => !ids.has(s.id));
         setCategorias(faltantes.length ? [...salvos, ...faltantes] : salvos);
       }
-      if (byEntity.crmEtapas?.[0]?.itens?.length) setCrmEtapas(byEntity.crmEtapas[0].itens);
-      if (byEntity.crmOrigens?.[0]?.itens?.length) setCrmOrigens(byEntity.crmOrigens[0].itens);
+      const ceDoc = pickDocGlobal("crmEtapas");
+      if (ceDoc?.itens?.length) setCrmEtapas(ceDoc.itens);
+      const coDoc = pickDocGlobal("crmOrigens");
+      if (coDoc?.itens?.length) setCrmOrigens(coDoc.itens);
       // creditLedger NÃO vem do app_state (migrado para a tabela relacional).
       // Backfill: as salas vivem no app_state; garante que existam também na
       // tabela relacional (a função criar_reserva_segura valida a sala lá).
