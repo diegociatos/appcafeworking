@@ -1028,7 +1028,7 @@ function calcDRE(lancs, categorias) {
 
 function DRE({ lancamentos, categorias }) {
   const [regime, setRegime] = useState("competencia");
-  const [visao, setVisao] = useState("mes");
+  const [visao, setVisao] = useState("ano"); // abre no ano todo (senão o mês atual pode estar vazio)
   const [mesSel, setMesSel] = useState(MES_ATUAL);
   const [triSel, setTriSel] = useState(1);
 

@@ -195,16 +195,19 @@ export function StoreProvider({ children }) {
   // cada um como um doc único de app_state (reusa o _agendarPut → debounce +
   // flush no unload). Só sincroniza depois de hidratar, para não sobrescrever o
   // que já está salvo com o seed padrão.
+  // Só sincroniza sob uma unidade REAL (hidratada), nunca sob o seed default
+  // (ex.: "lux" antes do login/enterViewAs) — senão cria docs órfãos.
+  const unidadeRealAtiva = () => unidades.some((u) => u.id === activeUnit);
   useEffect(() => {
-    if (!REAL || !docsGlobaisHidratadosRef.current || !activeUnit) return;
+    if (!REAL || !docsGlobaisHidratadosRef.current || !unidadeRealAtiva()) return;
     _agendarPut("planoContas", activeUnit, "geral", { itens: categorias });
   }, [categorias, activeUnit]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (!REAL || !docsGlobaisHidratadosRef.current || !activeUnit) return;
+    if (!REAL || !docsGlobaisHidratadosRef.current || !unidadeRealAtiva()) return;
     _agendarPut("crmEtapas", activeUnit, "geral", { itens: crmEtapas });
   }, [crmEtapas, activeUnit]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (!REAL || !docsGlobaisHidratadosRef.current || !activeUnit) return;
+    if (!REAL || !docsGlobaisHidratadosRef.current || !unidadeRealAtiva()) return;
     _agendarPut("crmOrigens", activeUnit, "geral", { itens: crmOrigens });
   }, [crmOrigens, activeUnit]); // eslint-disable-line react-hooks/exhaustive-deps
 
