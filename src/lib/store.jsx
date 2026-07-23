@@ -198,18 +198,15 @@ export function StoreProvider({ children }) {
   // Só sincroniza sob uma unidade REAL (hidratada), nunca sob o seed default
   // (ex.: "lux" antes do login/enterViewAs) — senão cria docs órfãos.
   const unidadeRealAtiva = () => unidades.some((u) => u.id === activeUnit);
-  useEffect(() => {
+  // Grava IMEDIATAMENTE (sem debounce) — docs globais mudam pouco e não podem
+  // se perder por corrida de F5. _comBackoff já traz retry/backoff.
+  const _gravarDocGlobal = (entity, doc) => {
     if (!REAL || !docsGlobaisHidratadosRef.current || !unidadeRealAtiva()) return;
-    _agendarPut("planoContas", activeUnit, "geral", { itens: categorias });
-  }, [categorias, activeUnit]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (!REAL || !docsGlobaisHidratadosRef.current || !unidadeRealAtiva()) return;
-    _agendarPut("crmEtapas", activeUnit, "geral", { itens: crmEtapas });
-  }, [crmEtapas, activeUnit]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (!REAL || !docsGlobaisHidratadosRef.current || !unidadeRealAtiva()) return;
-    _agendarPut("crmOrigens", activeUnit, "geral", { itens: crmOrigens });
-  }, [crmOrigens, activeUnit]); // eslint-disable-line react-hooks/exhaustive-deps
+    _comBackoff(() => putAppState(entity, activeUnit, "geral", doc), entity, activeUnit, "geral");
+  };
+  useEffect(() => { _gravarDocGlobal("planoContas", { itens: categorias }); }, [categorias, activeUnit]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { _gravarDocGlobal("crmEtapas", { itens: crmEtapas }); }, [crmEtapas, activeUnit]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { _gravarDocGlobal("crmOrigens", { itens: crmOrigens }); }, [crmOrigens, activeUnit]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [viewAs, setViewAs] = useState(null); // id do franqueado, ou null = franqueador
   const [perfil, setPerfilState] = useState("franqueador"); // perfil de acesso previewado
@@ -1104,27 +1101,31 @@ export function StoreProvider({ children }) {
       apply("correspondencias", setCorrespondencias); apply("pedidos", setPedidos);
       apply("conversas", setConversas); apply("leads", setLeads); apply("eventos", setEventos);
       apply("planos", setPlanos); apply("recibos", setRecibos);
-      // Docs globais (doc único). PREFERE o doc da unidade REAL — nunca um id
+      // Docs globais (doc único) — carrega UMA VEZ por carregamento de página.
+      // Re-hidratações (refresh de sessão) NÃO recarregam, para não sobrescrever
+      // uma edição local recém-feita. PREFERE o doc da unidade REAL, nunca um id
       // seed órfão (ex.: "lux"), que teria os padrões e apagaria as customizações.
-      const seedUnitIds = new Set(UNIDADES.map((u) => u.id));
-      const pickDocGlobal = (entity) => {
-        const rows = appState.filter((r) => r.entity === entity);
-        if (!rows.length) return null;
-        return (rows.find((r) => !seedUnitIds.has(r.unidade_id)) || rows[0]).doc;
-      };
-      // Plano de contas: mescla categorias-padrão novas que ainda não existam no
-      // doc salvo (ex.: seção nova) preservando as customizações do usuário.
-      const pcDoc = pickDocGlobal("planoContas");
-      if (pcDoc?.itens?.length) {
-        const salvos = pcDoc.itens;
-        const ids = new Set(salvos.map((c) => c.id));
-        const faltantes = seedCategorias.filter((s) => !ids.has(s.id));
-        setCategorias(faltantes.length ? [...salvos, ...faltantes] : salvos);
+      if (!docsGlobaisHidratadosRef.current) {
+        const seedUnitIds = new Set(UNIDADES.map((u) => u.id));
+        const pickDocGlobal = (entity) => {
+          const rows = appState.filter((r) => r.entity === entity);
+          if (!rows.length) return null;
+          return (rows.find((r) => !seedUnitIds.has(r.unidade_id)) || rows[0]).doc;
+        };
+        // Plano de contas: mescla categorias-padrão novas que ainda não existam no
+        // doc salvo (ex.: seção nova) preservando as customizações do usuário.
+        const pcDoc = pickDocGlobal("planoContas");
+        if (pcDoc?.itens?.length) {
+          const salvos = pcDoc.itens;
+          const ids = new Set(salvos.map((c) => c.id));
+          const faltantes = seedCategorias.filter((s) => !ids.has(s.id));
+          setCategorias(faltantes.length ? [...salvos, ...faltantes] : salvos);
+        }
+        const ceDoc = pickDocGlobal("crmEtapas");
+        if (ceDoc?.itens?.length) setCrmEtapas(ceDoc.itens);
+        const coDoc = pickDocGlobal("crmOrigens");
+        if (coDoc?.itens?.length) setCrmOrigens(coDoc.itens);
       }
-      const ceDoc = pickDocGlobal("crmEtapas");
-      if (ceDoc?.itens?.length) setCrmEtapas(ceDoc.itens);
-      const coDoc = pickDocGlobal("crmOrigens");
-      if (coDoc?.itens?.length) setCrmOrigens(coDoc.itens);
       // creditLedger NÃO vem do app_state (migrado para a tabela relacional).
       // Backfill: as salas vivem no app_state; garante que existam também na
       // tabela relacional (a função criar_reserva_segura valida a sala lá).
