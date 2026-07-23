@@ -1023,7 +1023,11 @@ function calcDRE(lancs, categorias) {
   SECOES.forEach((s) => (sec[s.key] = { total: 0, cats: {} }));
   lancs.forEach((l) => {
     const cat = categorias.find((c) => c.nome === l.categoria);
-    const key = cat?.secao || (l.tipo === "entrada" ? "receita_bruta" : "despesa_operacional");
+    // Fallback: se a categoria do lançamento não existe mais no plano (ex.: era o
+    // nome de uma seção — default antigo, substituído por categorias novas),
+    // mapeia pela SEÇÃO de mesmo nome; só então cai no tipo.
+    const secaoPeloNome = SECOES.find((s) => s.label === l.categoria);
+    const key = cat?.secao || secaoPeloNome?.key || (l.tipo === "entrada" ? "receita_bruta" : "despesa_operacional");
     const b = sec[key] || sec.despesa_operacional;
     const abaixoLinha = key === "movimentacao" || key === "investimentos";
     const signed = abaixoLinha ? (l.tipo === "entrada" ? l.valor : -l.valor) : l.valor;
