@@ -1019,7 +1019,8 @@ const TRIMESTRES = [
 
 function calcDRE(lancs, categorias) {
   const sec = {};
-  SECOES.forEach((s) => (sec[s.key] = { total: 0, subs: {} }));
+  // Cada seção agrega por CATEGORIA (nível do meio) → SUBCATEGORIA.
+  SECOES.forEach((s) => (sec[s.key] = { total: 0, cats: {} }));
   lancs.forEach((l) => {
     const cat = categorias.find((c) => c.nome === l.categoria);
     const key = cat?.secao || (l.tipo === "entrada" ? "receita_bruta" : "despesa_operacional");
@@ -1027,8 +1028,10 @@ function calcDRE(lancs, categorias) {
     const abaixoLinha = key === "movimentacao" || key === "investimentos";
     const signed = abaixoLinha ? (l.tipo === "entrada" ? l.valor : -l.valor) : l.valor;
     b.total += signed;
+    const cg = (b.cats[l.categoria || "—"] ||= { total: 0, subs: {} });
+    cg.total += signed;
     const s = l.subcategoria || "—";
-    b.subs[s] = (b.subs[s] || 0) + signed;
+    cg.subs[s] = (cg.subs[s] || 0) + signed;
   });
   const rb = sec.receita_bruta.total;
   const trib = sec.tributos.total;
@@ -1140,20 +1143,34 @@ function DRE({ lancamentos, categorias }) {
   }
 
   // ---- Visão vertical (mês / trimestre / ano) ----
-  const Secao = ({ titulo, total, subs, cor, sinal }) => (
-    <div style={{ marginBottom: 6 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", padding: "9px 0 5px", fontWeight: 700, fontSize: 13.5, borderBottom: `1px solid ${C.border2}` }}>
-        <span style={{ color: cor }}>{titulo}</span>
-        <span style={{ color: cor }}>{sinal}{fmt(Math.abs(total))}</span>
-      </div>
-      {Object.entries(subs).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).map(([s, v]) => (
-        <div key={s} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0 3px 14px", fontSize: 12.5, color: C.text3 }}>
-          <span>› {s}</span><span>{fmt(v)}</span>
+  // 3 níveis: SEÇÃO → categoria (só aparece quando há +de 1 por seção) → subcategoria.
+  const Secao = ({ titulo, total, cats, cor, sinal }) => {
+    const entries = Object.entries(cats).sort((a, b) => Math.abs(b[1].total) - Math.abs(a[1].total));
+    const mostrarCategoria = entries.length > 1;
+    return (
+      <div style={{ marginBottom: 6 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", padding: "9px 0 5px", fontWeight: 700, fontSize: 13.5, borderBottom: `1px solid ${C.border2}` }}>
+          <span style={{ color: cor }}>{titulo}</span>
+          <span style={{ color: cor }}>{sinal}{fmt(Math.abs(total))}</span>
         </div>
-      ))}
-      {Object.keys(subs).length === 0 && <div style={{ padding: "4px 0 4px 14px", fontSize: 12, color: C.text4 }}>—</div>}
-    </div>
-  );
+        {entries.map(([catNome, cg]) => (
+          <div key={catNome}>
+            {mostrarCategoria && (
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0 2px 12px", fontSize: 13, fontWeight: 600, color: C.text2 }}>
+                <span>{catNome}</span><span>{fmt(cg.total)}</span>
+              </div>
+            )}
+            {Object.entries(cg.subs).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).map(([s, v]) => (
+              <div key={s} style={{ display: "flex", justifyContent: "space-between", padding: `3px 0 3px ${mostrarCategoria ? 26 : 14}px`, fontSize: 12.5, color: C.text3 }}>
+                <span>› {s}</span><span>{fmt(v)}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+        {entries.length === 0 && <div style={{ padding: "4px 0 4px 14px", fontSize: 12, color: C.text4 }}>—</div>}
+      </div>
+    );
+  };
   const Calc = ({ titulo, valor, forte }) => (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: forte ? "13px 10px" : "10px 0", borderTop: `2px solid ${forte ? C.text : C.border}`, marginTop: 6, marginBottom: forte ? 10 : 6, background: forte ? C.cafePale : "transparent", borderRadius: forte ? 10 : 0, paddingLeft: forte ? 12 : 0, paddingRight: forte ? 12 : 0 }}>
       <span style={{ fontFamily: serif, fontSize: forte ? 17 : 15 }}>{titulo}</span>
@@ -1164,18 +1181,18 @@ function DRE({ lancamentos, categorias }) {
   return (
     <Card style={{ maxWidth: 760 }}>
       {controles}
-      <Secao titulo="RECEITA OPERACIONAL BRUTA" total={dre.rb} subs={dre.sec.receita_bruta.subs} cor={C.green} sinal="+ " />
-      <Secao titulo="(−) TRIBUTOS" total={dre.trib} subs={dre.sec.tributos.subs} cor={C.red} sinal="− " />
+      <Secao titulo="RECEITA OPERACIONAL BRUTA" total={dre.rb} cats={dre.sec.receita_bruta.cats} cor={C.green} sinal="+ " />
+      <Secao titulo="(−) TRIBUTOS" total={dre.trib} cats={dre.sec.tributos.cats} cor={C.red} sinal="− " />
       <Calc titulo="= RECEITA LÍQUIDA" valor={dre.recLiq} />
-      <Secao titulo="(−) CUSTO DIRETO" total={dre.cd} subs={dre.sec.custo_direto.subs} cor={C.red} sinal="− " />
+      <Secao titulo="(−) CUSTO DIRETO" total={dre.cd} cats={dre.sec.custo_direto.cats} cor={C.red} sinal="− " />
       <Calc titulo="= LUCRO BRUTO" valor={dre.lucroBruto} />
-      <Secao titulo="(−) DESPESAS OPERACIONAIS" total={dre.dop} subs={dre.sec.despesa_operacional.subs} cor={C.red} sinal="− " />
+      <Secao titulo="(−) DESPESAS OPERACIONAIS" total={dre.dop} cats={dre.sec.despesa_operacional.cats} cor={C.red} sinal="− " />
       <Calc titulo="= LUCRO LÍQUIDO" valor={dre.lucroLiq} forte />
       <div style={{ textAlign: "right", fontSize: 12.5, color: C.text3, marginBottom: 18 }}>
         Margem líquida: <b style={{ color: dre.lucroLiq >= 0 ? C.green : C.red }}>{margem.toFixed(1)}%</b>
       </div>
-      <Secao titulo="INVESTIMENTOS / DIVIDENDOS (não afeta o resultado)" total={dre.inv} subs={dre.sec.investimentos.subs} cor={C.text3} sinal="" />
-      <Secao titulo="CONTA MOVIMENTAÇÃO (não afeta o resultado)" total={dre.mov} subs={dre.sec.movimentacao.subs} cor={C.text3} sinal="" />
+      <Secao titulo="INVESTIMENTOS / DIVIDENDOS (não afeta o resultado)" total={dre.inv} cats={dre.sec.investimentos.cats} cor={C.text3} sinal="" />
+      <Secao titulo="CONTA MOVIMENTAÇÃO (não afeta o resultado)" total={dre.mov} cats={dre.sec.movimentacao.cats} cor={C.text3} sinal="" />
     </Card>
   );
 }
@@ -1188,7 +1205,7 @@ function Categorias({ categorias, store }) {
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
-        <div style={{ fontSize: 13, color: C.text3 }}>Cada categoria é uma linha do DRE; as subcategorias ficam dentro dela.</div>
+        <div style={{ fontSize: 13, color: C.text3, maxWidth: 620 }}>3 níveis: <b>Seção</b> (grupo do DRE) → <b>Categoria</b> → <b>Subcategoria</b>. Crie várias categorias por seção — ex.: em <i>Custo Direto</i>: Cafeteria e Coworking; em <i>Despesas Operacionais</i>: Administrativas, Comerciais, Financeiras.</div>
         <Btn onClick={() => setModal({})}><Plus size={16} /> Nova categoria</Btn>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }} className="cw-grid-stack">
