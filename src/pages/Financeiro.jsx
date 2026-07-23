@@ -1021,6 +1021,14 @@ function calcDRE(lancs, categorias) {
   const sec = {};
   // Cada seção agrega por CATEGORIA (nível do meio) → SUBCATEGORIA.
   SECOES.forEach((s) => (sec[s.key] = { total: 0, cats: {} }));
+  // Pré-popula TODA a estrutura do plano de contas (categorias + subcategorias)
+  // zerada — assim o DRE exibe o plano completo mesmo sem lançamentos.
+  categorias.forEach((c) => {
+    const b = sec[c.secao];
+    if (!b) return;
+    const cg = (b.cats[c.nome] ||= { total: 0, subs: {} });
+    (c.subs || []).forEach((s) => { if (!(s in cg.subs)) cg.subs[s] = 0; });
+  });
   lancs.forEach((l) => {
     const cat = categorias.find((c) => c.nome === l.categoria);
     // Fallback: se a categoria do lançamento não existe mais no plano (ex.: era o
