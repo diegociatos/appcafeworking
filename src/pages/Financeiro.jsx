@@ -15,6 +15,12 @@ const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "O
 const { mes: MES_ATUAL, ano: ANO_ATUAL } = getCurrentCompetencia();
 const TODOS_MESES = MESES.map((_, i) => i);
 const diaDe = (data) => parseInt((data || "").slice(0, 2), 10) || 0;
+// Saldo ATUAL de uma conta = saldo INICIAL (do cadastro) + lançamentos pagos.
+// O `conta.saldo` guarda o saldo inicial (abertura); o fluxo soma a partir dele.
+const saldoAtualConta = (conta, lancamentos) =>
+  (conta?.saldo || 0) + lancamentos
+    .filter((l) => l.contaId === conta?.id && l.status === "pago")
+    .reduce((s, l) => s + (l.tipo === "entrada" ? l.valor : -l.valor), 0);
 
 // Seções do Financeiro — usadas no sidebar PRINCIPAL (App.jsx) como submenu.
 export const FIN_GRUPOS = [
@@ -49,7 +55,7 @@ export default function Financeiro({ finTab }) {
   const contas = store.contasDe(activeUnit);
   const lancamentos = store.lancamentosDe(activeUnit).slice().sort((a, b) => b.mes - a.mes || diaDe(b.data) - diaDe(a.data));
 
-  const saldoTotal = contas.reduce((s, c) => s + c.saldo, 0);
+  const saldoTotal = contas.reduce((s, c) => s + saldoAtualConta(c, lancamentos), 0);
   const aReceber = lancamentos.filter((l) => l.tipo === "entrada" && l.status === "previsto").reduce((s, l) => s + l.valor, 0);
   const aPagar = lancamentos.filter((l) => l.tipo === "saida" && l.status === "previsto").reduce((s, l) => s + l.valor, 0);
   const entradasMes = lancamentos.filter((l) => l.mes === MES_ATUAL && l.tipo === "entrada" && l.status === "pago").reduce((s, l) => s + l.valor, 0);
@@ -105,7 +111,7 @@ export default function Financeiro({ finTab }) {
         {tab === "contratos" && <Contratos store={store} activeUnit={activeUnit} />}
         {tab === "extrato" && <Extrato contas={contas} lancamentos={lancamentos} onAbrir={setDetalheLanc} />}
         {tab === "dre" && <DRE lancamentos={lancamentos} categorias={categorias} />}
-        {tab === "bancos" && <Bancos contas={contas} saldoTotal={saldoTotal} onNovo={() => setContaModal({})} onEditar={(c) => setContaModal(c)} onExcluir={(c) => store.removeConta(c.id)} />}
+        {tab === "bancos" && <Bancos contas={contas} lancamentos={lancamentos} saldoTotal={saldoTotal} onNovo={() => setContaModal({})} onEditar={(c) => setContaModal(c)} onExcluir={(c) => store.removeConta(c.id)} />}
         {tab === "categorias" && <Categorias categorias={categorias} store={store} />}
         {tab === "anexos" && <Anexos lancamentos={lancamentos} contas={contas} onAbrir={setDetalheLanc} />}
       </div>
@@ -873,18 +879,21 @@ function Extrato({ contas, lancamentos, onAbrir }) {
   const movs = (anoTodo ? pagosConta : pagosConta.filter((l) => l.mes === mesSel))
     .slice()
     .sort((a, b) => (a.mes - b.mes) || (diaDe(a.data) - diaDe(b.data)));
-  // Saldo de abertura do período: parte do saldo atual e desconta o próprio
-  // período em diante — assim o mês corrente segue idêntico e meses passados
-  // fecham com o saldo histórico correto.
-  let desde = 0;
-  for (let k = anoTodo ? 0 : mesSel; k <= 11; k++) desde += netMes(k);
-  const saldoAnterior = conta.saldo - desde;
+  // Saldo de abertura do período = SALDO INICIAL (do cadastro) + movimentos
+  // ANTES do período. Assim o valor do banco é o ponto de partida do fluxo e os
+  // lançamentos somam a partir dele.
+  const saldoInicial = conta.saldo || 0;
+  let antesDoPeriodo = 0;
+  const inicioPeriodo = anoTodo ? 0 : mesSel;
+  for (let k = 0; k < inicioPeriodo; k++) antesDoPeriodo += netMes(k);
+  const saldoAnterior = saldoInicial + antesDoPeriodo;
   let run = saldoAnterior;
   const linhas = movs.map((l) => {
     run += l.tipo === "entrada" ? l.valor : -l.valor;
     return { ...l, saldoCorrente: run };
   });
   const saldoFimPeriodo = run;
+  const saldoAtual = saldoAtualConta(conta, lancamentos);
   const previstos = lancamentos.filter((l) => l.contaId === contaSel && l.status === "previsto");
 
   const col = "78px 110px 110px 130px 1fr";
@@ -900,7 +909,7 @@ function Extrato({ contas, lancamentos, onAbrir }) {
               border: `1px solid ${contaSel === c.id ? C.teal : C.border}`, background: contaSel === c.id ? C.tealPale : C.white, color: contaSel === c.id ? C.teal : C.text2,
             }}>
             <Landmark size={14} /> {c.banco}
-            <span style={{ color: C.text3, fontWeight: 500 }}>{fmtShort(c.saldo)}</span>
+            <span style={{ color: C.text3, fontWeight: 500 }}>{fmtShort(saldoAtualConta(c, lancamentos))}</span>
           </button>
         ))}
       </div>
@@ -909,7 +918,7 @@ function Extrato({ contas, lancamentos, onAbrir }) {
         <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border2}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
           <div>
             <div style={{ fontFamily: serif, fontSize: 19 }}>{conta.banco}</div>
-            <div style={{ fontSize: 12, color: C.text3 }}>{conta.tipo} · extrato de {anoTodo ? `${ANO_ATUAL} (ano todo)` : `${MESES[mesSel]}/${ANO_ATUAL}`}</div>
+            <div style={{ fontSize: 12, color: C.text3 }}>{conta.tipo} · extrato de {anoTodo ? `${ANO_ATUAL} (ano todo)` : `${MESES[mesSel]}/${ANO_ATUAL}`} · saldo inicial {fmt(saldoInicial)}</div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <select value={String(mesSel)} onChange={(e) => setMesSel(e.target.value === "todos" ? "todos" : +e.target.value)}
@@ -919,7 +928,7 @@ function Extrato({ contas, lancamentos, onAbrir }) {
             </select>
             <div style={{ textAlign: "right" }}>
               <div style={{ fontSize: 11, color: C.text3 }}>Saldo atual</div>
-              <div style={{ fontFamily: serif, fontSize: 22, color: conta.saldo >= 0 ? C.teal : C.red }}>{fmt(conta.saldo)}</div>
+              <div style={{ fontFamily: serif, fontSize: 22, color: saldoAtual >= 0 ? C.teal : C.red }}>{fmt(saldoAtual)}</div>
             </div>
           </div>
         </div>
@@ -939,7 +948,7 @@ function Extrato({ contas, lancamentos, onAbrir }) {
           <Cel />
           <Cel />
           <Cel style={{ textAlign: "right", fontWeight: 600 }}>{fmt(saldoAnterior)}</Cel>
-          <Cel style={{ color: C.text3, fontStyle: "italic" }}>Saldo anterior</Cel>
+          <Cel style={{ color: C.text3, fontStyle: "italic" }}>{anoTodo || saldoAnterior === saldoInicial ? "Saldo inicial" : "Saldo anterior"}</Cel>
         </div>
 
         {linhas.map((l) => (
@@ -1251,7 +1260,7 @@ function CategoriaForm({ onSave }) {
 }
 
 // ===== BANCOS / PRODUTOS ===================================================
-function Bancos({ contas, saldoTotal, onNovo, onEditar, onExcluir }) {
+function Bancos({ contas, lancamentos = [], saldoTotal, onNovo, onEditar, onExcluir }) {
   return (
     <>
       <Card style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
@@ -1273,7 +1282,12 @@ function Bancos({ contas, saldoTotal, onNovo, onEditar, onExcluir }) {
             </div>
             <div style={{ fontSize: 15, fontWeight: 600, color: C.text }}>{c.banco}</div>
             <div style={{ fontSize: 12, color: C.text3, marginBottom: 10 }}>{c.tipo}</div>
-            <div style={{ fontFamily: serif, fontSize: 22, color: c.saldo >= 0 ? C.text : C.red }}>{fmt(c.saldo)}</div>
+            {(() => { const atual = saldoAtualConta(c, lancamentos); return (
+              <>
+                <div style={{ fontFamily: serif, fontSize: 22, color: atual >= 0 ? C.text : C.red }}>{fmt(atual)}</div>
+                <div style={{ fontSize: 11, color: C.text4, marginTop: 2 }}>Saldo atual · inicial {fmt(c.saldo || 0)}</div>
+              </>
+            ); })()}
           </Card>
         ))}
         {contas.length === 0 && <Empty icon={Landmark} title="Nenhuma conta" sub="Cadastre as contas bancárias da unidade." />}
@@ -1393,8 +1407,9 @@ function ContaForm({ inicial, onSave }) {
           {["Conta corrente", "Conta poupança", "Conta digital", "Dinheiro", "Cartão"].map((t) => <option key={t}>{t}</option>)}
         </select>
       </Field>
-      <Field label="Saldo atual (R$)">
+      <Field label="Saldo inicial (R$)">
         <input type="number" step="0.01" value={f.saldo} onChange={(e) => setF({ ...f, saldo: +e.target.value })} style={inp} />
+        <div style={{ fontSize: 11, color: C.text4, marginTop: 4 }}>Saldo de abertura desta conta. O Fluxo de caixa parte dele e soma os lançamentos — o saldo atual é calculado automaticamente.</div>
       </Field>
       <Btn style={{ width: "100%", justifyContent: "center", marginTop: 4 }} onClick={() => f.banco.trim() && onSave(f)}>
         {inicial.id ? "Salvar conta" : "Adicionar conta"}
