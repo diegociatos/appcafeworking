@@ -1112,15 +1112,10 @@ export function StoreProvider({ children }) {
           if (!rows.length) return null;
           return (rows.find((r) => !seedUnitIds.has(r.unidade_id)) || rows[0]).doc;
         };
-        // Plano de contas: mescla categorias-padrão novas que ainda não existam no
-        // doc salvo (ex.: seção nova) preservando as customizações do usuário.
+        // Plano de contas: usa o doc salvo EXATAMENTE (respeita exclusões do
+        // usuário). NÃO mescla defaults — senão categorias deletadas voltavam.
         const pcDoc = pickDocGlobal("planoContas");
-        if (pcDoc?.itens?.length) {
-          const salvos = pcDoc.itens;
-          const ids = new Set(salvos.map((c) => c.id));
-          const faltantes = seedCategorias.filter((s) => !ids.has(s.id));
-          setCategorias(faltantes.length ? [...salvos, ...faltantes] : salvos);
-        }
+        if (pcDoc?.itens?.length) setCategorias(pcDoc.itens);
         const ceDoc = pickDocGlobal("crmEtapas");
         if (ceDoc?.itens?.length) setCrmEtapas(ceDoc.itens);
         const coDoc = pickDocGlobal("crmOrigens");
