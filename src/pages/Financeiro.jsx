@@ -33,6 +33,7 @@ export const FIN_GRUPOS = [
   ] },
   { titulo: "Relatórios", itens: [
     { id: "dre", label: "DRE", icon: FileText },
+    { id: "recebimentos", label: "Recebimentos por cliente", icon: Receipt },
   ] },
   { titulo: "Cadastros", itens: [
     { id: "bancos", label: "Bancos", icon: Landmark },
@@ -54,6 +55,7 @@ export default function Financeiro({ finTab }) {
 
   const contas = store.contasDe(activeUnit);
   const lancamentos = store.lancamentosDe(activeUnit).slice().sort((a, b) => b.mes - a.mes || diaDe(b.data) - diaDe(a.data));
+  const clientesUnidade = store.clientesDe(unidadeAtiva?.nome);
 
   const saldoTotal = contas.reduce((s, c) => s + saldoAtualConta(c, lancamentos), 0);
   const aReceber = lancamentos.filter((l) => l.tipo === "entrada" && l.status === "previsto").reduce((s, l) => s + l.valor, 0);
@@ -111,6 +113,7 @@ export default function Financeiro({ finTab }) {
         {tab === "contratos" && <Contratos store={store} activeUnit={activeUnit} />}
         {tab === "extrato" && <Extrato contas={contas} lancamentos={lancamentos} onAbrir={setDetalheLanc} />}
         {tab === "dre" && <DRE lancamentos={lancamentos} categorias={categorias} />}
+        {tab === "recebimentos" && <RecebimentosCliente clientes={clientesUnidade} lancamentos={lancamentos} />}
         {tab === "bancos" && <Bancos contas={contas} lancamentos={lancamentos} saldoTotal={saldoTotal} onNovo={() => setContaModal({})} onEditar={(c) => setContaModal(c)} onExcluir={(c) => store.removeConta(c.id)} />}
         {tab === "categorias" && <Categorias categorias={categorias} store={store} />}
         {tab === "anexos" && <Anexos lancamentos={lancamentos} contas={contas} onAbrir={setDetalheLanc} />}
@@ -118,7 +121,7 @@ export default function Financeiro({ finTab }) {
 
       {lancModal && (
         <Modal title={lancModal.id ? "Editar lançamento" : "Novo lançamento"} onClose={() => setLancModal(null)}>
-          <LancamentoForm inicial={lancModal} contas={contas} categorias={categorias}
+          <LancamentoForm inicial={lancModal} contas={contas} categorias={categorias} clientes={clientesUnidade}
             onSave={(d) => { if (lancModal.id) store.updateLancamento(lancModal.id, d); else store.addLancamento(activeUnit, d); setLancModal(null); }} />
         </Modal>
       )}
@@ -1296,8 +1299,85 @@ function Bancos({ contas, lancamentos = [], saldoTotal, onNovo, onEditar, onExcl
   );
 }
 
+// ===== RECEBIMENTOS POR CLIENTE ============================================
+function RecebimentosCliente({ clientes = [], lancamentos = [] }) {
+  const [mesRef, setMesRef] = useState(MES_ATUAL);
+  const recebidos = lancamentos.filter((l) => l.tipo === "entrada" && l.status === "pago" && l.clienteId);
+  const triIdx = Math.floor(mesRef / 3);
+  const triMeses = TRIMESTRES[triIdx].meses;
+  const somaCli = (cid, filtro) => recebidos.filter((l) => l.clienteId === cid && filtro(l)).reduce((s, l) => s + l.valor, 0);
+  const linhas = clientes.map((c) => ({
+    id: c.id, nome: c.nome,
+    mes: somaCli(c.id, (l) => l.mes === mesRef),
+    tri: somaCli(c.id, (l) => triMeses.includes(l.mes)),
+    ano: somaCli(c.id, () => true),
+    acum: somaCli(c.id, () => true),
+  })).sort((a, b) => b.acum - a.acum);
+  const tot = linhas.reduce((t, r) => ({ mes: t.mes + r.mes, tri: t.tri + r.tri, ano: t.ano + r.ano, acum: t.acum + r.acum }), { mes: 0, tri: 0, ano: 0, acum: 0 });
+  const semVinculo = lancamentos.filter((l) => l.tipo === "entrada" && l.status === "pago" && !l.clienteId).length;
+
+  const col = "1fr 110px 110px 110px 130px";
+  const Cel = ({ children, style }) => <div style={{ fontSize: 13, ...style }}>{children}</div>;
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
+        <div>
+          <div style={{ fontFamily: serif, fontSize: 20 }}>Recebimentos por cliente</div>
+          <div style={{ fontSize: 12.5, color: C.text3 }}>Entradas pagas vinculadas a cada cliente. Vincule o cliente ao lançar (ou editar) uma entrada.</div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 12.5, color: C.text3 }}>Mês de referência</span>
+          <select value={mesRef} onChange={(e) => setMesRef(+e.target.value)} style={{ ...inp, width: "auto", padding: "7px 10px", fontSize: 13 }}>
+            {MESES.map((m, i) => <option key={i} value={i}>{m}/{ANO_ATUAL}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {semVinculo > 0 && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", background: `${C.amber}14`, color: C.amber, borderRadius: 10, padding: "9px 12px", fontSize: 12.5, marginBottom: 12 }}>
+          <AlertCircle size={15} /> {semVinculo} recebimento(s) pago(s) ainda sem cliente vinculado — edite o lançamento e escolha o cliente para aparecerem aqui.
+        </div>
+      )}
+
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <div style={{ overflowX: "auto" }}>
+          <div style={{ minWidth: 620 }}>
+            <div style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "11px 18px", background: C.cream, fontSize: 11, fontWeight: 700, color: C.text3, letterSpacing: 0.3 }}>
+              <div>CLIENTE</div>
+              <div style={{ textAlign: "right" }}>{MESES[mesRef].toUpperCase()}</div>
+              <div style={{ textAlign: "right" }}>{triIdx + 1}º TRI</div>
+              <div style={{ textAlign: "right" }}>ANO {ANO_ATUAL}</div>
+              <div style={{ textAlign: "right" }}>ACUMULADO</div>
+            </div>
+            {linhas.map((r) => (
+              <div key={r.id} style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "11px 18px", borderTop: `1px solid ${C.border2}`, alignItems: "center" }}>
+                <Cel style={{ fontWeight: 600 }}>{r.nome}</Cel>
+                <Cel style={{ textAlign: "right", color: r.mes ? C.text : C.text4 }}>{r.mes ? fmt(r.mes) : "—"}</Cel>
+                <Cel style={{ textAlign: "right", color: r.tri ? C.text : C.text4 }}>{r.tri ? fmt(r.tri) : "—"}</Cel>
+                <Cel style={{ textAlign: "right", color: r.ano ? C.text : C.text4 }}>{r.ano ? fmt(r.ano) : "—"}</Cel>
+                <Cel style={{ textAlign: "right", fontWeight: 700, color: r.acum ? C.green : C.text4 }}>{r.acum ? fmt(r.acum) : "—"}</Cel>
+              </div>
+            ))}
+            {linhas.length === 0 && <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: C.text4 }}>Nenhum cliente cadastrado nesta unidade.</div>}
+            {linhas.length > 0 && (
+              <div style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "13px 18px", background: C.cream, fontWeight: 700 }}>
+                <Cel style={{ fontFamily: serif, fontSize: 14 }}>TOTAL</Cel>
+                <Cel style={{ textAlign: "right" }}>{fmt(tot.mes)}</Cel>
+                <Cel style={{ textAlign: "right" }}>{fmt(tot.tri)}</Cel>
+                <Cel style={{ textAlign: "right" }}>{fmt(tot.ano)}</Cel>
+                <Cel style={{ textAlign: "right", color: C.green }}>{fmt(tot.acum)}</Cel>
+              </div>
+            )}
+          </div>
+        </div>
+      </Card>
+    </>
+  );
+}
+
 // ===== FORMULÁRIOS =========================================================
-function LancamentoForm({ inicial, contas, categorias, onSave }) {
+function LancamentoForm({ inicial, contas, categorias, clientes = [], onSave }) {
   const permite = (secaoKey, tipo) => {
     const s = SECOES.find((x) => x.key === secaoKey);
     return !s || s.tipo === "ambos" || s.tipo === tipo;
@@ -1318,6 +1398,7 @@ function LancamentoForm({ inicial, contas, categorias, onSave }) {
       contaId: init.contaId || contas[0]?.id || "",
       data: init.data || "",
       status: init.status || "pago",
+      clienteId: init.clienteId || "",
       anexo: init.anexo || null,
     };
   });
@@ -1348,6 +1429,15 @@ function LancamentoForm({ inicial, contas, categorias, onSave }) {
       <Field label="Descrição — do que se trata">
         <input value={f.descricao} onChange={(e) => setF({ ...f, descricao: e.target.value })} style={inp} placeholder="Ex: Mensalidade da Sala 3 · Ciatos Log" />
       </Field>
+      {f.tipo === "entrada" && (
+        <Field label="Cliente (opcional) — para o controle de recebimentos por cliente">
+          <select value={f.clienteId} onChange={(e) => setF({ ...f, clienteId: e.target.value })} style={inp}>
+            <option value="">— sem cliente —</option>
+            {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+          </select>
+          {clientes.length === 0 && <div style={{ fontSize: 11, color: C.text4, marginTop: 4 }}>Nenhum cliente cadastrado nesta unidade ainda.</div>}
+        </Field>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Field label="Valor (R$)">
           <input type="number" min="0" step="0.01" value={f.valor} onChange={(e) => setF({ ...f, valor: +e.target.value })} style={inp} />
@@ -1388,7 +1478,12 @@ function LancamentoForm({ inicial, contas, categorias, onSave }) {
       <Field label="Anexo / comprovante (opcional)">
         <FileInput value={f.anexo} onChange={(v) => setF({ ...f, anexo: v })} label="Anexar comprovante" />
       </Field>
-      <Btn style={{ width: "100%", justifyContent: "center", marginTop: 4 }} onClick={() => f.descricao.trim() && f.valor > 0 && onSave(f)}>
+      <Btn style={{ width: "100%", justifyContent: "center", marginTop: 4 }} onClick={() => {
+        if (!f.descricao.trim() || !(f.valor > 0)) return;
+        const clienteId = f.tipo === "entrada" ? (f.clienteId || null) : null;
+        const clienteNome = clienteId ? (clientes.find((c) => c.id === clienteId)?.nome || "") : null;
+        onSave({ ...f, clienteId, clienteNome });
+      }}>
         {inicial.id ? "Salvar lançamento" : "Adicionar lançamento"}
       </Btn>
     </>
