@@ -115,7 +115,7 @@ export default function Financeiro({ finTab }) {
         {tab === "dre" && <DRE lancamentos={lancamentos} categorias={categorias} />}
         {tab === "recebimentos" && <RecebimentosCliente clientes={clientesUnidade} lancamentos={lancamentos} updateLancamento={store.updateLancamento} />}
         {tab === "bancos" && <Bancos contas={contas} lancamentos={lancamentos} saldoTotal={saldoTotal} onNovo={() => setContaModal({})} onEditar={(c) => setContaModal(c)} onExcluir={(c) => store.removeConta(c.id)} />}
-        {tab === "categorias" && <Categorias categorias={categorias} store={store} />}
+        {tab === "categorias" && <Categorias categorias={categorias} lancamentos={lancamentos} store={store} />}
         {tab === "anexos" && <Anexos lancamentos={lancamentos} contas={contas} onAbrir={setDetalheLanc} />}
       </div>
 
@@ -1210,9 +1210,17 @@ function DRE({ lancamentos, categorias }) {
 }
 
 // ===== CATEGORIAS ==========================================================
-function Categorias({ categorias, store }) {
+function Categorias({ categorias, lancamentos = [], store }) {
   const [modal, setModal] = useState(null);
+  const [reclOpen, setReclOpen] = useState(false);
   const corSecao = (k) => (k === "receita_bruta" ? C.green : (k === "movimentacao" || k === "investimentos") ? C.text3 : C.red);
+
+  // Categorias usadas em lançamentos que NÃO existem mais no plano (órfãs) —
+  // continuam aparecendo no DRE até serem reclassificadas.
+  const nomesPlano = new Set(categorias.map((c) => c.nome));
+  const orfasMap = {};
+  lancamentos.forEach((l) => { if (l.categoria && !nomesPlano.has(l.categoria)) orfasMap[l.categoria] = (orfasMap[l.categoria] || 0) + 1; });
+  const orfas = Object.entries(orfasMap);
 
   return (
     <>
@@ -1220,6 +1228,15 @@ function Categorias({ categorias, store }) {
         <div style={{ fontSize: 13, color: C.text3, maxWidth: 620 }}>3 níveis: <b>Seção</b> (grupo do DRE) → <b>Categoria</b> → <b>Subcategoria</b>. Crie várias categorias por seção — ex.: em <i>Custo Direto</i>: Cafeteria e Coworking; em <i>Despesas Operacionais</i>: Administrativas, Comerciais, Financeiras.</div>
         <Btn onClick={() => setModal({})}><Plus size={16} /> Nova categoria</Btn>
       </div>
+
+      {orfas.length > 0 && (
+        <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", background: `${C.amber}14`, color: C.amber, borderRadius: 10, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>
+          <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <AlertCircle size={15} /> {orfas.length} categoria(s) usada(s) em lançamentos não estão mais no plano ({orfas.map(([n, c]) => `${n} (${c})`).join(", ")}). Por isso ainda aparecem no DRE.
+          </span>
+          <button onClick={() => setReclOpen(true)} className="cw-btn" style={{ fontWeight: 600, fontSize: 12.5, color: "#fff", background: C.cafe, borderRadius: 9, padding: "7px 12px", whiteSpace: "nowrap" }}>Reclassificar</button>
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }} className="cw-grid-stack">
         {SECOES.map((s) => {
           const cats = categorias.filter((c) => c.secao === s.key);
@@ -1233,7 +1250,56 @@ function Categorias({ categorias, store }) {
           <CategoriaForm onSave={(d) => { store.addCategoria(d); setModal(null); }} />
         </Modal>
       )}
+      {reclOpen && (
+        <ReclassificarModal
+          orfas={orfas}
+          categorias={categorias}
+          onClose={() => setReclOpen(false)}
+          onAplicar={(pares) => {
+            // pares: [{ de: nomeOrfao, para: nomeAlvo }]
+            const alvoPorOrfa = Object.fromEntries(pares.filter((p) => p.para).map((p) => [p.de, p.para]));
+            lancamentos.forEach((l) => {
+              const para = alvoPorOrfa[l.categoria];
+              if (para) store.updateLancamento(l.id, { categoria: para });
+            });
+            setReclOpen(false);
+          }}
+        />
+      )}
     </>
+  );
+}
+
+// Remaneja lançamentos cuja categoria saiu do plano para uma categoria atual.
+function ReclassificarModal({ orfas, categorias, onClose, onAplicar }) {
+  const [mapa, setMapa] = useState({}); // orfaNome -> alvoNome
+  // Sugere alvos da mesma seção (via SECOES label) quando possível.
+  const secaoDaOrfa = (nome) => SECOES.find((s) => s.label === nome)?.key;
+  const alvosPara = (orfaNome) => {
+    const sk = secaoDaOrfa(orfaNome);
+    const daSecao = categorias.filter((c) => c.secao === sk);
+    return (daSecao.length ? daSecao : categorias);
+  };
+  return (
+    <Modal title="Reclassificar lançamentos" onClose={onClose} maxWidth={560}>
+      <div style={{ fontSize: 13, color: C.text2, marginBottom: 14 }}>
+        Essas categorias não existem mais no plano, mas há lançamentos usando-as. Escolha para qual categoria atual mover cada uma — todos os lançamentos daquela categoria vão junto.
+      </div>
+      {orfas.map(([nome, count]) => (
+        <div key={nome} style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 10, alignItems: "center", marginBottom: 10 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{nome} <span style={{ color: C.text3, fontWeight: 400 }}>({count})</span></div>
+          <div style={{ color: C.text3 }}>→</div>
+          <select value={mapa[nome] || ""} onChange={(e) => setMapa({ ...mapa, [nome]: e.target.value })} style={inp}>
+            <option value="">— manter como está —</option>
+            {alvosPara(nome).map((c) => <option key={c.id} value={c.nome}>{c.nome}</option>)}
+          </select>
+        </div>
+      ))}
+      <Btn style={{ width: "100%", justifyContent: "center", marginTop: 6 }}
+        onClick={() => onAplicar(orfas.map(([nome]) => ({ de: nome, para: mapa[nome] })))}>
+        <Check size={16} /> Aplicar reclassificação
+      </Btn>
+    </Modal>
   );
 }
 
