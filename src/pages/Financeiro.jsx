@@ -113,7 +113,7 @@ export default function Financeiro({ finTab }) {
         {tab === "contratos" && <Contratos store={store} activeUnit={activeUnit} />}
         {tab === "extrato" && <Extrato contas={contas} lancamentos={lancamentos} onAbrir={setDetalheLanc} />}
         {tab === "dre" && <DRE lancamentos={lancamentos} categorias={categorias} />}
-        {tab === "recebimentos" && <RecebimentosCliente clientes={clientesUnidade} lancamentos={lancamentos} />}
+        {tab === "recebimentos" && <RecebimentosCliente clientes={clientesUnidade} lancamentos={lancamentos} updateLancamento={store.updateLancamento} />}
         {tab === "bancos" && <Bancos contas={contas} lancamentos={lancamentos} saldoTotal={saldoTotal} onNovo={() => setContaModal({})} onEditar={(c) => setContaModal(c)} onExcluir={(c) => store.removeConta(c.id)} />}
         {tab === "categorias" && <Categorias categorias={categorias} store={store} />}
         {tab === "anexos" && <Anexos lancamentos={lancamentos} contas={contas} onAbrir={setDetalheLanc} />}
@@ -145,6 +145,7 @@ export default function Financeiro({ finTab }) {
             inicialTipo={contaPRModal.tipo}
             contas={contas}
             categorias={categorias}
+            clientes={clientesUnidade}
             bankAccounts={store.bankAccountsDe(activeUnit)}
             onSave={(base, meses, boletoCfg) => { store.addContaRecorrente(activeUnit, base, meses, boletoCfg); setContaPRModal(null); }}
           />
@@ -548,7 +549,7 @@ function Contas({ lancamentos, tipo, onNova, onAbrir, onBaixar, onEditar, onExcl
   );
 }
 
-function ContaPRForm({ inicialTipo, contas, categorias, bankAccounts = [], onSave }) {
+function ContaPRForm({ inicialTipo, contas, categorias, bankAccounts = [], clientes = [], onSave }) {
   const tipo = inicialTipo;
   const ehReceber = tipo === "entrada";
   const permite = (secaoKey) => {
@@ -560,7 +561,7 @@ function ContaPRForm({ inicialTipo, contas, categorias, bankAccounts = [], onSav
   const [f, setF] = useState(() => {
     const cat = cats[0]?.nome || "";
     return {
-      descricao: "", categoria: cat, subcategoria: subsDe(cat)[0] || "", valor: 0, contaId: contas[0]?.id || "", data: "", mesInicial: MES_ATUAL, recorrencia: "unica", nMeses: 6,
+      descricao: "", categoria: cat, subcategoria: subsDe(cat)[0] || "", valor: 0, contaId: contas[0]?.id || "", data: "", mesInicial: MES_ATUAL, recorrencia: "unica", nMeses: 6, clienteId: "",
       // Boleto (só conta a receber). Liga automaticamente se houver conta bancária.
       gerarBoleto: ehReceber && bankAccounts.length > 0,
       bankAccountId: bankAccounts[0]?.id || "",
@@ -573,7 +574,9 @@ function ContaPRForm({ inicialTipo, contas, categorias, bankAccounts = [], onSav
 
   const submit = () => {
     if (!f.descricao.trim() || !(f.valor > 0)) return;
-    const base = { tipo, descricao: f.descricao, categoria: f.categoria, subcategoria: f.subcategoria, valor: f.valor, contaId: f.contaId, data: f.data, recorrente: f.recorrencia === "mensal" };
+    const clienteId = ehReceber ? (f.clienteId || null) : null;
+    const clienteNome = clienteId ? (clientes.find((c) => c.id === clienteId)?.nome || "") : null;
+    const base = { tipo, descricao: f.descricao, categoria: f.categoria, subcategoria: f.subcategoria, valor: f.valor, contaId: f.contaId, data: f.data, recorrente: f.recorrencia === "mensal", clienteId, clienteNome };
     const start = f.mesInicial;
     const meses = f.recorrencia === "mensal"
       ? Array.from({ length: Math.min(f.nMeses, MESES.length - start) }, (_, i) => start + i)
@@ -592,6 +595,14 @@ function ContaPRForm({ inicialTipo, contas, categorias, bankAccounts = [], onSav
       <Field label="Descrição — do que se trata">
         <input value={f.descricao} onChange={(e) => setF({ ...f, descricao: e.target.value })} style={inp} placeholder={tipo === "entrada" ? "Ex: Mensalidade Sala Privativa · Cliente X" : "Ex: Aluguel do imóvel"} />
       </Field>
+      {ehReceber && (
+        <Field label="Cliente (opcional) — entra no controle de recebimentos por cliente">
+          <select value={f.clienteId} onChange={(e) => setF({ ...f, clienteId: e.target.value })} style={inp}>
+            <option value="">— sem cliente —</option>
+            {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+          </select>
+        </Field>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Field label="Categoria (grupo no DRE)">
           <select value={f.categoria} onChange={(e) => trocaCat(e.target.value)} style={inp}>
@@ -1300,8 +1311,26 @@ function Bancos({ contas, lancamentos = [], saldoTotal, onNovo, onEditar, onExcl
 }
 
 // ===== RECEBIMENTOS POR CLIENTE ============================================
-function RecebimentosCliente({ clientes = [], lancamentos = [] }) {
+function RecebimentosCliente({ clientes = [], lancamentos = [], updateLancamento }) {
   const [mesRef, setMesRef] = useState(MES_ATUAL);
+  const [previa, setPrevia] = useState(null); // { vinculaveis:[{l,cliente}], ambiguos, semMatch }
+  const normTxt = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const naoVinculados = lancamentos.filter((l) => l.tipo === "entrada" && l.status === "pago" && !l.clienteId);
+  const calcularVinculos = () => {
+    const vinculaveis = []; let ambiguos = 0, semMatch = 0;
+    for (const l of naoVinculados) {
+      const d = normTxt(l.descricao);
+      const achados = clientes.filter((c) => c.nome && d.includes(normTxt(c.nome)));
+      if (achados.length === 1) vinculaveis.push({ l, cliente: achados[0] });
+      else if (achados.length > 1) ambiguos++;
+      else semMatch++;
+    }
+    setPrevia({ vinculaveis, ambiguos, semMatch });
+  };
+  const aplicarVinculos = () => {
+    (previa?.vinculaveis || []).forEach(({ l, cliente }) => updateLancamento && updateLancamento(l.id, { clienteId: cliente.id, clienteNome: cliente.nome }));
+    setPrevia(null);
+  };
   const recebidos = lancamentos.filter((l) => l.tipo === "entrada" && l.status === "pago" && l.clienteId);
   const triIdx = Math.floor(mesRef / 3);
   const triMeses = TRIMESTRES[triIdx].meses;
@@ -1334,9 +1363,35 @@ function RecebimentosCliente({ clientes = [], lancamentos = [] }) {
         </div>
       </div>
 
-      {semVinculo > 0 && (
-        <div style={{ display: "flex", gap: 8, alignItems: "center", background: `${C.amber}14`, color: C.amber, borderRadius: 10, padding: "9px 12px", fontSize: 12.5, marginBottom: 12 }}>
-          <AlertCircle size={15} /> {semVinculo} recebimento(s) pago(s) ainda sem cliente vinculado — edite o lançamento e escolha o cliente para aparecerem aqui.
+      {semVinculo > 0 && !previa && (
+        <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", background: `${C.amber}14`, color: C.amber, borderRadius: 10, padding: "9px 12px", fontSize: 12.5, marginBottom: 12 }}>
+          <span style={{ display: "flex", gap: 8, alignItems: "center" }}><AlertCircle size={15} /> {semVinculo} recebimento(s) pago(s) sem cliente vinculado.</span>
+          <button onClick={calcularVinculos} className="cw-btn" style={{ fontWeight: 600, fontSize: 12.5, color: "#fff", background: C.cafe, borderRadius: 9, padding: "7px 12px" }}>Vincular automaticamente</button>
+        </div>
+      )}
+      {previa && (
+        <div style={{ background: C.cream, border: `1px solid ${C.border2}`, borderRadius: 12, padding: 14, marginBottom: 12 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 6 }}>Vinculação automática pela descrição</div>
+          <div style={{ fontSize: 12.5, color: C.text2, marginBottom: 10 }}>
+            <b style={{ color: C.green }}>{previa.vinculaveis.length}</b> serão vinculados (nome do cliente encontrado na descrição).
+            {previa.ambiguos > 0 && <> · <b style={{ color: C.amber }}>{previa.ambiguos}</b> ambíguos</>}
+            {previa.semMatch > 0 && <> · <b style={{ color: C.text3 }}>{previa.semMatch}</b> sem correspondência</>}
+            {(previa.ambiguos > 0 || previa.semMatch > 0) && " — esses ficam para vincular manualmente."}
+          </div>
+          {previa.vinculaveis.length > 0 && (
+            <div style={{ maxHeight: 160, overflowY: "auto", marginBottom: 10, fontSize: 12 }}>
+              {previa.vinculaveis.slice(0, 40).map(({ l, cliente }) => (
+                <div key={l.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "3px 0", color: C.text3 }}>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.descricao}</span>
+                  <span style={{ whiteSpace: "nowrap", color: C.text2 }}>→ {cliente.nome}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn onClick={aplicarVinculos} disabled={previa.vinculaveis.length === 0} style={{ opacity: previa.vinculaveis.length ? 1 : 0.5 }}><Check size={15} /> Vincular {previa.vinculaveis.length}</Btn>
+            <Btn variant="ghost" onClick={() => setPrevia(null)}>Cancelar</Btn>
+          </div>
         </div>
       )}
 
