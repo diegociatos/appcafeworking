@@ -531,8 +531,8 @@ export function StoreProvider({ children }) {
 
   // Financeiro: lançamentos (fluxo de caixa) -------------------------------
   const addLancamento = (unidadeId, l) => {
-    // Competência: usa l.mes se vier; senão deriva da data do lançamento (ou hoje).
-    const mes = l.mes != null ? l.mes : parseDateToCompetencia(l.data).mes;
+    // Competência: usa l.mes se vier; senão deriva da DATA DE COMPETÊNCIA (ou data/hoje).
+    const mes = l.mes != null ? l.mes : parseDateToCompetencia(l.dataCompetencia || l.data).mes;
     setLancamentos((ls) => [...ls, { id: "lc" + Date.now(), unidadeId, status: "pago", ...l, mes }]);
   };
   // Importação em lote (planilha de fluxo de caixa). Um único setState → cada
@@ -541,7 +541,7 @@ export function StoreProvider({ children }) {
     if (!unidadeId || !lista?.length) return 0;
     const base = Date.now();
     const novos = lista.map((l, i) => {
-      const mes = l.mes != null ? l.mes : parseDateToCompetencia(l.data).mes;
+      const mes = l.mes != null ? l.mes : parseDateToCompetencia(l.dataCompetencia || l.data).mes;
       return { id: `lc${base}_${i}`, unidadeId, status: "pago", ...l, mes };
     });
     setLancamentos((ls) => [...ls, ...novos]);

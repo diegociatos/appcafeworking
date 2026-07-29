@@ -15,6 +15,15 @@ const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "O
 const { mes: MES_ATUAL, ano: ANO_ATUAL } = getCurrentCompetencia();
 const TODOS_MESES = MESES.map((_, i) => i);
 const diaDe = (data) => parseInt((data || "").slice(0, 2), 10) || 0;
+// Máscara de data DD/MM/AAAA — a "barra" fica fixa: o usuário só digita números
+// e as barras entram sozinhas nas posições certas.
+const maskData = (v) => {
+  const d = String(v || "").replace(/\D/g, "").slice(0, 8);
+  let out = d.slice(0, 2);
+  if (d.length >= 3) out += "/" + d.slice(2, 4);
+  if (d.length >= 5) out += "/" + d.slice(4, 8);
+  return out;
+};
 // Saldo ATUAL de uma conta = saldo INICIAL (do cadastro) + lançamentos pagos.
 // O `conta.saldo` guarda o saldo inicial (abertura); o fluxo soma a partir dele.
 const saldoAtualConta = (conta, lancamentos) =>
@@ -1546,7 +1555,9 @@ function LancamentoForm({ inicial, contas, categorias, clientes = [], onSave }) 
       subcategoria: init.subcategoria || subList[0] || "",
       valor: init.valor || 0,
       contaId: init.contaId || contas[0]?.id || "",
-      data: init.data || "",
+      dataCompetencia: init.dataCompetencia || init.data || "",
+      dataVencimento: init.dataVencimento || "",
+      dataPagamento: init.dataPagamento || (init.status !== "previsto" ? (init.data || "") : ""),
       status: init.status || "pago",
       clienteId: init.clienteId || "",
       anexo: init.anexo || null,
@@ -1614,17 +1625,26 @@ function LancamentoForm({ inicial, contas, categorias, clientes = [], onSave }) 
       <div style={{ fontSize: 11, color: C.text4, marginBottom: 12 }}>
         A subcategoria aparece <b>dentro</b> da categoria na DRE. Gerencie na aba Categorias.
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <Field label="Data">
-          <input value={f.data} onChange={(e) => setF({ ...f, data: e.target.value })} style={inp} placeholder="DD/MM" />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+        <Field label="Competência">
+          <input value={f.dataCompetencia} onChange={(e) => setF({ ...f, dataCompetencia: maskData(e.target.value) })} style={inp} placeholder="DD/MM/AAAA" inputMode="numeric" />
         </Field>
-        <Field label="Situação">
-          <select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })} style={inp}>
-            <option value="pago">Pago/recebido</option>
-            <option value="previsto">Previsto</option>
-          </select>
+        <Field label="Vencimento">
+          <input value={f.dataVencimento} onChange={(e) => setF({ ...f, dataVencimento: maskData(e.target.value) })} style={inp} placeholder="DD/MM/AAAA" inputMode="numeric" />
+        </Field>
+        <Field label="Pagamento">
+          <input value={f.dataPagamento} onChange={(e) => setF({ ...f, dataPagamento: maskData(e.target.value) })} style={inp} placeholder="DD/MM/AAAA" inputMode="numeric" />
         </Field>
       </div>
+      <div style={{ fontSize: 11, color: C.text4, marginBottom: 10 }}>
+        <b>Competência</b> = mês a que se refere (entra no DRE). <b>Vencimento</b> = quando vence. <b>Pagamento</b> = quando foi pago/recebido.
+      </div>
+      <Field label="Situação">
+        <select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })} style={inp}>
+          <option value="pago">Pago/recebido</option>
+          <option value="previsto">Previsto</option>
+        </select>
+      </Field>
       <Field label="Anexo / comprovante (opcional)">
         <FileInput value={f.anexo} onChange={(v) => setF({ ...f, anexo: v })} label="Anexar comprovante" />
       </Field>
@@ -1632,7 +1652,9 @@ function LancamentoForm({ inicial, contas, categorias, clientes = [], onSave }) 
         if (!f.descricao.trim() || !(f.valor > 0)) return;
         const clienteId = f.tipo === "entrada" ? (f.clienteId || null) : null;
         const clienteNome = clienteId ? (clientes.find((c) => c.id === clienteId)?.nome || "") : null;
-        onSave({ ...f, clienteId, clienteNome });
+        // `data` (usado no extrato/dia) = pagamento, senão competência/vencimento.
+        const data = f.dataPagamento || f.dataCompetencia || f.dataVencimento || "";
+        onSave({ ...f, clienteId, clienteNome, data });
       }}>
         {inicial.id ? "Salvar lançamento" : "Adicionar lançamento"}
       </Btn>
