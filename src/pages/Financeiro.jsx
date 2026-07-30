@@ -570,7 +570,7 @@ function ContaPRForm({ inicialTipo, contas, categorias, bankAccounts = [], clien
   const [f, setF] = useState(() => {
     const cat = cats[0]?.nome || "";
     return {
-      descricao: "", categoria: cat, subcategoria: subsDe(cat)[0] || "", valor: 0, contaId: contas[0]?.id || "", data: "", mesInicial: MES_ATUAL, recorrencia: "unica", nMeses: 6, clienteId: "",
+      descricao: "", categoria: cat, subcategoria: subsDe(cat)[0] || "", valor: 0, contaId: contas[0]?.id || "", dataVencimento: "", dataPagamento: "", mesInicial: MES_ATUAL, recorrencia: "unica", nMeses: 6, clienteId: "",
       // Boleto (só conta a receber). Liga automaticamente se houver conta bancária.
       gerarBoleto: ehReceber && bankAccounts.length > 0,
       bankAccountId: bankAccounts[0]?.id || "",
@@ -585,7 +585,15 @@ function ContaPRForm({ inicialTipo, contas, categorias, bankAccounts = [], clien
     if (!f.descricao.trim() || !(f.valor > 0)) return;
     const clienteId = ehReceber ? (f.clienteId || null) : null;
     const clienteNome = clienteId ? (clientes.find((c) => c.id === clienteId)?.nome || "") : null;
-    const base = { tipo, descricao: f.descricao, categoria: f.categoria, subcategoria: f.subcategoria, valor: f.valor, contaId: f.contaId, data: f.data, recorrente: f.recorrencia === "mensal", clienteId, clienteNome };
+    const pago = !!f.dataPagamento.trim();
+    // Data "oficial" do lançamento: pagamento (se já pago) senão vencimento.
+    const data = f.dataPagamento || f.dataVencimento;
+    const base = {
+      tipo, descricao: f.descricao, categoria: f.categoria, subcategoria: f.subcategoria, valor: f.valor, contaId: f.contaId,
+      data, dataVencimento: f.dataVencimento, dataPagamento: f.dataPagamento || "",
+      status: pago ? "pago" : "previsto",
+      recorrente: f.recorrencia === "mensal", clienteId, clienteNome,
+    };
     const start = f.mesInicial;
     const meses = f.recorrencia === "mensal"
       ? Array.from({ length: Math.min(f.nMeses, MESES.length - start) }, (_, i) => start + i)
@@ -636,15 +644,18 @@ function ContaPRForm({ inicialTipo, contas, categorias, bankAccounts = [], clien
         </Field>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <Field label="Vencimento (dia)">
-          <input value={f.data} onChange={(e) => setF({ ...f, data: e.target.value })} style={inp} placeholder="DD/MM" />
+        <Field label="Vencimento">
+          <input value={f.dataVencimento} onChange={(e) => setF({ ...f, dataVencimento: maskData(e.target.value) })} style={inp} placeholder="DD/MM/AAAA" inputMode="numeric" />
         </Field>
-        <Field label="1ª competência">
+        <Field label="1ª competência (mês)">
           <select value={f.mesInicial} onChange={(e) => setF({ ...f, mesInicial: +e.target.value })} style={inp}>
             {MESES.map((m, i) => <option key={i} value={i}>{m}</option>)}
           </select>
         </Field>
       </div>
+      <Field label="Pagamento — preencha só se já foi pago (entra no regime de caixa)">
+        <input value={f.dataPagamento} onChange={(e) => setF({ ...f, dataPagamento: maskData(e.target.value) })} style={inp} placeholder="DD/MM/AAAA — deixe vazio se ainda não pago" inputMode="numeric" />
+      </Field>
       <Field label="Recorrência">
         <div style={{ display: "flex", gap: 8 }}>
           {[["unica", "Única"], ["mensal", "Mensal"]].map(([v, lb]) => (

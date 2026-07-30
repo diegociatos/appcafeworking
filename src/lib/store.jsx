@@ -553,7 +553,7 @@ export function StoreProvider({ children }) {
   const addContaRecorrente = (unidadeId, base, meses, boletoCfg) => {
     const grupo = "rec" + Date.now();
     const ts = Date.now();
-    const novos = meses.map((m, i) => ({ ...base, id: `lc${ts}_${m}_${i}`, unidadeId, mes: m, status: "previsto", grupoRecorrencia: meses.length > 1 ? grupo : undefined }));
+    const novos = meses.map((m, i) => ({ ...base, id: `lc${ts}_${m}_${i}`, unidadeId, mes: m, status: base.status || "previsto", grupoRecorrencia: meses.length > 1 ? grupo : undefined }));
     const novosBoletos = [];
     if (boletoCfg && boletoCfg.gerar && base.tipo === "entrada") {
       const conta = bankAccounts.find((b) => b.id === boletoCfg.bankAccountId);
