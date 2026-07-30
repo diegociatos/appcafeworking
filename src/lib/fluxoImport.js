@@ -87,6 +87,39 @@ export async function gerarModeloFluxo({ contas = [], categorias = [], unidadeNo
   XLSX.writeFile(wb, `modelo-fluxo-de-caixa${slug}.xlsx`);
 }
 
+/** Exporta o extrato (movimentos já filtrados por conta/período) para .xlsx.
+ *  Valores vão como NÚMERO para o Excel poder somar. */
+export async function exportarExtratoExcel({ contaNome = "", periodoLabel = "", saldoInicial = 0, saldoAnterior = 0, linhas = [], totalEntradas = 0, totalSaidas = 0, saldoFim = 0, unidadeNome = "" }) {
+  const XLSX = await import("xlsx");
+  const wb = XLSX.utils.book_new();
+  const aoa = [
+    [`Extrato — ${contaNome}`],
+    [`Período: ${periodoLabel}`],
+    [`Saldo inicial da conta: ${saldoInicial}`],
+    [],
+    ["Data", "Descrição", "Categoria", "Subcategoria", "Entrada (R$)", "Saída (R$)", "Saldo (R$)"],
+    ["", "Saldo anterior", "", "", "", "", saldoAnterior],
+    ...linhas.map((l) => [
+      l.data || "",
+      l.descricao || "",
+      l.categoria || "",
+      l.subcategoria || "",
+      l.tipo === "entrada" ? l.valor : "",
+      l.tipo === "saida" ? l.valor : "",
+      l.saldoCorrente,
+    ]),
+    ["", "Totais do período", "", "", totalEntradas, totalSaidas, ""],
+    ["", "Saldo ao fim do período", "", "", "", "", saldoFim],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [{ wch: 12 }, { wch: 42 }, { wch: 26 }, { wch: 26 }, { wch: 14 }, { wch: 14 }, { wch: 14 }];
+  XLSX.utils.book_append_sheet(wb, ws, "Extrato");
+  const slugC = norm(contaNome).replace(/\s+/g, "-") || "conta";
+  const slugP = norm(periodoLabel).replace(/\s+/g, "-") || "periodo";
+  const slugU = unidadeNome ? "-" + norm(unidadeNome).replace(/\s+/g, "-") : "";
+  XLSX.writeFile(wb, `extrato-${slugC}-${slugP}${slugU}.xlsx`);
+}
+
 /** Lê a planilha enviada e devolve as linhas cruas (objetos por cabeçalho). */
 export async function lerPlanilhaFluxo(file) {
   const XLSX = await import("xlsx");

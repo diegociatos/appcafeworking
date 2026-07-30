@@ -8,7 +8,7 @@ import { Card, Badge, Btn, PageHead, Modal, Field, Empty, FileInput } from "../c
 import { C, serif, sans, fmt, fmtShort, inp } from "../lib/theme.js";
 import { useStore, SECOES } from "../lib/store.jsx";
 import { getCurrentCompetencia } from "../lib/dateUtils.js";
-import { gerarModeloFluxo, lerPlanilhaFluxo, validarLinhas } from "../lib/fluxoImport.js";
+import { gerarModeloFluxo, lerPlanilhaFluxo, validarLinhas, exportarExtratoExcel } from "../lib/fluxoImport.js";
 
 const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 // Competência atual a partir da data real (sem datas fixas).
@@ -962,6 +962,13 @@ function Extrato({ contas, lancamentos, onAbrir }) {
               <option value="todos">Ano todo ({ANO_ATUAL})</option>
               {MESES.map((m, i) => <option key={i} value={i}>{m}/{ANO_ATUAL}</option>)}
             </select>
+            <Btn variant="soft" disabled={linhas.length === 0} onClick={() => exportarExtratoExcel({
+              contaNome: conta.banco, periodoLabel: anoTodo ? `Ano ${ANO_ATUAL}` : `${MESES[mesSel]} ${ANO_ATUAL}`,
+              saldoInicial, saldoAnterior, linhas, totalEntradas, totalSaidas, saldoFim: saldoFimPeriodo,
+            }).catch((e) => alert("Não foi possível exportar: " + (e?.message || e)))}
+              style={{ opacity: linhas.length === 0 ? 0.5 : 1 }} title="Exportar este período para Excel">
+              <Download size={15} /> Exportar Excel
+            </Btn>
             <div style={{ textAlign: "right" }}>
               <div style={{ fontSize: 11, color: C.text3 }}>Saldo atual</div>
               <div style={{ fontFamily: serif, fontSize: 22, color: saldoAtual >= 0 ? C.teal : C.red }}>{fmt(saldoAtual)}</div>
