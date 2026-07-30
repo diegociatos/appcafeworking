@@ -34,15 +34,15 @@ const saldoAtualConta = (conta, lancamentos) =>
 // Seções do Financeiro — usadas no sidebar PRINCIPAL (App.jsx) como submenu.
 export const FIN_GRUPOS = [
   { titulo: "Movimento", itens: [
-    { id: "visao", label: "Visão geral", icon: BarChart3 },
-    { id: "extrato", label: "Fluxo de caixa", icon: Wallet },
-    { id: "receber", label: "Contas a receber", icon: ArrowUpRight },
-    { id: "pagar", label: "Contas a pagar", icon: ArrowDownRight },
+    { id: "visao", label: "Visão Geral", icon: BarChart3 },
+    { id: "extrato", label: "Fluxo de Caixa", icon: Wallet },
+    { id: "receber", label: "Contas a Receber", icon: ArrowUpRight },
+    { id: "pagar", label: "Contas a Pagar", icon: ArrowDownRight },
     { id: "contratos", label: "Contratos", icon: FileSignature },
   ] },
   { titulo: "Relatórios", itens: [
     { id: "dre", label: "DRE", icon: FileText },
-    { id: "recebimentos", label: "Recebimentos por cliente", icon: Receipt },
+    { id: "recebimentos", label: "Recebimentos por Cliente", icon: Receipt },
   ] },
   { titulo: "Cadastros", itens: [
     { id: "bancos", label: "Bancos", icon: Landmark },
@@ -916,6 +916,8 @@ function Extrato({ contas, lancamentos, onAbrir }) {
     return { ...l, saldoCorrente: run };
   });
   const saldoFimPeriodo = run;
+  const totalEntradas = movs.reduce((s, l) => s + (l.tipo === "entrada" ? l.valor : 0), 0);
+  const totalSaidas = movs.reduce((s, l) => s + (l.tipo === "saida" ? l.valor : 0), 0);
   const saldoAtual = saldoAtualConta(conta, lancamentos);
   const previstos = lancamentos.filter((l) => l.contaId === contaSel && l.status === "previsto");
 
@@ -988,6 +990,17 @@ function Extrato({ contas, lancamentos, onAbrir }) {
         ))}
 
         {linhas.length === 0 && <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: C.text4 }}>Nenhuma movimentação em {anoTodo ? ANO_ATUAL : `${MESES[mesSel]}/${ANO_ATUAL}`} nesta conta. Troque o mês acima para procurar em outro período.</div>}
+
+        {/* totais de entradas e saídas do período */}
+        {linhas.length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "12px 20px", borderTop: `1px solid ${C.border2}`, background: "#fff", fontWeight: 700 }}>
+            <Cel style={{ color: C.text4 }}>Totais</Cel>
+            <Cel style={{ textAlign: "right", color: C.green }}>{fmt(totalEntradas)}</Cel>
+            <Cel style={{ textAlign: "right", color: C.red }}>{fmt(totalSaidas)}</Cel>
+            <Cel style={{ textAlign: "right", color: (totalEntradas - totalSaidas) >= 0 ? C.teal : C.red }}>{fmt(totalEntradas - totalSaidas)}</Cel>
+            <Cel style={{ color: C.text3, fontStyle: "italic" }}>Entradas e saídas {anoTodo ? `de ${ANO_ATUAL}` : `de ${MESES[mesSel]}`} · resultado do período</Cel>
+          </div>
+        )}
 
         {/* saldo final do período */}
         <div style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "13px 20px", background: C.cream, fontWeight: 700 }}>
@@ -1435,19 +1448,36 @@ function RecebimentosCliente({ clientes = [], lancamentos = [], updateLancamento
     (previa?.vinculaveis || []).forEach(({ l, cliente }) => updateLancamento && updateLancamento(l.id, { clienteId: cliente.id, clienteNome: cliente.nome }));
     setPrevia(null);
   };
+  const [view, setView] = useState("mensal"); // "mensal" (mês a mês) | "consolidado"
+  // Regime de caixa: mês em que o dinheiro entrou (data de pagamento). Cai para
+  // a competência (l.mes) quando o lançamento antigo não tem data de pagamento.
+  const mesCaixa = (l) => {
+    const d = l.dataPagamento || l.data;
+    if (d && /^\d{2}\/\d{2}\/\d{4}$/.test(d)) { const m = +d.slice(3, 5) - 1; if (m >= 0 && m <= 11) return m; }
+    return l.mes;
+  };
   const recebidos = lancamentos.filter((l) => l.tipo === "entrada" && l.status === "pago" && l.clienteId);
+  const clientesOrd = clientes.slice().sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"));
   const triIdx = Math.floor(mesRef / 3);
   const triMeses = TRIMESTRES[triIdx].meses;
   const somaCli = (cid, filtro) => recebidos.filter((l) => l.clienteId === cid && filtro(l)).reduce((s, l) => s + l.valor, 0);
-  const linhas = clientes.map((c) => ({
+  const linhas = clientesOrd.map((c) => ({
     id: c.id, nome: c.nome,
-    mes: somaCli(c.id, (l) => l.mes === mesRef),
-    tri: somaCli(c.id, (l) => triMeses.includes(l.mes)),
+    mes: somaCli(c.id, (l) => mesCaixa(l) === mesRef),
+    tri: somaCli(c.id, (l) => triMeses.includes(mesCaixa(l))),
     ano: somaCli(c.id, () => true),
     acum: somaCli(c.id, () => true),
-  })).sort((a, b) => b.acum - a.acum);
+  }));
   const tot = linhas.reduce((t, r) => ({ mes: t.mes + r.mes, tri: t.tri + r.tri, ano: t.ano + r.ano, acum: t.acum + r.acum }), { mes: 0, tri: 0, ano: 0, acum: 0 });
+  // Matriz mês a mês (regime de caixa): cada cliente x 12 meses + total
+  const matriz = clientesOrd.map((c) => {
+    const meses = MESES.map((_, mi) => somaCli(c.id, (l) => mesCaixa(l) === mi));
+    return { id: c.id, nome: c.nome, meses, total: meses.reduce((s, v) => s + v, 0) };
+  });
+  const totMes = MESES.map((_, mi) => matriz.reduce((s, r) => s + r.meses[mi], 0));
+  const totGeral = totMes.reduce((s, v) => s + v, 0);
   const semVinculo = lancamentos.filter((l) => l.tipo === "entrada" && l.status === "pago" && !l.clienteId).length;
+  const fmtNum = (v) => fmt(v).replace("R$ ", "").replace("R$ ", "");
 
   const col = "1fr 110px 110px 110px 130px";
   const Cel = ({ children, style }) => <div style={{ fontSize: 13, ...style }}>{children}</div>;
@@ -1457,13 +1487,22 @@ function RecebimentosCliente({ clientes = [], lancamentos = [], updateLancamento
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
         <div>
           <div style={{ fontFamily: serif, fontSize: 20 }}>Recebimentos por cliente</div>
-          <div style={{ fontSize: 12.5, color: C.text3 }}>Entradas pagas vinculadas a cada cliente. Vincule o cliente ao lançar (ou editar) uma entrada.</div>
+          <div style={{ fontSize: 12.5, color: C.text3 }}>Regime de caixa — valor recebido no mês do pagamento. Clientes sem recebimento aparecem destacados.</div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 12.5, color: C.text3 }}>Mês de referência</span>
-          <select value={mesRef} onChange={(e) => setMesRef(+e.target.value)} style={{ ...inp, width: "auto", padding: "7px 10px", fontSize: 13 }}>
-            {MESES.map((m, i) => <option key={i} value={i}>{m}/{ANO_ATUAL}</option>)}
-          </select>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", background: C.cream, borderRadius: 10, padding: 3, gap: 2 }}>
+            {[["mensal", "Mês a mês"], ["consolidado", "Consolidado"]].map(([v, lbl]) => (
+              <button key={v} onClick={() => setView(v)} className="cw-btn"
+                style={{ padding: "6px 14px", borderRadius: 8, fontSize: 12.5, fontWeight: 600, border: "none",
+                  background: view === v ? C.white : "transparent", color: view === v ? C.cafe : C.text3,
+                  boxShadow: view === v ? "0 1px 3px rgba(0,0,0,.08)" : "none" }}>{lbl}</button>
+            ))}
+          </div>
+          {view === "consolidado" && (
+            <select value={mesRef} onChange={(e) => setMesRef(+e.target.value)} style={{ ...inp, width: "auto", padding: "7px 10px", fontSize: 13 }}>
+              {MESES.map((m, i) => <option key={i} value={i}>{m}/{ANO_ATUAL}</option>)}
+            </select>
+          )}
         </div>
       </div>
 
@@ -1499,38 +1538,77 @@ function RecebimentosCliente({ clientes = [], lancamentos = [], updateLancamento
         </div>
       )}
 
-      <Card style={{ padding: 0, overflow: "hidden" }}>
-        <div style={{ overflowX: "auto" }}>
-          <div style={{ minWidth: 620 }}>
-            <div style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "11px 18px", background: C.cream, fontSize: 11, fontWeight: 700, color: C.text3, letterSpacing: 0.3 }}>
-              <div>CLIENTE</div>
-              <div style={{ textAlign: "right" }}>{MESES[mesRef].toUpperCase()}</div>
-              <div style={{ textAlign: "right" }}>{triIdx + 1}º TRI</div>
-              <div style={{ textAlign: "right" }}>ANO {ANO_ATUAL}</div>
-              <div style={{ textAlign: "right" }}>ACUMULADO</div>
+      {view === "mensal" ? (
+        <Card style={{ padding: 0, overflow: "hidden" }}>
+          <div style={{ overflowX: "auto" }}>
+            <div style={{ minWidth: 240 + 12 * 84 + 120 }}>
+              {(() => {
+                const mcol = `220px repeat(12, 84px) 120px`;
+                return (
+                  <>
+                    <div style={{ display: "grid", gridTemplateColumns: mcol, gap: 0, padding: "11px 18px", background: C.cream, fontSize: 10.5, fontWeight: 700, color: C.text3, letterSpacing: 0.3, position: "sticky", top: 0 }}>
+                      <div>CLIENTE</div>
+                      {MESES.map((m, i) => <div key={i} style={{ textAlign: "right" }}>{m.slice(0, 3).toUpperCase()}</div>)}
+                      <div style={{ textAlign: "right" }}>TOTAL {ANO_ATUAL}</div>
+                    </div>
+                    {matriz.map((r) => {
+                      const semRec = r.total === 0;
+                      return (
+                        <div key={r.id} style={{ display: "grid", gridTemplateColumns: mcol, gap: 0, padding: "9px 18px", borderTop: `1px solid ${C.border2}`, alignItems: "center", background: semRec ? `${C.red}08` : "transparent" }}>
+                          <Cel style={{ fontWeight: 600, color: semRec ? C.red : C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", paddingRight: 8 }} >{r.nome}{semRec && <span style={{ fontSize: 10, fontWeight: 700, color: C.red, marginLeft: 6 }}>· sem recebimento</span>}</Cel>
+                          {r.meses.map((v, i) => <Cel key={i} style={{ textAlign: "right", fontSize: 11.5, color: v ? C.text : C.border, fontVariantNumeric: "tabular-nums" }}>{v ? fmtNum(v) : "·"}</Cel>)}
+                          <Cel style={{ textAlign: "right", fontWeight: 700, fontSize: 12.5, color: r.total ? C.green : C.text4, fontVariantNumeric: "tabular-nums" }}>{r.total ? fmtNum(r.total) : "—"}</Cel>
+                        </div>
+                      );
+                    })}
+                    {matriz.length === 0 && <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: C.text4 }}>Nenhum cliente cadastrado nesta unidade.</div>}
+                    {matriz.length > 0 && (
+                      <div style={{ display: "grid", gridTemplateColumns: mcol, gap: 0, padding: "12px 18px", background: C.cream, fontWeight: 700 }}>
+                        <Cel style={{ fontFamily: serif, fontSize: 13.5 }}>TOTAL</Cel>
+                        {totMes.map((v, i) => <Cel key={i} style={{ textAlign: "right", fontSize: 11, fontVariantNumeric: "tabular-nums" }}>{v ? fmtNum(v) : "·"}</Cel>)}
+                        <Cel style={{ textAlign: "right", color: C.green, fontSize: 12.5, fontVariantNumeric: "tabular-nums" }}>{fmtNum(totGeral)}</Cel>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
-            {linhas.map((r) => (
-              <div key={r.id} style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "11px 18px", borderTop: `1px solid ${C.border2}`, alignItems: "center" }}>
-                <Cel style={{ fontWeight: 600 }}>{r.nome}</Cel>
-                <Cel style={{ textAlign: "right", color: r.mes ? C.text : C.text4 }}>{r.mes ? fmt(r.mes) : "—"}</Cel>
-                <Cel style={{ textAlign: "right", color: r.tri ? C.text : C.text4 }}>{r.tri ? fmt(r.tri) : "—"}</Cel>
-                <Cel style={{ textAlign: "right", color: r.ano ? C.text : C.text4 }}>{r.ano ? fmt(r.ano) : "—"}</Cel>
-                <Cel style={{ textAlign: "right", fontWeight: 700, color: r.acum ? C.green : C.text4 }}>{r.acum ? fmt(r.acum) : "—"}</Cel>
-              </div>
-            ))}
-            {linhas.length === 0 && <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: C.text4 }}>Nenhum cliente cadastrado nesta unidade.</div>}
-            {linhas.length > 0 && (
-              <div style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "13px 18px", background: C.cream, fontWeight: 700 }}>
-                <Cel style={{ fontFamily: serif, fontSize: 14 }}>TOTAL</Cel>
-                <Cel style={{ textAlign: "right" }}>{fmt(tot.mes)}</Cel>
-                <Cel style={{ textAlign: "right" }}>{fmt(tot.tri)}</Cel>
-                <Cel style={{ textAlign: "right" }}>{fmt(tot.ano)}</Cel>
-                <Cel style={{ textAlign: "right", color: C.green }}>{fmt(tot.acum)}</Cel>
-              </div>
-            )}
           </div>
-        </div>
-      </Card>
+        </Card>
+      ) : (
+        <Card style={{ padding: 0, overflow: "hidden" }}>
+          <div style={{ overflowX: "auto" }}>
+            <div style={{ minWidth: 620 }}>
+              <div style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "11px 18px", background: C.cream, fontSize: 11, fontWeight: 700, color: C.text3, letterSpacing: 0.3 }}>
+                <div>CLIENTE</div>
+                <div style={{ textAlign: "right" }}>{MESES[mesRef].toUpperCase()}</div>
+                <div style={{ textAlign: "right" }}>{triIdx + 1}º TRI</div>
+                <div style={{ textAlign: "right" }}>ANO {ANO_ATUAL}</div>
+                <div style={{ textAlign: "right" }}>ACUMULADO</div>
+              </div>
+              {linhas.map((r) => (
+                <div key={r.id} style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "11px 18px", borderTop: `1px solid ${C.border2}`, alignItems: "center" }}>
+                  <Cel style={{ fontWeight: 600 }}>{r.nome}</Cel>
+                  <Cel style={{ textAlign: "right", color: r.mes ? C.text : C.text4 }}>{r.mes ? fmt(r.mes) : "—"}</Cel>
+                  <Cel style={{ textAlign: "right", color: r.tri ? C.text : C.text4 }}>{r.tri ? fmt(r.tri) : "—"}</Cel>
+                  <Cel style={{ textAlign: "right", color: r.ano ? C.text : C.text4 }}>{r.ano ? fmt(r.ano) : "—"}</Cel>
+                  <Cel style={{ textAlign: "right", fontWeight: 700, color: r.acum ? C.green : C.text4 }}>{r.acum ? fmt(r.acum) : "—"}</Cel>
+                </div>
+              ))}
+              {linhas.length === 0 && <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: C.text4 }}>Nenhum cliente cadastrado nesta unidade.</div>}
+              {linhas.length > 0 && (
+                <div style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "13px 18px", background: C.cream, fontWeight: 700 }}>
+                  <Cel style={{ fontFamily: serif, fontSize: 14 }}>TOTAL</Cel>
+                  <Cel style={{ textAlign: "right" }}>{fmt(tot.mes)}</Cel>
+                  <Cel style={{ textAlign: "right" }}>{fmt(tot.tri)}</Cel>
+                  <Cel style={{ textAlign: "right" }}>{fmt(tot.ano)}</Cel>
+                  <Cel style={{ textAlign: "right", color: C.green }}>{fmt(tot.acum)}</Cel>
+                </div>
+              )}
+            </div>
+          </div>
+        </Card>
+      )}
     </>
   );
 }
