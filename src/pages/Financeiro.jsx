@@ -120,7 +120,7 @@ export default function Financeiro({ finTab }) {
           />
         )}
         {tab === "contratos" && <Contratos store={store} activeUnit={activeUnit} />}
-        {tab === "extrato" && <Extrato contas={contas} lancamentos={lancamentos} onAbrir={setDetalheLanc} />}
+        {tab === "extrato" && <Extrato contas={contas} lancamentos={lancamentos} onAbrir={setDetalheLanc} onRemoverImportados={(contaId) => store.removerImportados(activeUnit, contaId)} />}
         {tab === "dre" && <DRE lancamentos={lancamentos} categorias={categorias} />}
         {tab === "recebimentos" && <RecebimentosCliente clientes={clientesUnidade} lancamentos={lancamentos} updateLancamento={store.updateLancamento} />}
         {tab === "bancos" && <Bancos contas={contas} lancamentos={lancamentos} saldoTotal={saldoTotal} onNovo={() => setContaModal({})} onEditar={(c) => setContaModal(c)} onExcluir={(c) => store.removeConta(c.id)} />}
@@ -923,10 +923,17 @@ function RenovarForm({ contrato, onSalvar }) {
 }
 
 // ===== EXTRATO (por conta, com saldo corrente) =============================
-function Extrato({ contas, lancamentos, onAbrir }) {
+function Extrato({ contas, lancamentos, onAbrir, onRemoverImportados }) {
   const [contaSel, setContaSel] = useState(contas[0]?.id || "");
   const [mesSel, setMesSel] = useState(MES_ATUAL); // 0..11 ou "todos" (ano inteiro)
   const conta = contas.find((c) => c.id === contaSel);
+  const qtdImportados = lancamentos.filter((l) => l.contaId === contaSel && l.origem === "importacao").length;
+  const desfazerImport = () => {
+    if (!qtdImportados) return;
+    if (!window.confirm(`Remover ${qtdImportados} lançamento(s) IMPORTADO(S) da conta "${conta?.banco}"?\n\nOs lançamentos digitados à mão NÃO são afetados. Esta ação não pode ser desfeita.`)) return;
+    const n = onRemoverImportados && onRemoverImportados(contaSel);
+    if (n != null) window.alert(`${n} lançamento(s) importado(s) removido(s).`);
+  };
 
   if (!conta) return <Card><Empty icon={Wallet} title="Nenhuma conta" sub="Cadastre uma conta em Bancos." /></Card>;
 
@@ -993,6 +1000,12 @@ function Extrato({ contas, lancamentos, onAbrir }) {
               style={{ opacity: linhas.length === 0 ? 0.5 : 1 }} title="Exportar este período para Excel">
               <Download size={15} /> Exportar Excel
             </Btn>
+            {qtdImportados > 0 && (
+              <Btn variant="ghost" onClick={desfazerImport} title="Remove em lote os lançamentos que vieram de importação nesta conta"
+                style={{ color: C.red }}>
+                <Trash2 size={15} /> Desfazer importação ({qtdImportados})
+              </Btn>
+            )}
             <div style={{ textAlign: "right" }}>
               <div style={{ fontSize: 11, color: C.text3 }}>Saldo atual</div>
               <div style={{ fontFamily: serif, fontSize: 22, color: saldoAtual >= 0 ? C.teal : C.red }}>{fmt(saldoAtual)}</div>

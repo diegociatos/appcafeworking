@@ -579,6 +579,14 @@ export function StoreProvider({ children }) {
   };
   const updateLancamento = (id, patch) => setLancamentos((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
   const removeLancamento = (id) => setLancamentos((ls) => ls.filter((l) => l.id !== id));
+  // Remove em lote os lançamentos que vieram de IMPORTAÇÃO (origem: "importacao")
+  // de uma conta. Nunca toca nos digitados à mão. Retorna quantos foram removidos.
+  const removerImportados = (unidadeId, contaId) => {
+    const alvo = (l) => l.unidadeId === unidadeId && l.contaId === contaId && l.origem === "importacao";
+    const n = lancamentos.filter(alvo).length;
+    if (n) setLancamentos((ls) => ls.filter((l) => !alvo(l)));
+    return n;
+  };
   const lancamentosDe = (unidadeId) => lancamentos.filter((l) => l.unidadeId === unidadeId);
 
   // Financeiro: catálogo de produtos/serviços ------------------------------
@@ -1180,7 +1188,7 @@ export function StoreProvider({ children }) {
       salasDe, produtosDe, unidadesDe,
       contas, lancamentos, catalogo, categorias,
       addConta, updateConta, removeConta, contasDe,
-      addLancamento, addLancamentosBulk, addContaRecorrente, updateLancamento, removeLancamento, lancamentosDe,
+      addLancamento, addLancamentosBulk, addContaRecorrente, updateLancamento, removeLancamento, removerImportados, lancamentosDe,
       addItemCatalogo, updateItemCatalogo, removeItemCatalogo, catalogoDe,
       addCategoria, updateCategoria, removeCategoria,
       bankAccounts, boletos,
