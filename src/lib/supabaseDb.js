@@ -102,9 +102,34 @@ async function writeJson(pathQuery, method, body, prefer = "return=representatio
 }
 
 // ---- app_state: persistência genérica das entidades operacionais ----------
-/** Lê todo o estado operacional das unidades do usuário (RLS filtra). */
+/** Lê TODO o estado operacional das unidades do usuário (RLS filtra).
+ *  PAGINADO: o PostgREST corta a resposta (padrão ~1000 linhas). Sem paginar,
+ *  uma unidade com muitos lançamentos (ex.: extrato importado) carregava
+ *  incompleta no refresh — saldos vinham errados. Aqui percorremos em páginas
+ *  de 1000, em ordem estável (unidade_id, entity, item_id) para não pular nem
+ *  repetir linha entre páginas, até esgotar. */
 export async function fetchAppState() {
-  return (await getJson("app_state?select=unidade_id,entity,item_id,doc")) || [];
+  if (!URL || !ANON) return [];
+  const token = await getAccessToken();
+  if (!token) return [];
+  const PAGE = 1000;
+  const all = [];
+  let offset = 0;
+  try {
+    for (;;) {
+      const res = await fetch(
+        `${URL}/rest/v1/app_state?select=unidade_id,entity,item_id,doc&order=unidade_id,entity,item_id&limit=${PAGE}&offset=${offset}`,
+        { headers: { apikey: ANON, authorization: `Bearer ${token}` } },
+      );
+      if (!res.ok) break;
+      const rows = await res.json();
+      if (!Array.isArray(rows) || rows.length === 0) break;
+      all.push(...rows);
+      if (rows.length < PAGE) break; // última página
+      offset += PAGE;
+    }
+  } catch { /* devolve o que já veio */ }
+  return all;
 }
 
 // Escrita que LANÇA em falha (para o sync engine fazer retry/backoff e sinalizar

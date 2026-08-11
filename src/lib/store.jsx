@@ -1096,9 +1096,15 @@ export function StoreProvider({ children }) {
       for (const r of appState) (byEntity[r.entity] ||= []).push(r.doc);
       const apply = (entity, setter) => {
         if (!byEntity[entity]) return;
-        setter(byEntity[entity]);
+        // Dedup por id (defensivo): se por qualquer motivo vierem docs repetidos
+        // do mesmo item, o estado NUNCA pode conter o item duas vezes — senão o
+        // saldo/rateios dobrariam. Mantém a última ocorrência de cada id.
+        const porId = new Map(); const semId = [];
+        for (const it of byEntity[entity]) { if (it?.id != null) porId.set(it.id, it); else semId.push(it); }
+        const arr = [...porId.values(), ...semId];
+        setter(arr);
         const m = new Map();
-        for (const it of byEntity[entity]) {
+        for (const it of arr) {
           if (it?.id != null && it?.unidadeId) m.set(it.id, { unidadeId: it.unidadeId, json: JSON.stringify(it) });
         }
         syncedRef.current[entity] = m;
