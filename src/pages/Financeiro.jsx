@@ -182,9 +182,21 @@ function ImportarFluxoModal({ contas, categorias, unidadeNome, onClose, onImport
   const [erroMsg, setErroMsg] = useState("");
   const [nomeArquivo, setNomeArquivo] = useState("");
   const [qtd, setQtd] = useState(0);
+  const [rawRows, setRawRows] = useState([]);
+  const [contaDestino, setContaDestino] = useState(""); // "" = usar coluna Conta da planilha
 
   const baixarModelo = () =>
     gerarModeloFluxo({ contas, categorias, unidadeNome }).catch((e) => setErroMsg("Não foi possível gerar o modelo: " + (e?.message || e)));
+
+  const validar = (rows, destinoId) => {
+    const contaForcada = destinoId ? contas.find((c) => c.id === destinoId) : null;
+    setPrevia(validarLinhas(rows, { contas, categorias, contaForcada }));
+  };
+
+  const trocarDestino = (destinoId) => {
+    setContaDestino(destinoId);
+    if (rawRows.length) validar(rawRows, destinoId);
+  };
 
   const aoEscolher = async (e) => {
     const file = e.target.files?.[0];
@@ -195,7 +207,8 @@ function ImportarFluxoModal({ contas, categorias, unidadeNome, onClose, onImport
     setEstado("lendo");
     try {
       const rows = await lerPlanilhaFluxo(file);
-      setPrevia(validarLinhas(rows, { contas, categorias }));
+      setRawRows(rows);
+      validar(rows, contaDestino);
       setEstado("previa");
     } catch (err) {
       setErroMsg("Não consegui ler a planilha. Confira se é um .xlsx/.csv válido e se a aba se chama \"Lançamentos\". (" + (err?.message || err) + ")");
@@ -226,6 +239,17 @@ function ImportarFluxoModal({ contas, categorias, unidadeNome, onClose, onImport
     <Modal title="Importar Fluxo de Caixa (Excel)" onClose={onClose} maxWidth={620}>
       <div style={{ fontSize: 13, color: C.text2, marginBottom: 14 }}>
         <b>1.</b> Baixe o modelo, preencha e salve. <b>2.</b> Envie o arquivo — validamos tudo antes de importar. A aba <b>Instruções</b> do modelo lista as contas e categorias válidas desta unidade.
+      </div>
+
+      <div style={{ background: C.cream, border: `1px solid ${C.border2}`, borderRadius: 12, padding: 12, marginBottom: 14 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>Importar tudo para a conta:</div>
+        <select value={contaDestino} onChange={(e) => trocarDestino(e.target.value)} style={inp}>
+          <option value="">— usar a coluna “Conta” de cada linha da planilha —</option>
+          {contas.map((c) => <option key={c.id} value={c.id}>{c.banco}</option>)}
+        </select>
+        <div style={{ fontSize: 11.5, color: C.text3, marginTop: 6 }}>
+          Extrato de um banco só? Escolha a conta aqui — <b>todas as linhas entram nela</b> e a coluna “Conta” da planilha é ignorada. Assim o extrato do Bradesco não cai no Inter por engano.
+        </div>
       </div>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>

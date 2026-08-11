@@ -524,7 +524,7 @@ export function StoreProvider({ children }) {
   const marcarConversaLida = (id) => setConversas((cs) => cs.map((c) => (c.id === id ? { ...c, unread: 0 } : c)));
 
   // Financeiro: contas bancárias -------------------------------------------
-  const addConta = (unidadeId, c) => setContas((cs) => [...cs, { id: "cb" + Date.now(), unidadeId, saldo: 0, ...c }]);
+  const addConta = (unidadeId, c) => setContas((cs) => [...cs, { id: "cb" + Date.now() + Math.floor(Math.random() * 1000), unidadeId, saldo: 0, ...c }]);
   const updateConta = (id, patch) => setContas((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } : c)));
   const removeConta = (id) => setContas((cs) => cs.filter((c) => c.id !== id));
   const contasDe = (unidadeId) => contas.filter((c) => c.unidadeId === unidadeId);
@@ -533,7 +533,7 @@ export function StoreProvider({ children }) {
   const addLancamento = (unidadeId, l) => {
     // Competência: usa l.mes se vier; senão deriva da DATA DE COMPETÊNCIA (ou data/hoje).
     const mes = l.mes != null ? l.mes : parseDateToCompetencia(l.dataCompetencia || l.data).mes;
-    setLancamentos((ls) => [...ls, { id: "lc" + Date.now(), unidadeId, status: "pago", ...l, mes }]);
+    setLancamentos((ls) => [...ls, { id: "lc" + Date.now() + Math.floor(Math.random() * 1000), unidadeId, status: "pago", ...l, mes }]);
   };
   // Importação em lote (planilha de fluxo de caixa). Um único setState → cada
   // item ganha id/unidadeId e persiste pelo useSync. Retorna quantos entraram.

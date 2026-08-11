@@ -132,7 +132,7 @@ export async function lerPlanilhaFluxo(file) {
 
 /** Valida as linhas contra as contas/categorias da unidade. Retorna
  *  { validos: [lançamento pronto p/ addLancamentosBulk], erros: [{linha, motivo}] }. */
-export function validarLinhas(rows, { contas = [], categorias = [] }) {
+export function validarLinhas(rows, { contas = [], categorias = [], contaForcada = null }) {
   const contaPorNome = new Map(contas.map((c) => [norm(c.banco), c]));
   const catPorNome = new Map(categorias.map((c) => [norm(c.nome), c]));
   const validos = [];
@@ -175,9 +175,14 @@ export function validarLinhas(rows, { contas = [], categorias = [] }) {
       }
     }
 
-    const conta = contaPorNome.get(norm(contaNome));
-    if (!contaNome) motivos.push("conta vazia");
-    else if (!conta) motivos.push(`conta "${contaNome}" não existe nesta unidade`);
+    // Se houver conta de destino escolhida na tela, ela vale para TODAS as linhas
+    // (ignora a coluna "Conta" da planilha) — evita que um extrato de um banco
+    // caia em outra conta por engano de preenchimento.
+    const conta = contaForcada || contaPorNome.get(norm(contaNome));
+    if (!contaForcada) {
+      if (!contaNome) motivos.push("conta vazia");
+      else if (!conta) motivos.push(`conta "${contaNome}" não existe nesta unidade`);
+    }
 
     let subFinal = "";
     if (cat) {
