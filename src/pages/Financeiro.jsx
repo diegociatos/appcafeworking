@@ -43,6 +43,7 @@ export const FIN_GRUPOS = [
   ] },
   { titulo: "Relatórios", itens: [
     { id: "dre", label: "DRE", icon: FileText },
+    { id: "provisao", label: "Provisão", icon: TrendingUp },
     { id: "recebimentos", label: "Recebimentos por Cliente", icon: Receipt },
   ] },
   { titulo: "Cadastros", itens: [
@@ -125,6 +126,7 @@ export default function Financeiro({ finTab }) {
         {tab === "dre" && <DRE lancamentos={lancamentos} categorias={categorias} />}
         {tab === "recebimentos" && <RecebimentosCliente clientes={clientesUnidade} lancamentos={lancamentos} updateLancamento={store.updateLancamento} />}
         {tab === "inadimplencia" && <Inadimplencia clientes={clientesUnidade} lancamentos={lancamentos} contas={contas} categorias={categorias} store={store} activeUnit={activeUnit} />}
+        {tab === "provisao" && <Provisao store={store} activeUnit={activeUnit} lancamentos={lancamentos} categorias={categorias} onNovaDespesa={() => setContaPRModal({ tipo: "saida" })} />}
         {tab === "bancos" && <Bancos contas={contas} lancamentos={lancamentos} saldoTotal={saldoTotal} onNovo={() => setContaModal({})} onEditar={(c) => setContaModal(c)} onExcluir={(c) => store.removeConta(c.id)} />}
         {tab === "categorias" && <Categorias categorias={categorias} lancamentos={lancamentos} store={store} />}
         {tab === "anexos" && <Anexos lancamentos={lancamentos} contas={contas} onAbrir={setDetalheLanc} />}
@@ -1829,6 +1831,152 @@ function LancarInadimplenciaModal({ clientes = [], categorias = [], contas = [],
       </div>
       <Btn disabled={!podeSalvar} style={{ width: "100%", justifyContent: "center", marginTop: 6, opacity: podeSalvar ? 1 : 0.5 }} onClick={salvar}>Lançar inadimplência</Btn>
     </Modal>
+  );
+}
+
+// ===== PROVISÃO / DRE PROVISIONADO =========================================
+function Provisao({ store, activeUnit, lancamentos = [], categorias = [], onNovaDespesa }) {
+  const [incluirRealizado, setIncluirRealizado] = useState(false);
+  const contratos = store.contratosDe(activeUnit).filter((c) => c.status === "ativo");
+  const mesFim = (c) => Math.min(c.mesInicial + c.meses - 1, 11);
+
+  // Base da provisão: lançamentos PREVISTOS (já incluem contratos recorrentes e
+  // despesas recorrentes). Opcionalmente soma os realizados (pagos) p/ ver a
+  // projeção total do ano.
+  const base = lancamentos.filter((l) => (incluirRealizado ? true : l.status === "previsto"));
+
+  const linhasMes = MESES.map((lbl, m) => {
+    const rec = base.filter((l) => l.tipo === "entrada" && l.mes === m).reduce((s, l) => s + l.valor, 0);
+    const desp = base.filter((l) => l.tipo === "saida" && l.mes === m).reduce((s, l) => s + l.valor, 0);
+    return { m, lbl, rec, desp, res: rec - desp };
+  });
+  const totRec = linhasMes.reduce((s, x) => s + x.rec, 0);
+  const totDesp = linhasMes.reduce((s, x) => s + x.desp, 0);
+  const totRes = totRec - totDesp;
+
+  const dre = calcDRE(base, categorias);
+  const margem = dre.rb > 0 ? (dre.lucroLiq / dre.rb) * 100 : 0;
+
+  // Despesas recorrentes agrupadas (por grupo de recorrência ou descrição).
+  const despRecMap = new Map();
+  base.filter((l) => l.tipo === "saida" && l.recorrente).forEach((l) => {
+    const k = l.grupoRecorrencia || l.descricao;
+    const g = despRecMap.get(k) || { descricao: l.descricao, categoria: l.categoria, valorMensal: l.valor, meses: 0, total: 0 };
+    g.meses += 1; g.total += l.valor; despRecMap.set(k, g);
+  });
+  const despRec = [...despRecMap.values()].sort((a, b) => b.total - a.total);
+  const totContratos = contratos.reduce((s, c) => s + c.valorMensal * (mesFim(c) - c.mesInicial + 1), 0);
+  const totDespRec = despRec.reduce((s, g) => s + g.total, 0);
+
+  const Cel = ({ children, style }) => <div style={{ fontSize: 13, ...style }}>{children}</div>;
+  const Linha = ({ label, valor, tipo }) => (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderBottom: `1px solid ${C.border2}` }}>
+      <span style={{ fontSize: 13.5, fontWeight: tipo === "b" || tipo === "f" ? 700 : 500, color: tipo === "f" ? C.text : C.text2 }}>{label}</span>
+      <span style={{ fontFamily: serif, fontSize: tipo === "f" ? 16 : 14, color: valor < 0 ? C.red : (tipo === "f" ? C.teal : C.text) }}>{fmt(valor)}</span>
+    </div>
+  );
+  const modo = incluirRealizado ? "tudo" : "prev";
+  const gcol = "90px 1fr 1fr 1fr";
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
+        <div>
+          <div style={{ fontFamily: serif, fontSize: 20 }}>Provisão · DRE Provisionado</div>
+          <div style={{ fontSize: 12.5, color: C.text3, maxWidth: 680 }}>Projeção do ano pelos lançamentos previstos — contratos recorrentes (receita) e despesas recorrentes. Planeje o resultado antes de acontecer. Ao dar baixa (receber/pagar), o valor sai da provisão e vira caixa.</div>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", background: C.cream, borderRadius: 10, padding: 3, gap: 2 }}>
+            {[["prev", "Só provisionado"], ["tudo", "Provisionado + realizado"]].map(([v, lb]) => (
+              <button key={v} onClick={() => setIncluirRealizado(v === "tudo")} className="cw-btn"
+                style={{ padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, border: "none",
+                  background: modo === v ? C.white : "transparent", color: modo === v ? C.cafe : C.text3, boxShadow: modo === v ? "0 1px 3px rgba(0,0,0,.08)" : "none" }}>{lb}</button>
+            ))}
+          </div>
+          <Btn variant="soft" onClick={onNovaDespesa}><Plus size={15} /> Despesa recorrente</Btn>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12, marginBottom: 16 }}>
+        <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Receita provisionada (ano)</div><div style={{ fontFamily: serif, fontSize: 24, color: C.green }}>{fmt(totRec)}</div></Card>
+        <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Despesa provisionada (ano)</div><div style={{ fontFamily: serif, fontSize: 24, color: C.red }}>{fmt(totDesp)}</div></Card>
+        <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Resultado provisionado</div><div style={{ fontFamily: serif, fontSize: 24, color: totRes >= 0 ? C.teal : C.red }}>{fmt(totRes)}</div></Card>
+        <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Margem projetada</div><div style={{ fontFamily: serif, fontSize: 24 }}>{margem.toFixed(1)}%</div></Card>
+      </div>
+
+      <Card style={{ padding: 0, overflow: "hidden", marginBottom: 16 }}>
+        <div style={{ padding: "12px 18px", borderBottom: `1px solid ${C.border2}`, fontWeight: 700, fontSize: 13.5 }}>Projeção mês a mês</div>
+        <div style={{ overflowX: "auto" }}><div style={{ minWidth: 560 }}>
+          <div style={{ display: "grid", gridTemplateColumns: gcol, gap: 8, padding: "10px 18px", background: C.cream, fontSize: 11, fontWeight: 700, color: C.text3 }}>
+            <div>MÊS</div><div style={{ textAlign: "right" }}>RECEITAS</div><div style={{ textAlign: "right" }}>DESPESAS</div><div style={{ textAlign: "right" }}>RESULTADO</div>
+          </div>
+          {linhasMes.map((x) => (
+            <div key={x.m} style={{ display: "grid", gridTemplateColumns: gcol, gap: 8, padding: "9px 18px", borderTop: `1px solid ${C.border2}`, alignItems: "center", opacity: (x.rec || x.desp) ? 1 : 0.5 }}>
+              <Cel style={{ fontWeight: 600 }}>{x.lbl}/{ANO_ATUAL}</Cel>
+              <Cel style={{ textAlign: "right", color: x.rec ? C.green : C.text4 }}>{x.rec ? fmt(x.rec) : "—"}</Cel>
+              <Cel style={{ textAlign: "right", color: x.desp ? C.red : C.text4 }}>{x.desp ? fmt(x.desp) : "—"}</Cel>
+              <Cel style={{ textAlign: "right", fontWeight: 700, color: x.res > 0 ? C.teal : x.res < 0 ? C.red : C.text4 }}>{(x.rec || x.desp) ? fmt(x.res) : "—"}</Cel>
+            </div>
+          ))}
+          <div style={{ display: "grid", gridTemplateColumns: gcol, gap: 8, padding: "12px 18px", background: C.cream, fontWeight: 700 }}>
+            <Cel style={{ fontFamily: serif }}>ANO</Cel>
+            <Cel style={{ textAlign: "right", color: C.green }}>{fmt(totRec)}</Cel>
+            <Cel style={{ textAlign: "right", color: C.red }}>{fmt(totDesp)}</Cel>
+            <Cel style={{ textAlign: "right", color: totRes >= 0 ? C.teal : C.red }}>{fmt(totRes)}</Cel>
+          </div>
+        </div></div>
+      </Card>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 16, marginBottom: 16 }}>
+        <Card>
+          <div style={{ fontFamily: serif, fontSize: 17, marginBottom: 10 }}>DRE Provisionado (ano)</div>
+          <Linha label="Receita Operacional Bruta" valor={dre.rb} />
+          <Linha label="(−) Tributos" valor={-dre.trib} />
+          <Linha label="= Receita Líquida" valor={dre.recLiq} tipo="b" />
+          <Linha label="(−) Custo Direto" valor={-dre.cd} />
+          <Linha label="= Lucro Bruto" valor={dre.lucroBruto} tipo="b" />
+          <Linha label="(−) Despesas Operacionais" valor={-dre.dop} />
+          <Linha label="= Resultado Provisionado" valor={dre.lucroLiq} tipo="f" />
+        </Card>
+
+        <Card style={{ padding: 0, overflow: "hidden" }}>
+          <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border2}`, fontWeight: 700, fontSize: 13.5, display: "flex", justifyContent: "space-between" }}>
+            <span>Contratos recorrentes (receita)</span><span style={{ color: C.green }}>{fmt(totContratos)}</span>
+          </div>
+          {contratos.length === 0 && <div style={{ padding: 16, fontSize: 12.5, color: C.text4 }}>Nenhum contrato ativo. Crie em Financeiro → Contratos; as parcelas entram na provisão automaticamente.</div>}
+          {contratos.map((c) => (
+            <div key={c.id} style={{ padding: "10px 16px", borderTop: `1px solid ${C.border2}`, display: "flex", justifyContent: "space-between", gap: 10 }}>
+              <div><div style={{ fontSize: 13, fontWeight: 600 }}>{c.cliente}</div><div style={{ fontSize: 11.5, color: C.text3 }}>{c.plano} · {MESES[c.mesInicial]}–{MESES[mesFim(c)]}/{ANO_ATUAL}</div></div>
+              <div style={{ textAlign: "right" }}><div style={{ fontFamily: serif, fontSize: 14 }}>{fmt(c.valorMensal)}<span style={{ fontSize: 11, color: C.text3 }}>/mês</span></div><div style={{ fontSize: 11, color: C.text3 }}>{mesFim(c) - c.mesInicial + 1} meses</div></div>
+            </div>
+          ))}
+        </Card>
+      </div>
+
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <div style={{ padding: "12px 18px", borderBottom: `1px solid ${C.border2}`, fontWeight: 700, fontSize: 13.5, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>Despesas recorrentes</span>
+          <span style={{ display: "flex", gap: 10, alignItems: "center" }}><span style={{ color: C.red }}>{fmt(totDespRec)}</span><Btn variant="soft" onClick={onNovaDespesa} style={{ padding: "5px 10px", fontSize: 12 }}><Plus size={13} /> Nova</Btn></span>
+        </div>
+        {despRec.length === 0 ? (
+          <div style={{ padding: 16, fontSize: 12.5, color: C.text4 }}>Nenhuma despesa recorrente provisionada. Clique em “Nova” (aluguel, energia, folha…), escolhendo <b>Mensal</b> e o nº de meses — cada parcela entra na provisão.</div>
+        ) : (
+          <div style={{ overflowX: "auto" }}><div style={{ minWidth: 560 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 80px 120px", gap: 8, padding: "10px 18px", background: C.cream, fontSize: 11, fontWeight: 700, color: C.text3 }}>
+              <div>DESCRIÇÃO · CATEGORIA</div><div style={{ textAlign: "right" }}>VALOR/MÊS</div><div style={{ textAlign: "right" }}>MESES</div><div style={{ textAlign: "right" }}>TOTAL</div>
+            </div>
+            {despRec.map((g, i) => (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 120px 80px 120px", gap: 8, padding: "9px 18px", borderTop: `1px solid ${C.border2}`, alignItems: "center" }}>
+                <Cel><div style={{ fontWeight: 600 }}>{g.descricao}</div><div style={{ fontSize: 11.5, color: C.text3 }}>{g.categoria || "—"}</div></Cel>
+                <Cel style={{ textAlign: "right" }}>{fmt(g.valorMensal)}</Cel>
+                <Cel style={{ textAlign: "right" }}>{g.meses}</Cel>
+                <Cel style={{ textAlign: "right", fontWeight: 700, color: C.red }}>{fmt(g.total)}</Cel>
+              </div>
+            ))}
+          </div></div>
+        )}
+      </Card>
+    </>
   );
 }
 
