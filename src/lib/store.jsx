@@ -40,6 +40,12 @@ export { PERFIS, SECOES };
 const REAL = nfseApi.configured;
 const seedOr = (seed) => (REAL ? [] : seed);
 
+// Modelo padrão da mensagem de cobrança (régua de inadimplência). Editável por
+// unidade (persistido como doc global "cobrancaTemplate"). Placeholders:
+// {cliente} {descricao} {valor} {vencimento} {dias}.
+export const COBRANCA_TEMPLATE_DEFAULT =
+  "Olá {cliente}! Consta em aberto: {descricao} — {valor}, com vencimento em {vencimento} ({dias} dia(s) em atraso). Poderia verificar o pagamento, por favor? Obrigado.";
+
 const StoreContext = createContext(null);
 
 // Competencia atual (mes 0..11 + ano) a partir da data real - sem datas fixas.
@@ -78,6 +84,7 @@ export function StoreProvider({ children }) {
   const [leads, setLeads] = useState(seedOr(LEADS_INIT));
   const [crmEtapas, setCrmEtapas] = useState(ETAPAS_CRM);
   const [crmOrigens, setCrmOrigens] = useState(ORIGENS_INIT);
+  const [cobrancaTemplate, setCobrancaTemplate] = useState(COBRANCA_TEMPLATE_DEFAULT);
   const [eventos, setEventos] = useState(seedOr(EVENTOS));
 
   // ---- Sync engine: persiste cada entidade operacional no banco -----------
@@ -207,6 +214,7 @@ export function StoreProvider({ children }) {
   useEffect(() => { _gravarDocGlobal("planoContas", { itens: categorias }); }, [categorias, activeUnit]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { _gravarDocGlobal("crmEtapas", { itens: crmEtapas }); }, [crmEtapas, activeUnit]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { _gravarDocGlobal("crmOrigens", { itens: crmOrigens }); }, [crmOrigens, activeUnit]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { _gravarDocGlobal("cobrancaTemplate", { texto: cobrancaTemplate }); }, [cobrancaTemplate, activeUnit]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [viewAs, setViewAs] = useState(null); // id do franqueado, ou null = franqueador
   const [perfil, setPerfilState] = useState("franqueador"); // perfil de acesso previewado
@@ -1132,6 +1140,8 @@ export function StoreProvider({ children }) {
         if (pcDoc?.itens?.length) setCategorias(pcDoc.itens);
         const ceDoc = pickDocGlobal("crmEtapas");
         if (ceDoc?.itens?.length) setCrmEtapas(ceDoc.itens);
+        const ctDoc = pickDocGlobal("cobrancaTemplate");
+        if (typeof ctDoc?.texto === "string" && ctDoc.texto.trim()) setCobrancaTemplate(ctDoc.texto);
         const coDoc = pickDocGlobal("crmOrigens");
         if (coDoc?.itens?.length) setCrmOrigens(coDoc.itens);
       }
@@ -1170,6 +1180,7 @@ export function StoreProvider({ children }) {
     () => ({
       unidades, franqueados, usuarios, salas, produtos, reservas,
       leads, setLeads, crmEtapas, setCrmEtapas, crmOrigens, setCrmOrigens,
+      cobrancaTemplate, setCobrancaTemplate,
       eventos, eventosDe, addEvento, updateEvento, removeEvento,
       removerCoworking, removerUnidade,
       activeUnit, setActiveUnit,
@@ -1214,7 +1225,7 @@ export function StoreProvider({ children }) {
     // memorizamos o value apenas pelos ESTADOS. Incluir as funções nas deps
     // anularia o useMemo (novo objeto a cada render) — comportamento indesejado.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, configFiscal, notasFiscais, planos, recibos, creditLedger, syncErrors, reservas, leads, crmEtapas, crmOrigens, eventos, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail, clienteNotifPrefs]
+    [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, configFiscal, notasFiscais, planos, recibos, creditLedger, syncErrors, reservas, leads, crmEtapas, crmOrigens, cobrancaTemplate, eventos, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail, clienteNotifPrefs]
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

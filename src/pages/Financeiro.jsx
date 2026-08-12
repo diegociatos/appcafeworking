@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, FileInput } from "../components/ui.jsx";
 import { C, serif, sans, fmt, fmtShort, inp } from "../lib/theme.js";
-import { useStore, SECOES } from "../lib/store.jsx";
+import { useStore, SECOES, COBRANCA_TEMPLATE_DEFAULT } from "../lib/store.jsx";
 import { getCurrentCompetencia, parseDateBR } from "../lib/dateUtils.js";
 import { gerarModeloFluxo, lerPlanilhaFluxo, validarLinhas, exportarExtratoExcel, exportarProvisaoExcel } from "../lib/fluxoImport.js";
 
@@ -1676,6 +1676,9 @@ function RecebimentosCliente({ clientes = [], lancamentos = [], updateLancamento
 function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categorias = [], store, activeUnit }) {
   const [modal, setModal] = useState(false);
   const [cobrar, setCobrar] = useState(null); // título { l, dias } em registro de cobrança
+  const [filtro, setFiltro] = useState("todos"); // todos | sem | hoje
+  const [editarMsg, setEditarMsg] = useState(false);
+  const template = store.cobrancaTemplate || COBRANCA_TEMPLATE_DEFAULT;
   const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
   const d2 = (n) => String(n).padStart(2, "0");
   const hojeBR = `${d2(hoje.getDate())}/${d2(hoje.getMonth() + 1)}/${hoje.getFullYear()}`;
@@ -1717,16 +1720,22 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
   // Régua de cobrança: registra contato e monta link de WhatsApp com a mensagem.
   const telDe = (l) => clientes.find((c) => c.id === l.clienteId)?.telefone;
   const registrarCobranca = (l, canal, obs) => store.updateLancamento(l.id, { cobrancas: [...(l.cobrancas || []), { data: hojeBR, canal, obs: obs || "" }] });
+  const preencherMsg = (tpl, l, dias) => String(tpl || "")
+    .replace(/\{cliente\}/g, l.clienteNome || nomeCli(l))
+    .replace(/\{descricao\}/g, l.descricao || "pendência")
+    .replace(/\{valor\}/g, fmt(l.valor))
+    .replace(/\{vencimento\}/g, l.dataVencimento || l.data || "")
+    .replace(/\{dias\}/g, String(dias));
   const waLink = (l, dias) => {
     const tel = String(telDe(l) || "").replace(/\D/g, "");
     if (!tel) return null;
     const num = tel.length <= 11 ? "55" + tel : tel;
-    const venc = l.dataVencimento || l.data || "";
-    const msg = `Olá${l.clienteNome ? " " + l.clienteNome : ""}! Consta em aberto: ${l.descricao || "pendência"} — ${fmt(l.valor)}, com vencimento em ${venc} (${dias} dia(s) em atraso). Poderia verificar o pagamento, por favor? Obrigado.`;
-    return `https://wa.me/${num}?text=${encodeURIComponent(msg)}`;
+    return `https://wa.me/${num}?text=${encodeURIComponent(preencherMsg(template, l, dias))}`;
   };
   const cobrarWhats = (l, dias) => { const link = waLink(l, dias); if (!link) return; window.open(link, "_blank", "noopener"); registrarCobranca(l, "WhatsApp"); };
   const ultimaCobranca = (l) => (l.cobrancas || []).slice(-1)[0];
+  const cobradoHoje = (l) => (l.cobrancas || []).some((c) => c.data === hojeBR);
+  const vencidosFiltrados = vencidos.filter(({ l }) => (filtro === "sem" ? !(l.cobrancas || []).length : filtro === "hoje" ? !cobradoHoje(l) : true));
 
   const Cel = ({ children, style }) => <div style={{ fontSize: 13, ...style }}>{children}</div>;
   const colCli = "1fr 110px 130px 140px";
@@ -1739,7 +1748,10 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
           <div style={{ fontFamily: serif, fontSize: 20 }}>Gestão de Inadimplência</div>
           <div style={{ fontSize: 12.5, color: C.text3, maxWidth: 640 }}>Recebíveis previstos cujo vencimento já passou aparecem aqui automaticamente. Você também pode lançar dívidas antigas manualmente. Ao receber, marque no ✓ — sai da inadimplência e entra no caixa.</div>
         </div>
-        <Btn onClick={() => setModal(true)}><Plus size={16} /> Lançar inadimplência</Btn>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Btn variant="soft" onClick={() => setEditarMsg(true)}><MessageSquare size={15} /> Modelo de mensagem</Btn>
+          <Btn onClick={() => setModal(true)}><Plus size={16} /> Lançar inadimplência</Btn>
+        </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 12, marginBottom: 14 }}>
@@ -1780,12 +1792,21 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
           </Card>
 
           <Card style={{ padding: 0, overflow: "hidden" }}>
-            <div style={{ padding: "12px 18px", borderBottom: `1px solid ${C.border2}`, fontWeight: 700, fontSize: 13.5 }}>Títulos vencidos ({vencidos.length})</div>
+            <div style={{ padding: "12px 18px", borderBottom: `1px solid ${C.border2}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+              <span style={{ fontWeight: 700, fontSize: 13.5 }}>Títulos vencidos ({vencidosFiltrados.length}{filtro !== "todos" ? ` de ${vencidos.length}` : ""})</span>
+              <div style={{ display: "flex", background: C.cream, borderRadius: 9, padding: 3, gap: 2 }}>
+                {[["todos", "Todos"], ["sem", "Sem cobrança"], ["hoje", "A cobrar hoje"]].map(([v, lb]) => (
+                  <button key={v} onClick={() => setFiltro(v)} className="cw-btn"
+                    style={{ padding: "5px 11px", borderRadius: 7, fontSize: 12, fontWeight: 600, border: "none", background: filtro === v ? C.white : "transparent", color: filtro === v ? C.cafe : C.text3, boxShadow: filtro === v ? "0 1px 3px rgba(0,0,0,.08)" : "none" }}>{lb}</button>
+                ))}
+              </div>
+            </div>
             <div style={{ overflowX: "auto" }}><div style={{ minWidth: 660 }}>
               <div style={{ display: "grid", gridTemplateColumns: colTit, gap: 8, padding: "10px 18px", background: C.cream, fontSize: 11, fontWeight: 700, color: C.text3 }}>
                 <div>CLIENTE · DESCRIÇÃO</div><div style={{ textAlign: "right" }}>VENCIMENTO</div><div style={{ textAlign: "right" }}>ATRASO</div><div style={{ textAlign: "right" }}>VALOR</div><div style={{ textAlign: "right" }}>AÇÕES</div>
               </div>
-              {vencidos.map(({ l, dias }) => { const uc = ultimaCobranca(l); const temTel = !!telDe(l); return (
+              {vencidosFiltrados.length === 0 && <div style={{ padding: 22, textAlign: "center", fontSize: 13, color: C.text4 }}>{filtro === "sem" ? "Todos os títulos já têm ao menos uma cobrança registrada." : filtro === "hoje" ? "Nenhum título pendente de cobrança hoje. 👏" : "Nenhum título."}</div>}
+              {vencidosFiltrados.map(({ l, dias }) => { const uc = ultimaCobranca(l); const temTel = !!telDe(l); return (
                 <div key={l.id} style={{ display: "grid", gridTemplateColumns: colTit, gap: 8, padding: "10px 18px", borderTop: `1px solid ${C.border2}`, alignItems: "center" }}>
                   <Cel>
                     <div style={{ fontWeight: 600 }}>{nomeCli(l)}</div>
@@ -1818,7 +1839,39 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
           onClose={() => setCobrar(null)}
           onSave={(canal, obs) => { registrarCobranca(cobrar.l, canal, obs); setCobrar(null); }} />
       )}
+      {editarMsg && (
+        <TemplateCobrancaModal atual={template} exemplo={vencidos[0]} preencher={preencherMsg}
+          onClose={() => setEditarMsg(false)}
+          onSave={(txt) => { store.setCobrancaTemplate(txt); setEditarMsg(false); }} />
+      )}
     </>
+  );
+}
+
+function TemplateCobrancaModal({ atual, exemplo, preencher, onClose, onSave }) {
+  const [txt, setTxt] = useState(atual || COBRANCA_TEMPLATE_DEFAULT);
+  const previa = exemplo
+    ? preencher(txt, exemplo.l, exemplo.dias)
+    : preencher(txt, { clienteNome: "Cliente Exemplo", descricao: "Mensalidade abril", valor: 250, dataVencimento: "10/04/2026" }, 32);
+  const TAGS = ["{cliente}", "{descricao}", "{valor}", "{vencimento}", "{dias}"];
+  return (
+    <Modal title="Modelo da mensagem de cobrança" onClose={onClose} maxWidth={520}>
+      <div style={{ fontSize: 12.5, color: C.text3, marginBottom: 10 }}>Texto usado no WhatsApp. Use os campos abaixo — eles são trocados pelos dados de cada título.</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+        {TAGS.map((t) => (
+          <button key={t} onClick={() => setTxt((s) => s + " " + t)} className="cw-btn" style={{ fontSize: 11.5, fontWeight: 600, color: C.cafe, background: C.cafePale, borderRadius: 8, padding: "4px 9px" }}>{t}</button>
+        ))}
+      </div>
+      <textarea value={txt} onChange={(e) => setTxt(e.target.value)} rows={5} style={{ ...inp, resize: "vertical", fontFamily: sans, lineHeight: 1.4 }} />
+      <div style={{ marginTop: 12, background: "#e8f6ee", border: `1px solid #bfe6cd`, borderRadius: 12, padding: "10px 12px" }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#25863f", marginBottom: 4 }}>PRÉVIA</div>
+        <div style={{ fontSize: 13, color: C.text2, whiteSpace: "pre-wrap" }}>{previa}</div>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+        <Btn variant="ghost" onClick={() => setTxt(COBRANCA_TEMPLATE_DEFAULT)}>Restaurar padrão</Btn>
+        <Btn style={{ flex: 1, justifyContent: "center" }} disabled={!txt.trim()} onClick={() => txt.trim() && onSave(txt.trim())}>Salvar modelo</Btn>
+      </div>
+    </Modal>
   );
 }
 
