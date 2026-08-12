@@ -2,13 +2,13 @@ import { useState } from "react";
 import {
   Wallet, TrendingUp, Landmark, BarChart3, FileText, Tags,
   Plus, Edit3, Trash2, Check, X, ArrowUpRight, ArrowDownRight, Receipt, Paperclip, Download, Barcode, Copy, QrCode,
-  FileSignature, RefreshCw, AlertTriangle, Upload, CheckCircle2, AlertCircle,
+  FileSignature, RefreshCw, AlertTriangle, Upload, CheckCircle2, AlertCircle, MessageSquare, Phone,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, FileInput } from "../components/ui.jsx";
 import { C, serif, sans, fmt, fmtShort, inp } from "../lib/theme.js";
 import { useStore, SECOES } from "../lib/store.jsx";
 import { getCurrentCompetencia, parseDateBR } from "../lib/dateUtils.js";
-import { gerarModeloFluxo, lerPlanilhaFluxo, validarLinhas, exportarExtratoExcel } from "../lib/fluxoImport.js";
+import { gerarModeloFluxo, lerPlanilhaFluxo, validarLinhas, exportarExtratoExcel, exportarProvisaoExcel } from "../lib/fluxoImport.js";
 
 const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 // Competência atual a partir da data real (sem datas fixas).
@@ -126,7 +126,7 @@ export default function Financeiro({ finTab }) {
         {tab === "dre" && <DRE lancamentos={lancamentos} categorias={categorias} />}
         {tab === "recebimentos" && <RecebimentosCliente clientes={clientesUnidade} lancamentos={lancamentos} updateLancamento={store.updateLancamento} />}
         {tab === "inadimplencia" && <Inadimplencia clientes={clientesUnidade} lancamentos={lancamentos} contas={contas} categorias={categorias} store={store} activeUnit={activeUnit} />}
-        {tab === "provisao" && <Provisao store={store} activeUnit={activeUnit} lancamentos={lancamentos} categorias={categorias} onNovaDespesa={() => setContaPRModal({ tipo: "saida" })} />}
+        {tab === "provisao" && <Provisao store={store} activeUnit={activeUnit} lancamentos={lancamentos} categorias={categorias} unidadeNome={unidadeAtiva?.nome} onNovaDespesa={() => setContaPRModal({ tipo: "saida" })} />}
         {tab === "bancos" && <Bancos contas={contas} lancamentos={lancamentos} saldoTotal={saldoTotal} onNovo={() => setContaModal({})} onEditar={(c) => setContaModal(c)} onExcluir={(c) => store.removeConta(c.id)} />}
         {tab === "categorias" && <Categorias categorias={categorias} lancamentos={lancamentos} store={store} />}
         {tab === "anexos" && <Anexos lancamentos={lancamentos} contas={contas} onAbrir={setDetalheLanc} />}
@@ -1675,6 +1675,7 @@ function RecebimentosCliente({ clientes = [], lancamentos = [], updateLancamento
 // ===== INADIMPLÊNCIA =======================================================
 function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categorias = [], store, activeUnit }) {
   const [modal, setModal] = useState(false);
+  const [cobrar, setCobrar] = useState(null); // título { l, dias } em registro de cobrança
   const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
   const d2 = (n) => String(n).padStart(2, "0");
   const hojeBR = `${d2(hoje.getDate())}/${d2(hoje.getMonth() + 1)}/${hoje.getFullYear()}`;
@@ -1713,9 +1714,23 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
   const marcarRecebido = (id) => { if (window.confirm("Marcar como RECEBIDO hoje?\n\nSai da inadimplência e entra no regime de caixa.")) store.updateLancamento(id, { status: "pago", dataPagamento: hojeBR }); };
   const excluir = (id) => { if (window.confirm("Excluir este título de inadimplência? Esta ação não pode ser desfeita.")) store.removeLancamento(id); };
 
+  // Régua de cobrança: registra contato e monta link de WhatsApp com a mensagem.
+  const telDe = (l) => clientes.find((c) => c.id === l.clienteId)?.telefone;
+  const registrarCobranca = (l, canal, obs) => store.updateLancamento(l.id, { cobrancas: [...(l.cobrancas || []), { data: hojeBR, canal, obs: obs || "" }] });
+  const waLink = (l, dias) => {
+    const tel = String(telDe(l) || "").replace(/\D/g, "");
+    if (!tel) return null;
+    const num = tel.length <= 11 ? "55" + tel : tel;
+    const venc = l.dataVencimento || l.data || "";
+    const msg = `Olá${l.clienteNome ? " " + l.clienteNome : ""}! Consta em aberto: ${l.descricao || "pendência"} — ${fmt(l.valor)}, com vencimento em ${venc} (${dias} dia(s) em atraso). Poderia verificar o pagamento, por favor? Obrigado.`;
+    return `https://wa.me/${num}?text=${encodeURIComponent(msg)}`;
+  };
+  const cobrarWhats = (l, dias) => { const link = waLink(l, dias); if (!link) return; window.open(link, "_blank", "noopener"); registrarCobranca(l, "WhatsApp"); };
+  const ultimaCobranca = (l) => (l.cobrancas || []).slice(-1)[0];
+
   const Cel = ({ children, style }) => <div style={{ fontSize: 13, ...style }}>{children}</div>;
   const colCli = "1fr 110px 130px 140px";
-  const colTit = "1fr 120px 110px 120px 96px";
+  const colTit = "1fr 104px 92px 108px 132px";
 
   return (
     <>
@@ -1770,18 +1785,24 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
               <div style={{ display: "grid", gridTemplateColumns: colTit, gap: 8, padding: "10px 18px", background: C.cream, fontSize: 11, fontWeight: 700, color: C.text3 }}>
                 <div>CLIENTE · DESCRIÇÃO</div><div style={{ textAlign: "right" }}>VENCIMENTO</div><div style={{ textAlign: "right" }}>ATRASO</div><div style={{ textAlign: "right" }}>VALOR</div><div style={{ textAlign: "right" }}>AÇÕES</div>
               </div>
-              {vencidos.map(({ l, dias }) => (
+              {vencidos.map(({ l, dias }) => { const uc = ultimaCobranca(l); const temTel = !!telDe(l); return (
                 <div key={l.id} style={{ display: "grid", gridTemplateColumns: colTit, gap: 8, padding: "10px 18px", borderTop: `1px solid ${C.border2}`, alignItems: "center" }}>
-                  <Cel><div style={{ fontWeight: 600 }}>{nomeCli(l)}</div><div style={{ fontSize: 11.5, color: C.text3 }}>{l.descricao || "—"}{l.origem === "inadimplencia_manual" ? " · manual" : ""}</div></Cel>
+                  <Cel>
+                    <div style={{ fontWeight: 600 }}>{nomeCli(l)}</div>
+                    <div style={{ fontSize: 11.5, color: C.text3 }}>{l.descricao || "—"}{l.origem === "inadimplencia_manual" ? " · manual" : ""}</div>
+                    {uc && <div style={{ fontSize: 10.5, color: C.text4, marginTop: 2 }}>Cobrado: {uc.canal} · {uc.data}{(l.cobrancas || []).length > 1 ? ` (${l.cobrancas.length}×)` : ""}</div>}
+                  </Cel>
                   <Cel style={{ textAlign: "right" }}>{l.dataVencimento || l.data || "—"}</Cel>
                   <Cel style={{ textAlign: "right" }}><Badge color={corAtraso(dias)}>{dias} dias</Badge></Cel>
                   <Cel style={{ textAlign: "right", fontWeight: 700, color: C.red }}>{fmt(l.valor)}</Cel>
-                  <Cel style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                  <Cel style={{ display: "flex", gap: 2, justifyContent: "flex-end" }}>
+                    <button onClick={() => cobrarWhats(l, dias)} disabled={!temTel} className="cw-btn" title={temTel ? "Cobrar por WhatsApp (abre a conversa e registra)" : "Cliente sem telefone cadastrado"} style={{ color: temTel ? "#25863f" : C.text4, padding: 5, opacity: temTel ? 1 : 0.4 }}><MessageSquare size={15} /></button>
+                    <button onClick={() => setCobrar({ l, dias })} className="cw-btn" title="Registrar cobrança (ligação, e-mail…)" style={{ color: C.cafe, padding: 5 }}><Phone size={15} /></button>
                     <button onClick={() => marcarRecebido(l.id)} className="cw-btn" title="Marcar como recebido hoje" style={{ color: C.green, padding: 5 }}><Check size={16} /></button>
                     <button onClick={() => excluir(l.id)} className="cw-btn" title="Excluir título" style={{ color: C.red, padding: 5 }}><Trash2 size={15} /></button>
                   </Cel>
                 </div>
-              ))}
+              ); })}
             </div></div>
           </Card>
         </>
@@ -1792,7 +1813,42 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
           onClose={() => setModal(false)}
           onSave={(base) => { store.addLancamento(activeUnit, base); setModal(false); }} />
       )}
+      {cobrar && (
+        <RegistrarCobrancaModal titulo={cobrar} nomeCli={nomeCli} historico={cobrar.l.cobrancas || []}
+          onClose={() => setCobrar(null)}
+          onSave={(canal, obs) => { registrarCobranca(cobrar.l, canal, obs); setCobrar(null); }} />
+      )}
     </>
+  );
+}
+
+function RegistrarCobrancaModal({ titulo, nomeCli, historico = [], onClose, onSave }) {
+  const [canal, setCanal] = useState("Ligação");
+  const [obs, setObs] = useState("");
+  const l = titulo.l;
+  return (
+    <Modal title="Registrar cobrança" onClose={onClose} maxWidth={460}>
+      <div style={{ fontSize: 12.5, color: C.text3, marginBottom: 12 }}>
+        <b>{nomeCli(l)}</b> · {l.descricao || "—"} · {fmt(l.valor)} · {titulo.dias} dia(s) em atraso.
+      </div>
+      <Field label="Canal do contato">
+        <select value={canal} onChange={(e) => setCanal(e.target.value)} style={inp}>
+          {["Ligação", "WhatsApp", "E-mail", "Presencial", "Outro"].map((c) => <option key={c}>{c}</option>)}
+        </select>
+      </Field>
+      <Field label="Observação (opcional)">
+        <input value={obs} onChange={(e) => setObs(e.target.value)} style={inp} placeholder="Ex: cliente prometeu pagar até sexta" />
+      </Field>
+      {historico.length > 0 && (
+        <div style={{ marginBottom: 12, background: C.cream, borderRadius: 10, padding: 10, maxHeight: 130, overflowY: "auto" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.text3, marginBottom: 6 }}>HISTÓRICO ({historico.length})</div>
+          {historico.slice().reverse().map((h, i) => (
+            <div key={i} style={{ fontSize: 12, color: C.text2, padding: "2px 0" }}>{h.data} · <b>{h.canal}</b>{h.obs ? ` — ${h.obs}` : ""}</div>
+          ))}
+        </div>
+      )}
+      <Btn style={{ width: "100%", justifyContent: "center" }} onClick={() => onSave(canal, obs)}>Registrar cobrança</Btn>
+    </Modal>
   );
 }
 
@@ -1835,7 +1891,7 @@ function LancarInadimplenciaModal({ clientes = [], categorias = [], contas = [],
 }
 
 // ===== PROVISÃO / DRE PROVISIONADO =========================================
-function Provisao({ store, activeUnit, lancamentos = [], categorias = [], onNovaDespesa }) {
+function Provisao({ store, activeUnit, lancamentos = [], categorias = [], unidadeNome = "", onNovaDespesa }) {
   const [incluirRealizado, setIncluirRealizado] = useState(false);
   const contratos = store.contratosDe(activeUnit).filter((c) => c.status === "ativo");
   const mesFim = (c) => Math.min(c.mesInicial + c.meses - 1, 11);
@@ -1877,6 +1933,14 @@ function Provisao({ store, activeUnit, lancamentos = [], categorias = [], onNova
   );
   const modo = incluirRealizado ? "tudo" : "prev";
   const gcol = "90px 1fr 1fr 1fr";
+  const exportar = () => exportarProvisaoExcel({
+    ano: ANO_ATUAL, modo: incluirRealizado ? "Provisionado + realizado" : "Só provisionado",
+    projRows: linhasMes.map((x) => ({ mes: `${x.lbl}/${ANO_ATUAL}`, rec: x.rec, desp: x.desp, res: x.res })),
+    dre,
+    contratoRows: contratos.map((c) => ({ cliente: c.cliente, plano: c.plano, periodo: `${MESES[c.mesInicial]}–${MESES[mesFim(c)]}/${ANO_ATUAL}`, valorMensal: c.valorMensal, meses: mesFim(c) - c.mesInicial + 1, total: c.valorMensal * (mesFim(c) - c.mesInicial + 1) })),
+    despRows: despRec.map((g) => ({ descricao: g.descricao, categoria: g.categoria, valorMensal: g.valorMensal, meses: g.meses, total: g.total })),
+    unidadeNome,
+  }).catch((e) => alert("Não foi possível exportar: " + (e?.message || e)));
 
   return (
     <>
@@ -1893,6 +1957,7 @@ function Provisao({ store, activeUnit, lancamentos = [], categorias = [], onNova
                   background: modo === v ? C.white : "transparent", color: modo === v ? C.cafe : C.text3, boxShadow: modo === v ? "0 1px 3px rgba(0,0,0,.08)" : "none" }}>{lb}</button>
             ))}
           </div>
+          <Btn variant="soft" onClick={exportar}><Download size={15} /> Exportar Excel</Btn>
           <Btn variant="soft" onClick={onNovaDespesa}><Plus size={15} /> Despesa recorrente</Btn>
         </div>
       </div>

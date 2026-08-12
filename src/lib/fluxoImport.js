@@ -120,6 +120,55 @@ export async function exportarExtratoExcel({ contaNome = "", periodoLabel = "", 
   XLSX.writeFile(wb, `extrato-${slugC}-${slugP}${slugU}.xlsx`);
 }
 
+/** Exporta a Provisão (projeção mês a mês + DRE provisionado + contratos +
+ *  despesas recorrentes) para .xlsx. Recebe linhas já prontas p/ planilha. */
+export async function exportarProvisaoExcel({ ano, modo = "", projRows = [], dre = {}, contratoRows = [], despRows = [], unidadeNome = "" }) {
+  const XLSX = await import("xlsx");
+  const wb = XLSX.utils.book_new();
+  const tRec = projRows.reduce((s, r) => s + (r.rec || 0), 0);
+  const tDesp = projRows.reduce((s, r) => s + (r.desp || 0), 0);
+
+  const proj = [
+    [`Provisão ${ano}${modo ? " — " + modo : ""}`],
+    [],
+    ["Mês", "Receitas", "Despesas", "Resultado"],
+    ...projRows.map((r) => [r.mes, r.rec, r.desp, r.res]),
+    ["ANO", tRec, tDesp, tRec - tDesp],
+  ];
+  const ws1 = XLSX.utils.aoa_to_sheet(proj);
+  ws1["!cols"] = [{ wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 16 }];
+  XLSX.utils.book_append_sheet(wb, ws1, "Projeção mês a mês");
+
+  const dreAoa = [
+    [`DRE Provisionado ${ano}`], [],
+    ["Receita Operacional Bruta", dre.rb || 0],
+    ["(-) Tributos", -(dre.trib || 0)],
+    ["= Receita Líquida", dre.recLiq || 0],
+    ["(-) Custo Direto", -(dre.cd || 0)],
+    ["= Lucro Bruto", dre.lucroBruto || 0],
+    ["(-) Despesas Operacionais", -(dre.dop || 0)],
+    ["= Resultado Provisionado", dre.lucroLiq || 0],
+  ];
+  const ws2 = XLSX.utils.aoa_to_sheet(dreAoa);
+  ws2["!cols"] = [{ wch: 30 }, { wch: 16 }];
+  XLSX.utils.book_append_sheet(wb, ws2, "DRE Provisionado");
+
+  const ctr = [["Contratos recorrentes"], [], ["Cliente", "Plano", "Período", "Valor mensal", "Meses", "Total"],
+    ...contratoRows.map((c) => [c.cliente, c.plano, c.periodo, c.valorMensal, c.meses, c.total])];
+  const ws3 = XLSX.utils.aoa_to_sheet(ctr);
+  ws3["!cols"] = [{ wch: 28 }, { wch: 20 }, { wch: 18 }, { wch: 14 }, { wch: 8 }, { wch: 14 }];
+  XLSX.utils.book_append_sheet(wb, ws3, "Contratos");
+
+  const desp = [["Despesas recorrentes"], [], ["Descrição", "Categoria", "Valor mensal", "Meses", "Total"],
+    ...despRows.map((d) => [d.descricao, d.categoria, d.valorMensal, d.meses, d.total])];
+  const ws4 = XLSX.utils.aoa_to_sheet(desp);
+  ws4["!cols"] = [{ wch: 30 }, { wch: 24 }, { wch: 14 }, { wch: 8 }, { wch: 14 }];
+  XLSX.utils.book_append_sheet(wb, ws4, "Despesas recorrentes");
+
+  const slug = unidadeNome ? "-" + norm(unidadeNome).replace(/\s+/g, "-") : "";
+  XLSX.writeFile(wb, `provisao-${ano}${slug}.xlsx`);
+}
+
 /** Lê a planilha enviada e devolve as linhas cruas (objetos por cabeçalho). */
 export async function lerPlanilhaFluxo(file) {
   const XLSX = await import("xlsx");
