@@ -7,7 +7,7 @@ import {
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, FileInput } from "../components/ui.jsx";
 import { C, serif, sans, fmt, fmtShort, inp } from "../lib/theme.js";
 import { useStore, SECOES } from "../lib/store.jsx";
-import { getCurrentCompetencia } from "../lib/dateUtils.js";
+import { getCurrentCompetencia, parseDateBR } from "../lib/dateUtils.js";
 import { gerarModeloFluxo, lerPlanilhaFluxo, validarLinhas, exportarExtratoExcel } from "../lib/fluxoImport.js";
 
 const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
@@ -38,6 +38,7 @@ export const FIN_GRUPOS = [
     { id: "extrato", label: "Fluxo de Caixa", icon: Wallet },
     { id: "receber", label: "Contas a Receber", icon: ArrowUpRight },
     { id: "pagar", label: "Contas a Pagar", icon: ArrowDownRight },
+    { id: "inadimplencia", label: "Inadimplência", icon: AlertTriangle },
     { id: "contratos", label: "Contratos", icon: FileSignature },
   ] },
   { titulo: "Relatórios", itens: [
@@ -123,6 +124,7 @@ export default function Financeiro({ finTab }) {
         {tab === "extrato" && <Extrato contas={contas} lancamentos={lancamentos} onAbrir={setDetalheLanc} onRemoverImportados={(contaId) => store.removerImportados(activeUnit, contaId)} />}
         {tab === "dre" && <DRE lancamentos={lancamentos} categorias={categorias} />}
         {tab === "recebimentos" && <RecebimentosCliente clientes={clientesUnidade} lancamentos={lancamentos} updateLancamento={store.updateLancamento} />}
+        {tab === "inadimplencia" && <Inadimplencia clientes={clientesUnidade} lancamentos={lancamentos} contas={contas} categorias={categorias} store={store} activeUnit={activeUnit} />}
         {tab === "bancos" && <Bancos contas={contas} lancamentos={lancamentos} saldoTotal={saldoTotal} onNovo={() => setContaModal({})} onEditar={(c) => setContaModal(c)} onExcluir={(c) => store.removeConta(c.id)} />}
         {tab === "categorias" && <Categorias categorias={categorias} lancamentos={lancamentos} store={store} />}
         {tab === "anexos" && <Anexos lancamentos={lancamentos} contas={contas} onAbrir={setDetalheLanc} />}
@@ -1665,6 +1667,168 @@ function RecebimentosCliente({ clientes = [], lancamentos = [], updateLancamento
         </Card>
       )}
     </>
+  );
+}
+
+// ===== INADIMPLÊNCIA =======================================================
+function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categorias = [], store, activeUnit }) {
+  const [modal, setModal] = useState(false);
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const d2 = (n) => String(n).padStart(2, "0");
+  const hojeBR = `${d2(hoje.getDate())}/${d2(hoje.getMonth() + 1)}/${hoje.getFullYear()}`;
+  const nomeCli = (l) => l.clienteNome || clientes.find((c) => c.id === l.clienteId)?.nome || "— sem cliente —";
+
+  // Todo recebível PREVISTO cujo vencimento já passou = inadimplente (automático).
+  const vencidos = lancamentos
+    .filter((l) => l.tipo === "entrada" && l.status === "previsto")
+    .map((l) => { const v = parseDateBR(l.dataVencimento || l.data); return v ? { l, venc: v, dias: Math.round((hoje - v) / 86400000) } : null; })
+    .filter((x) => x && x.dias >= 1)
+    .sort((a, b) => b.dias - a.dias);
+
+  const total = vencidos.reduce((s, x) => s + (x.l.valor || 0), 0);
+  const maiorAtraso = vencidos[0]?.dias || 0;
+
+  // Aging (faixas de atraso).
+  const FAIXAS = [
+    { lbl: "1–30 dias", min: 1, max: 30, cor: C.amber },
+    { lbl: "31–60 dias", min: 31, max: 60, cor: "#e08a00" },
+    { lbl: "61–90 dias", min: 61, max: 90, cor: C.red },
+    { lbl: "90+ dias", min: 91, max: Infinity, cor: "#9a1414" },
+  ];
+  const faixaTot = FAIXAS.map((f) => vencidos.filter((x) => x.dias >= f.min && x.dias <= f.max).reduce((s, x) => s + x.l.valor, 0));
+  const corAtraso = (dias) => (dias <= 30 ? C.amber : dias <= 60 ? "#e08a00" : dias <= 90 ? C.red : "#9a1414");
+
+  // Resumo por cliente.
+  const porClienteMap = new Map();
+  for (const x of vencidos) {
+    const chave = x.l.clienteId || nomeCli(x.l);
+    const g = porClienteMap.get(chave) || { nome: nomeCli(x.l), total: 0, titulos: 0, maior: 0 };
+    g.total += x.l.valor; g.titulos += 1; g.maior = Math.max(g.maior, x.dias);
+    porClienteMap.set(chave, g);
+  }
+  const porCliente = [...porClienteMap.values()].sort((a, b) => b.total - a.total);
+
+  const marcarRecebido = (id) => { if (window.confirm("Marcar como RECEBIDO hoje?\n\nSai da inadimplência e entra no regime de caixa.")) store.updateLancamento(id, { status: "pago", dataPagamento: hojeBR }); };
+  const excluir = (id) => { if (window.confirm("Excluir este título de inadimplência? Esta ação não pode ser desfeita.")) store.removeLancamento(id); };
+
+  const Cel = ({ children, style }) => <div style={{ fontSize: 13, ...style }}>{children}</div>;
+  const colCli = "1fr 110px 130px 140px";
+  const colTit = "1fr 120px 110px 120px 96px";
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
+        <div>
+          <div style={{ fontFamily: serif, fontSize: 20 }}>Gestão de Inadimplência</div>
+          <div style={{ fontSize: 12.5, color: C.text3, maxWidth: 640 }}>Recebíveis previstos cujo vencimento já passou aparecem aqui automaticamente. Você também pode lançar dívidas antigas manualmente. Ao receber, marque no ✓ — sai da inadimplência e entra no caixa.</div>
+        </div>
+        <Btn onClick={() => setModal(true)}><Plus size={16} /> Lançar inadimplência</Btn>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 12, marginBottom: 14 }}>
+        <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Total vencido</div><div style={{ fontFamily: serif, fontSize: 26, color: C.red }}>{fmt(total)}</div></Card>
+        <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Clientes inadimplentes</div><div style={{ fontFamily: serif, fontSize: 26 }}>{porCliente.length}</div></Card>
+        <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Títulos vencidos</div><div style={{ fontFamily: serif, fontSize: 26 }}>{vencidos.length}</div></Card>
+        <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Maior atraso</div><div style={{ fontFamily: serif, fontSize: 26 }}>{maiorAtraso} <span style={{ fontSize: 14, color: C.text3 }}>dias</span></div></Card>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, marginBottom: 18 }}>
+        {FAIXAS.map((f, i) => (
+          <Card key={i} style={{ borderLeft: `4px solid ${f.cor}` }}>
+            <div style={{ fontSize: 12, color: C.text3 }}>{f.lbl}</div>
+            <div style={{ fontFamily: serif, fontSize: 19, color: faixaTot[i] ? f.cor : C.text4 }}>{fmt(faixaTot[i])}</div>
+          </Card>
+        ))}
+      </div>
+
+      {vencidos.length === 0 ? (
+        <Empty icon={CheckCircle2} title="Nenhuma inadimplência em aberto" sub="Não há recebíveis vencidos. Assim que um recebível passar do vencimento sem pagamento, ele aparece aqui." />
+      ) : (
+        <>
+          <Card style={{ padding: 0, overflow: "hidden", marginBottom: 16 }}>
+            <div style={{ padding: "12px 18px", borderBottom: `1px solid ${C.border2}`, fontWeight: 700, fontSize: 13.5 }}>Resumo por cliente</div>
+            <div style={{ overflowX: "auto" }}><div style={{ minWidth: 540 }}>
+              <div style={{ display: "grid", gridTemplateColumns: colCli, gap: 8, padding: "10px 18px", background: C.cream, fontSize: 11, fontWeight: 700, color: C.text3 }}>
+                <div>CLIENTE</div><div style={{ textAlign: "right" }}>TÍTULOS</div><div style={{ textAlign: "right" }}>MAIOR ATRASO</div><div style={{ textAlign: "right" }}>TOTAL VENCIDO</div>
+              </div>
+              {porCliente.map((g, i) => (
+                <div key={i} style={{ display: "grid", gridTemplateColumns: colCli, gap: 8, padding: "10px 18px", borderTop: `1px solid ${C.border2}`, alignItems: "center" }}>
+                  <Cel style={{ fontWeight: 600 }}>{g.nome}</Cel>
+                  <Cel style={{ textAlign: "right" }}>{g.titulos}</Cel>
+                  <Cel style={{ textAlign: "right", color: corAtraso(g.maior), fontWeight: 600 }}>{g.maior} dias</Cel>
+                  <Cel style={{ textAlign: "right", fontWeight: 700, color: C.red }}>{fmt(g.total)}</Cel>
+                </div>
+              ))}
+            </div></div>
+          </Card>
+
+          <Card style={{ padding: 0, overflow: "hidden" }}>
+            <div style={{ padding: "12px 18px", borderBottom: `1px solid ${C.border2}`, fontWeight: 700, fontSize: 13.5 }}>Títulos vencidos ({vencidos.length})</div>
+            <div style={{ overflowX: "auto" }}><div style={{ minWidth: 660 }}>
+              <div style={{ display: "grid", gridTemplateColumns: colTit, gap: 8, padding: "10px 18px", background: C.cream, fontSize: 11, fontWeight: 700, color: C.text3 }}>
+                <div>CLIENTE · DESCRIÇÃO</div><div style={{ textAlign: "right" }}>VENCIMENTO</div><div style={{ textAlign: "right" }}>ATRASO</div><div style={{ textAlign: "right" }}>VALOR</div><div style={{ textAlign: "right" }}>AÇÕES</div>
+              </div>
+              {vencidos.map(({ l, dias }) => (
+                <div key={l.id} style={{ display: "grid", gridTemplateColumns: colTit, gap: 8, padding: "10px 18px", borderTop: `1px solid ${C.border2}`, alignItems: "center" }}>
+                  <Cel><div style={{ fontWeight: 600 }}>{nomeCli(l)}</div><div style={{ fontSize: 11.5, color: C.text3 }}>{l.descricao || "—"}{l.origem === "inadimplencia_manual" ? " · manual" : ""}</div></Cel>
+                  <Cel style={{ textAlign: "right" }}>{l.dataVencimento || l.data || "—"}</Cel>
+                  <Cel style={{ textAlign: "right" }}><Badge color={corAtraso(dias)}>{dias} dias</Badge></Cel>
+                  <Cel style={{ textAlign: "right", fontWeight: 700, color: C.red }}>{fmt(l.valor)}</Cel>
+                  <Cel style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                    <button onClick={() => marcarRecebido(l.id)} className="cw-btn" title="Marcar como recebido hoje" style={{ color: C.green, padding: 5 }}><Check size={16} /></button>
+                    <button onClick={() => excluir(l.id)} className="cw-btn" title="Excluir título" style={{ color: C.red, padding: 5 }}><Trash2 size={15} /></button>
+                  </Cel>
+                </div>
+              ))}
+            </div></div>
+          </Card>
+        </>
+      )}
+
+      {modal && (
+        <LancarInadimplenciaModal clientes={clientes} categorias={categorias} contas={contas}
+          onClose={() => setModal(false)}
+          onSave={(base) => { store.addLancamento(activeUnit, base); setModal(false); }} />
+      )}
+    </>
+  );
+}
+
+function LancarInadimplenciaModal({ clientes = [], categorias = [], contas = [], onClose, onSave }) {
+  const catReceita = categorias.find((c) => { const s = SECOES.find((x) => x.key === c.secao); return !s || s.tipo === "ambos" || s.tipo === "entrada"; });
+  const [f, setF] = useState({ clienteId: "", descricao: "", valor: 0, dataVencimento: "" });
+  const podeSalvar = f.descricao.trim() && f.valor > 0 && f.dataVencimento.trim().length >= 8;
+  const salvar = () => {
+    if (!podeSalvar) return;
+    const cli = clientes.find((c) => c.id === f.clienteId);
+    onSave({
+      tipo: "entrada", status: "previsto",
+      descricao: f.descricao, valor: f.valor,
+      categoria: catReceita?.nome || "", subcategoria: (catReceita?.subs || [])[0] || "",
+      clienteId: f.clienteId || null, clienteNome: cli?.nome || null,
+      contaId: contas[0]?.id || "",
+      dataVencimento: f.dataVencimento, data: f.dataVencimento, dataCompetencia: f.dataVencimento,
+      origem: "inadimplencia_manual",
+    });
+  };
+  return (
+    <Modal title="Lançar inadimplência" onClose={onClose} maxWidth={480}>
+      <div style={{ fontSize: 12.5, color: C.text3, marginBottom: 14 }}>Registre uma dívida em aberto (do passado ou atual). Ela aparece como inadimplente pelo vencimento e sai daqui quando você marcar como recebida.</div>
+      <Field label="Cliente">
+        <select value={f.clienteId} onChange={(e) => setF({ ...f, clienteId: e.target.value })} style={inp}>
+          <option value="">— sem cliente —</option>
+          {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+        </select>
+      </Field>
+      <Field label="Descrição">
+        <input value={f.descricao} onChange={(e) => setF({ ...f, descricao: e.target.value })} style={inp} placeholder="Ex: Mensalidade atrasada · maio/2026" />
+      </Field>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <Field label="Valor (R$)"><input type="number" min="0" step="0.01" value={f.valor} onChange={(e) => setF({ ...f, valor: +e.target.value })} style={inp} /></Field>
+        <Field label="Vencimento"><input value={f.dataVencimento} onChange={(e) => setF({ ...f, dataVencimento: maskData(e.target.value) })} style={inp} placeholder="DD/MM/AAAA" inputMode="numeric" /></Field>
+      </div>
+      <Btn disabled={!podeSalvar} style={{ width: "100%", justifyContent: "center", marginTop: 6, opacity: podeSalvar ? 1 : 0.5 }} onClick={salvar}>Lançar inadimplência</Btn>
+    </Modal>
   );
 }
 

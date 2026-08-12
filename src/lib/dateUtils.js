@@ -42,4 +42,21 @@ export function formatCompetencia(mes, ano) {
   return `${MESES_BR[mes] || "—"}/${ano}`;
 }
 
+/** "dd/mm/aaaa" (ou dd/mm, ou ISO yyyy-mm-dd) → Date à meia-noite local, ou
+ *  null se não der pra reconhecer. Usado p/ calcular dias de atraso. */
+export function parseDateBR(data, hoje = new Date()) {
+  if (!data) return null;
+  const s = String(data).trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) { const d = new Date(+m[1], +m[2] - 1, +m[3]); return Number.isNaN(d.getTime()) ? null : d; }
+  m = s.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
+  if (!m) return null;
+  const dia = parseInt(m[1], 10);
+  const mes = parseInt(m[2], 10) - 1;
+  const ano = m[3] ? (m[3].length === 2 ? 2000 + parseInt(m[3], 10) : parseInt(m[3], 10)) : hoje.getFullYear();
+  if (mes < 0 || mes > 11 || dia < 1 || dia > 31) return null;
+  const d = new Date(ano, mes, dia);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 export { MESES_BR };
