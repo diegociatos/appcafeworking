@@ -930,6 +930,8 @@ function RenovarForm({ contrato, onSalvar }) {
 function Extrato({ contas, lancamentos, onAbrir, onRemoverImportados }) {
   const [contaSel, setContaSel] = useState(contas[0]?.id || "");
   const [mesSel, setMesSel] = useState(MES_ATUAL); // 0..11 ou "todos" (ano inteiro)
+  const [busca, setBusca] = useState("");
+  const [tipoFiltro, setTipoFiltro] = useState("todos"); // todos | entradas | saidas
   const conta = contas.find((c) => c.id === contaSel);
   const qtdImportados = lancamentos.filter((l) => l.contaId === contaSel && l.origem === "importacao").length;
   const desfazerImport = () => {
@@ -966,6 +968,15 @@ function Extrato({ contas, lancamentos, onAbrir, onRemoverImportados }) {
   const totalSaidas = movs.reduce((s, l) => s + (l.tipo === "saida" ? l.valor : 0), 0);
   const saldoAtual = saldoAtualConta(conta, lancamentos);
   const previstos = lancamentos.filter((l) => l.contaId === contaSel && l.status === "previsto");
+
+  // Filtro do extrato (não altera o saldo corrente — só o que é exibido).
+  const termo = busca.trim().toLowerCase();
+  const linhasFiltradas = linhas.filter((l) =>
+    (tipoFiltro === "todos" || l.tipo === (tipoFiltro === "entradas" ? "entrada" : "saida")) &&
+    (!termo || `${l.descricao || ""} ${l.categoria || ""} ${l.subcategoria || ""}`.toLowerCase().includes(termo)));
+  const filtroAtivo = tipoFiltro !== "todos" || !!termo;
+  const fEntradas = linhasFiltradas.reduce((s, l) => s + (l.tipo === "entrada" ? l.valor : 0), 0);
+  const fSaidas = linhasFiltradas.reduce((s, l) => s + (l.tipo === "saida" ? l.valor : 0), 0);
 
   const col = "78px 110px 110px 130px 1fr";
   const Cel = ({ children, style }) => <div style={{ fontSize: 13, ...style }}>{children}</div>;
@@ -1017,6 +1028,21 @@ function Extrato({ contas, lancamentos, onAbrir, onRemoverImportados }) {
           </div>
         </div>
 
+        {/* barra de filtro */}
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", padding: "10px 20px", borderBottom: `1px solid ${C.border2}`, background: "#fff" }}>
+          <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por descrição, categoria ou cliente…"
+            style={{ ...inp, flex: 1, minWidth: 200, padding: "8px 12px", fontSize: 13 }} />
+          <div style={{ display: "flex", background: C.cream, borderRadius: 9, padding: 3, gap: 2 }}>
+            {[["todos", "Todos"], ["entradas", "Entradas"], ["saidas", "Saídas"]].map(([v, lb]) => (
+              <button key={v} onClick={() => setTipoFiltro(v)} className="cw-btn"
+                style={{ padding: "6px 12px", borderRadius: 7, fontSize: 12.5, fontWeight: 600, border: "none", background: tipoFiltro === v ? C.white : "transparent", color: tipoFiltro === v ? C.cafe : C.text3, boxShadow: tipoFiltro === v ? "0 1px 3px rgba(0,0,0,.08)" : "none" }}>{lb}</button>
+            ))}
+          </div>
+          {filtroAtivo && (
+            <button onClick={() => { setBusca(""); setTipoFiltro("todos"); }} className="cw-btn" style={{ fontSize: 12.5, color: C.text3, padding: "6px 8px", display: "flex", alignItems: "center", gap: 4 }}><X size={13} /> Limpar</button>
+          )}
+        </div>
+
         {/* cabeçalho de colunas */}
         <div style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "10px 20px", background: C.cream, fontSize: 11, fontWeight: 700, color: C.text3, letterSpacing: 0.3 }}>
           <div>DATA</div>
@@ -1035,7 +1061,7 @@ function Extrato({ contas, lancamentos, onAbrir, onRemoverImportados }) {
           <Cel style={{ color: C.text3, fontStyle: "italic" }}>{anoTodo || saldoAnterior === saldoInicial ? "Saldo inicial" : "Saldo anterior"}</Cel>
         </div>
 
-        {linhas.map((l) => (
+        {linhasFiltradas.map((l) => (
           <div key={l.id} onClick={() => onAbrir && onAbrir(l)} title="Ver lançamento completo" style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "11px 20px", borderBottom: `1px solid ${C.border2}`, alignItems: "center", cursor: "pointer" }}>
             <Cel style={{ color: C.text3 }}>{l.data}</Cel>
             <Cel style={{ textAlign: "right", color: C.green, fontWeight: 600 }}>{l.tipo === "entrada" ? fmt(l.valor) : ""}</Cel>
@@ -1048,16 +1074,22 @@ function Extrato({ contas, lancamentos, onAbrir, onRemoverImportados }) {
           </div>
         ))}
 
-        {linhas.length === 0 && <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: C.text4 }}>Nenhuma movimentação em {anoTodo ? ANO_ATUAL : `${MESES[mesSel]}/${ANO_ATUAL}`} nesta conta. Troque o mês acima para procurar em outro período.</div>}
+        {linhasFiltradas.length === 0 && (
+          <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: C.text4 }}>
+            {filtroAtivo
+              ? "Nenhum lançamento com esse filtro. Ajuste a busca ou o tipo acima."
+              : `Nenhuma movimentação em ${anoTodo ? ANO_ATUAL : `${MESES[mesSel]}/${ANO_ATUAL}`} nesta conta. Troque o mês acima para procurar em outro período.`}
+          </div>
+        )}
 
-        {/* totais de entradas e saídas do período */}
-        {linhas.length > 0 && (
+        {/* totais de entradas e saídas (respeita o filtro) */}
+        {linhasFiltradas.length > 0 && (
           <div style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "12px 20px", borderTop: `1px solid ${C.border2}`, background: "#fff", fontWeight: 700 }}>
             <Cel style={{ color: C.text4 }}>Totais</Cel>
-            <Cel style={{ textAlign: "right", color: C.green }}>{fmt(totalEntradas)}</Cel>
-            <Cel style={{ textAlign: "right", color: C.red }}>{fmt(totalSaidas)}</Cel>
-            <Cel style={{ textAlign: "right", color: (totalEntradas - totalSaidas) >= 0 ? C.teal : C.red }}>{fmt(totalEntradas - totalSaidas)}</Cel>
-            <Cel style={{ color: C.text3, fontStyle: "italic" }}>Entradas e saídas {anoTodo ? `de ${ANO_ATUAL}` : `de ${MESES[mesSel]}`} · resultado do período</Cel>
+            <Cel style={{ textAlign: "right", color: C.green }}>{fmt(fEntradas)}</Cel>
+            <Cel style={{ textAlign: "right", color: C.red }}>{fmt(fSaidas)}</Cel>
+            <Cel style={{ textAlign: "right", color: (fEntradas - fSaidas) >= 0 ? C.teal : C.red }}>{fmt(fEntradas - fSaidas)}</Cel>
+            <Cel style={{ color: C.text3, fontStyle: "italic" }}>{filtroAtivo ? `${linhasFiltradas.length} lançamento(s) no filtro · entradas − saídas` : `Entradas e saídas ${anoTodo ? `de ${ANO_ATUAL}` : `de ${MESES[mesSel]}`} · resultado do período`}</Cel>
           </div>
         )}
 
