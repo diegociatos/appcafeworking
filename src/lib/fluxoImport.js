@@ -89,16 +89,17 @@ export async function gerarModeloFluxo({ contas = [], categorias = [], unidadeNo
 
 /** Exporta o extrato (movimentos já filtrados por conta/período) para .xlsx.
  *  Valores vão como NÚMERO para o Excel poder somar. */
-export async function exportarExtratoExcel({ contaNome = "", periodoLabel = "", saldoInicial = 0, saldoAnterior = 0, linhas = [], totalEntradas = 0, totalSaidas = 0, saldoFim = 0, unidadeNome = "" }) {
+export async function exportarExtratoExcel({ contaNome = "", periodoLabel = "", saldoInicial = 0, saldoAnterior = 0, linhas = [], totalEntradas = 0, totalSaidas = 0, saldoFim = 0, unidadeNome = "", filtroLabel = "", comSaldo = true }) {
   const XLSX = await import("xlsx");
   const wb = XLSX.utils.book_new();
   const aoa = [
     [`Extrato — ${contaNome}`],
     [`Período: ${periodoLabel}`],
     [`Saldo inicial da conta: ${saldoInicial}`],
+    ...(filtroLabel ? [[`Filtro: ${filtroLabel}`]] : []),
     [],
     ["Data", "Descrição", "Categoria", "Subcategoria", "Entrada (R$)", "Saída (R$)", "Saldo (R$)"],
-    ["", "Saldo anterior", "", "", "", "", saldoAnterior],
+    ...(comSaldo ? [["", "Saldo anterior", "", "", "", "", saldoAnterior]] : []),
     ...linhas.map((l) => [
       l.data || "",
       l.descricao || "",
@@ -108,8 +109,8 @@ export async function exportarExtratoExcel({ contaNome = "", periodoLabel = "", 
       l.tipo === "saida" ? l.valor : "",
       l.saldoCorrente,
     ]),
-    ["", "Totais do período", "", "", totalEntradas, totalSaidas, ""],
-    ["", "Saldo ao fim do período", "", "", "", "", saldoFim],
+    [filtroLabel ? "" : "", filtroLabel ? "Totais do filtro" : "Totais do período", "", "", totalEntradas, totalSaidas, ""],
+    ...(comSaldo ? [["", "Saldo ao fim do período", "", "", "", "", saldoFim]] : []),
   ];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws["!cols"] = [{ wch: 12 }, { wch: 42 }, { wch: 26 }, { wch: 26 }, { wch: 14 }, { wch: 14 }, { wch: 14 }];

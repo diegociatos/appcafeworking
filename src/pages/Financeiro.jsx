@@ -1008,12 +1008,17 @@ function Extrato({ contas, lancamentos, onAbrir, onRemoverImportados }) {
               <option value="todos">Ano todo ({ANO_ATUAL})</option>
               {MESES.map((m, i) => <option key={i} value={i}>{m}/{ANO_ATUAL}</option>)}
             </select>
-            <Btn variant="soft" disabled={linhas.length === 0} onClick={() => exportarExtratoExcel({
+            <Btn variant="soft" disabled={linhasFiltradas.length === 0} onClick={() => exportarExtratoExcel({
               contaNome: conta.banco, periodoLabel: anoTodo ? `Ano ${ANO_ATUAL}` : `${MESES[mesSel]} ${ANO_ATUAL}`,
-              saldoInicial, saldoAnterior, linhas, totalEntradas, totalSaidas, saldoFim: saldoFimPeriodo,
+              saldoInicial, saldoAnterior, saldoFim: saldoFimPeriodo,
+              linhas: filtroAtivo ? linhasFiltradas : linhas,
+              totalEntradas: filtroAtivo ? fEntradas : totalEntradas,
+              totalSaidas: filtroAtivo ? fSaidas : totalSaidas,
+              comSaldo: !filtroAtivo,
+              filtroLabel: filtroAtivo ? [tipoFiltro === "entradas" ? "só entradas" : tipoFiltro === "saidas" ? "só saídas" : "", termo ? `"${busca.trim()}"` : ""].filter(Boolean).join(" · ") : "",
             }).catch((e) => alert("Não foi possível exportar: " + (e?.message || e)))}
-              style={{ opacity: linhas.length === 0 ? 0.5 : 1 }} title="Exportar este período para Excel">
-              <Download size={15} /> Exportar Excel
+              style={{ opacity: linhasFiltradas.length === 0 ? 0.5 : 1 }} title={filtroAtivo ? "Exportar o que está filtrado" : "Exportar este período para Excel"}>
+              <Download size={15} /> {filtroAtivo ? "Exportar filtro" : "Exportar Excel"}
             </Btn>
             {qtdImportados > 0 && (
               <Btn variant="ghost" onClick={desfazerImport} title="Remove em lote os lançamentos que vieram de importação nesta conta"
