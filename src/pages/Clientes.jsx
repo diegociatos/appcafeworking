@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   Plus, Users, Briefcase, ChevronRight, ChevronLeft, FileText,
   Building, Mail, Phone, Upload, Download, FileCheck, FileClock,
-  AlertCircle, MapPin, Edit3, Trash2,
+  AlertCircle, MapPin, Edit3, Trash2, Search, X,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Empty, Modal, Field, ConfirmDialog } from "../components/ui.jsx";
 import { C, serif, inp } from "../lib/theme.js";
@@ -14,7 +14,13 @@ export default function Clientes() {
   const [sel, setSel] = useState(null);
   const [editar, setEditar] = useState(null); // null | {} novo | cliente em edição
   const [excluir, setExcluir] = useState(null);
+  const [busca, setBusca] = useState("");
   const cli = clientes.find((c) => c.id === sel);
+  const termo = busca.trim().toLowerCase();
+  const lista = clientes
+    .filter((c) => !termo || `${c.nome || ""} ${c.cnpj || ""} ${c.plano || ""}`.toLowerCase().includes(termo))
+    .slice()
+    .sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"));
   if (cli) return <ClienteDetalhe cli={cli} onBack={() => setSel(null)} onEditar={() => { setSel(null); setEditar(cli); }} onExcluir={() => { setSel(null); setExcluir(cli); }} />;
 
   return (
@@ -28,11 +34,23 @@ export default function Clientes() {
           </Btn>
         }
       />
+      {clientes.length > 0 && (
+        <div style={{ position: "relative", marginBottom: 14 }}>
+          <Search size={16} color={C.text4} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+          <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar cliente por nome, CNPJ ou plano…"
+            style={{ ...inp, padding: "10px 36px", fontSize: 13.5 }} />
+          {busca && (
+            <button onClick={() => setBusca("")} className="cw-btn" title="Limpar" style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", color: C.text3, padding: 4, display: "grid", placeItems: "center" }}><X size={15} /></button>
+          )}
+        </div>
+      )}
       {clientes.length === 0 ? (
         <Card><Empty icon={Users} title="Nenhum cliente" sub="Cadastre o primeiro cliente do coworking." /></Card>
+      ) : lista.length === 0 ? (
+        <Card><Empty icon={Users} title="Nada encontrado" sub={`Nenhum cliente para “${busca.trim()}”.`} /></Card>
       ) : (
       <Card style={{ padding: 0, overflow: "hidden" }}>
-        {clientes.map((c, i) => {
+        {lista.map((c, i) => {
           const novos = c.docs.filter((d) => d.status === "novo").length;
           return (
             <div
@@ -44,7 +62,7 @@ export default function Clientes() {
                 alignItems: "center",
                 gap: 16,
                 padding: 18,
-                borderBottom: i < clientes.length - 1 ? `1px solid ${C.border2}` : "none",
+                borderBottom: i < lista.length - 1 ? `1px solid ${C.border2}` : "none",
                 cursor: "pointer",
               }}
             >

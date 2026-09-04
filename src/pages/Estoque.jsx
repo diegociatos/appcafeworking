@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   Boxes, Plus, Edit3, Trash2, Minus, AlertTriangle, PackageSearch, Coins,
-  ArrowDownUp, ShoppingCart, Coffee, ShoppingBag, Wrench, Store, DollarSign,
+  ArrowDownUp, ShoppingCart, Coffee, ShoppingBag, Wrench, Store, DollarSign, Search, X,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
@@ -24,11 +24,17 @@ export default function Estoque() {
   const todos = store.estoqueDe(activeUnit);
   const baixos = store.estoqueBaixoDe(activeUnit);
   const [filtro, setFiltro] = useState("todos");
+  const [busca, setBusca] = useState("");
   const [modal, setModal] = useState(null);
   const [compra, setCompra] = useState(null);
   const [venda, setVenda] = useState(null);
 
-  const itens = filtro === "todos" ? todos : todos.filter((e) => (e.tipo || "uso") === filtro);
+  const termo = busca.trim().toLowerCase();
+  const itens = todos
+    .filter((e) => (filtro === "todos" || (e.tipo || "uso") === filtro))
+    .filter((e) => !termo || `${e.nome || ""} ${e.categoria || ""}`.toLowerCase().includes(termo))
+    .slice()
+    .sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"));
   const valorTotal = todos.reduce((s, e) => s + e.quantidade * (e.custo || 0), 0);
   const valorLoja = todos.filter((e) => e.tipo === "revenda").reduce((s, e) => s + e.quantidade * (e.precoVenda || 0), 0);
   const contar = (t) => todos.filter((e) => (e.tipo || "uso") === t).length;
@@ -53,6 +59,16 @@ export default function Estoque() {
         <Kpi label="Abaixo do mínimo" valor={baixos.length} icon={AlertTriangle} cor={baixos.length ? C.red : C.green} />
         <Kpi label="Loja · potencial de venda" valor={fmt(valorLoja)} icon={Store} cor={C.teal} />
         <Kpi label="Itens cadastrados" valor={todos.length} icon={Boxes} cor={C.blue} />
+      </div>
+
+      {/* Busca */}
+      <div style={{ position: "relative", marginBottom: 12 }}>
+        <Search size={16} color={C.text4} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+        <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar item por nome ou categoria…"
+          style={{ ...inp, padding: "10px 36px", fontSize: 13.5 }} />
+        {busca && (
+          <button onClick={() => setBusca("")} className="cw-btn" title="Limpar" style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", color: C.text3, padding: 4, display: "grid", placeItems: "center" }}><X size={15} /></button>
+        )}
       </div>
 
       {/* Filtros por tipo */}
@@ -80,7 +96,7 @@ export default function Estoque() {
       )}
 
       {itens.length === 0 ? (
-        <Card><Empty icon={PackageSearch} title="Nada por aqui" sub="Cadastre itens de cafeteria, revenda (loja) e uso interno." /></Card>
+        <Card><Empty icon={PackageSearch} title={termo ? "Nada encontrado" : "Nada por aqui"} sub={termo ? `Nenhum item para “${busca.trim()}”. Ajuste a busca ou o filtro.` : "Cadastre itens de cafeteria, revenda (loja) e uso interno."} /></Card>
       ) : (
         <Card style={{ padding: 0, overflow: "hidden" }}>
           {itens.map((e, i) => {
