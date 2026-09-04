@@ -2,11 +2,15 @@ import { useState } from "react";
 import {
   Boxes, Plus, Edit3, Trash2, Minus, AlertTriangle, PackageSearch, Coins,
   ArrowDownUp, ShoppingCart, Coffee, ShoppingBag, Wrench, Store, DollarSign, Search, X,
-  PackageMinus, History,
+  PackageMinus, History, Download,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
+import { parseDateBR } from "../lib/dateUtils.js";
+
+const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+const ANO = new Date().getFullYear();
 
 // Os 3 tipos de item que um coworking controla.
 const TIPOS = {
@@ -34,6 +38,7 @@ export default function Estoque() {
   const [venda, setVenda] = useState(null);
   const [saida, setSaida] = useState(null);
   const [hist, setHist] = useState(null);
+  const [relatorio, setRelatorio] = useState(false);
 
   const termo = busca.trim().toLowerCase();
   const itens = todos
@@ -57,7 +62,12 @@ export default function Estoque() {
       <PageHead
         title="Estoque"
         sub={`Itens da unidade ${unidadeAtiva?.nome || ""} — cafeteria, revenda (loja) e uso interno, com estoque mínimo e baixa automática.`}
-        action={<Btn onClick={() => setModal({})}><Plus size={16} /> Novo item</Btn>}
+        action={
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Btn variant="soft" onClick={() => setRelatorio(true)}><History size={16} /> Movimentações</Btn>
+            <Btn onClick={() => setModal({})}><Plus size={16} /> Novo item</Btn>
+          </div>
+        }
       />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 16, marginBottom: 18 }}>
@@ -182,7 +192,126 @@ export default function Estoque() {
           <MovimentosLista item={hist} />
         </Modal>
       )}
+      {relatorio && (
+        <Modal title="Relatório de movimentações" onClose={() => setRelatorio(false)} maxWidth={860}>
+          <RelatorioMovimentos itens={todos} unidadeNome={unidadeAtiva?.nome || ""} />
+        </Modal>
+      )}
     </div>
+  );
+}
+
+function RelatorioMovimentos({ itens, unidadeNome }) {
+  const [mesSel, setMesSel] = useState("todos");
+  const [tipoSel, setTipoSel] = useState("todas");
+  const [busca, setBusca] = useState("");
+
+  const linhas = [];
+  itens.forEach((e) => (e.movimentos || []).forEach((m) => {
+    const d = parseDateBR(m.data);
+    linhas.push({ ...m, item: e.nome, categoria: e.categoria, unidade: e.unidade, mes: d ? d.getMonth() : null, ano: d ? d.getFullYear() : null });
+  }));
+  const termo = busca.trim().toLowerCase();
+  const filtradas = linhas
+    .filter((r) => (mesSel === "todos" || r.mes === +mesSel))
+    .filter((r) => (tipoSel === "todas" || r.tipo === (tipoSel === "entradas" ? "entrada" : "saida")))
+    .filter((r) => !termo || `${r.item || ""} ${r.destino || ""} ${r.fornecedor || ""} ${r.notaFiscal || ""} ${r.obs || ""}`.toLowerCase().includes(termo))
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+
+  const totEnt = filtradas.filter((r) => r.tipo === "entrada").reduce((s, r) => s + (r.qtd || 0), 0);
+  const totSai = filtradas.filter((r) => r.tipo === "saida").reduce((s, r) => s + (r.qtd || 0), 0);
+  const valComprado = filtradas.filter((r) => r.tipo === "entrada").reduce((s, r) => s + (r.qtd || 0) * (r.custoUnit || 0), 0);
+
+  const destMap = new Map();
+  filtradas.filter((r) => r.tipo === "saida").forEach((r) => {
+    const k = r.destino || "— sem destino —";
+    const g = destMap.get(k) || { destino: k, qtd: 0 };
+    g.qtd += r.qtd || 0; destMap.set(k, g);
+  });
+  const porDestino = [...destMap.values()].sort((a, b) => b.qtd - a.qtd);
+  const periodoLabel = mesSel === "todos" ? `Ano ${ANO}` : `${MESES[+mesSel]}/${ANO}`;
+
+  const exportar = async () => {
+    try {
+      const XLSX = await import("xlsx");
+      const wb = XLSX.utils.book_new();
+      const aoa = [
+        [`Movimentações de estoque — ${unidadeNome}`],
+        [`Período: ${periodoLabel}`],
+        [],
+        ["Data", "Item", "Categoria", "Tipo", "Qtd", "Unidade", "Destino", "Nota fiscal", "Fornecedor", "Custo unit.", "Total entrada", "Obs"],
+        ...filtradas.map((r) => [r.data || "", r.item || "", r.categoria || "", r.tipo === "entrada" ? "Entrada" : "Saída", r.qtd || 0, r.unidade || "", r.destino || "", r.notaFiscal || "", r.fornecedor || "", r.tipo === "entrada" ? (r.custoUnit || 0) : "", r.tipo === "entrada" ? (r.qtd || 0) * (r.custoUnit || 0) : "", r.obs || ""]),
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws["!cols"] = [{ wch: 12 }, { wch: 28 }, { wch: 14 }, { wch: 9 }, { wch: 7 }, { wch: 8 }, { wch: 22 }, { wch: 14 }, { wch: 20 }, { wch: 12 }, { wch: 14 }, { wch: 24 }];
+      XLSX.utils.book_append_sheet(wb, ws, "Movimentações");
+      const cd = [["Consumo por destino (saídas)"], [`Período: ${periodoLabel}`], [], ["Destino", "Qtd total"], ...porDestino.map((d) => [d.destino, d.qtd])];
+      const ws2 = XLSX.utils.aoa_to_sheet(cd);
+      ws2["!cols"] = [{ wch: 30 }, { wch: 12 }];
+      XLSX.utils.book_append_sheet(wb, ws2, "Consumo por destino");
+      const slug = String(unidadeNome || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, "-");
+      XLSX.writeFile(wb, `movimentacoes-estoque${slug ? "-" + slug : ""}.xlsx`);
+    } catch (e) { alert("Não foi possível exportar: " + (e?.message || e)); }
+  };
+
+  const Cel = ({ children, style }) => <div style={{ fontSize: 12.5, ...style }}>{children}</div>;
+  const col = "84px 1fr 74px 60px 1fr";
+
+  return (
+    <>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
+        <select value={String(mesSel)} onChange={(e) => setMesSel(e.target.value === "todos" ? "todos" : +e.target.value)} style={{ ...inp, width: "auto", padding: "8px 12px", fontSize: 13 }}>
+          <option value="todos">Ano todo ({ANO})</option>
+          {MESES.map((m, i) => <option key={i} value={i}>{m}/{ANO}</option>)}
+        </select>
+        <div style={{ display: "flex", background: C.cream, borderRadius: 9, padding: 3, gap: 2 }}>
+          {[["todas", "Todas"], ["entradas", "Entradas"], ["saidas", "Saídas"]].map(([v, lb]) => (
+            <button key={v} onClick={() => setTipoSel(v)} className="cw-btn"
+              style={{ padding: "6px 11px", borderRadius: 7, fontSize: 12, fontWeight: 600, border: "none", background: tipoSel === v ? C.white : "transparent", color: tipoSel === v ? C.cafe : C.text3, boxShadow: tipoSel === v ? "0 1px 3px rgba(0,0,0,.08)" : "none" }}>{lb}</button>
+          ))}
+        </div>
+        <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar item, destino, NF…" style={{ ...inp, flex: 1, minWidth: 150, padding: "8px 12px", fontSize: 13 }} />
+        <Btn variant="soft" disabled={filtradas.length === 0} onClick={exportar} style={{ opacity: filtradas.length === 0 ? 0.5 : 1 }}><Download size={15} /> Excel</Btn>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))", gap: 10, marginBottom: 12 }}>
+        <Card style={{ padding: "10px 12px" }}><div style={{ fontSize: 11.5, color: C.text3 }}>Entradas</div><div style={{ fontFamily: serif, fontSize: 20, color: C.green }}>{totEnt}</div></Card>
+        <Card style={{ padding: "10px 12px" }}><div style={{ fontSize: 11.5, color: C.text3 }}>Saídas</div><div style={{ fontFamily: serif, fontSize: 20, color: C.red }}>{totSai}</div></Card>
+        <Card style={{ padding: "10px 12px" }}><div style={{ fontSize: 11.5, color: C.text3 }}>Comprado</div><div style={{ fontFamily: serif, fontSize: 18, color: C.cafe }}>{fmt(valComprado)}</div></Card>
+      </div>
+
+      {porDestino.length > 0 && (
+        <div style={{ background: C.cream, borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.text3, marginBottom: 6 }}>CONSUMO POR DESTINO (SAÍDAS)</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {porDestino.map((d, i) => (
+              <span key={i} style={{ fontSize: 12, background: C.white, border: `1px solid ${C.border2}`, borderRadius: 8, padding: "4px 9px" }}>{d.destino} · <b>{d.qtd}</b></span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {filtradas.length === 0 ? (
+        <div style={{ fontSize: 13, color: C.text4, textAlign: "center", padding: "18px 0" }}>Nenhuma movimentação no filtro. As movimentações começam a aparecer conforme a equipe usa Entrada e Saída.</div>
+      ) : (
+        <div style={{ border: `1px solid ${C.border2}`, borderRadius: 10, overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "8px 12px", background: C.cream, fontSize: 10.5, fontWeight: 700, color: C.text3 }}>
+            <div>DATA</div><div>ITEM</div><div style={{ textAlign: "right" }}>TIPO</div><div style={{ textAlign: "right" }}>QTD</div><div>DESTINO / NF</div>
+          </div>
+          <div style={{ maxHeight: 320, overflowY: "auto" }}>
+            {filtradas.map((r, i) => (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "8px 12px", borderTop: `1px solid ${C.border2}`, alignItems: "center" }}>
+                <Cel style={{ color: C.text3 }}>{r.data}</Cel>
+                <Cel style={{ fontWeight: 600 }}>{r.item}</Cel>
+                <Cel style={{ textAlign: "right", color: r.tipo === "entrada" ? C.green : C.red, fontWeight: 600 }}>{r.tipo === "entrada" ? "Entrada" : "Saída"}</Cel>
+                <Cel style={{ textAlign: "right", fontWeight: 700 }}>{r.qtd} {r.unidade}</Cel>
+                <Cel style={{ color: C.text3 }}>{r.tipo === "entrada" ? [r.notaFiscal ? `NF ${r.notaFiscal}` : "", r.fornecedor].filter(Boolean).join(" · ") || "—" : (r.destino || "—")}{r.obs ? ` · ${r.obs}` : ""}</Cel>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
