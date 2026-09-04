@@ -661,21 +661,39 @@ export function StoreProvider({ children }) {
   // Compra/reposição: dá entrada no estoque, atualiza o custo e lança no
   // Financeiro como CONTA A PAGAR. A compra é "Conta Movimentação" (estoque é
   // ativo) — o custo só vira resultado (CMV) quando o item é vendido.
-  const comprarEstoque = (unidadeId, itemId, { quantidade, custoUnit, fornecedor, pago }) => {
+  const _hojeBR = () => { const d = new Date(); const p = (n) => String(n).padStart(2, "0"); return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`; };
+  const comprarEstoque = (unidadeId, itemId, { quantidade, custoUnit, fornecedor, pago, data, notaFiscal }) => {
     const item = estoque.find((e) => e.id === itemId);
-    if (quantidade > 0) ajustarEstoque(itemId, quantidade);
-    if (custoUnit > 0) updateItemEstoque(itemId, { custo: custoUnit });
-    const total = (quantidade || 0) * (custoUnit || 0);
-    if (total > 0 && item) {
+    if (!item) return;
+    const dataMov = (data && data.trim()) || _hojeBR();
+    const q = quantidade > 0 ? quantidade : 0;
+    setEstoque((es) => es.map((e) => {
+      if (e.id !== itemId) return e;
+      const mov = { tipo: "entrada", qtd: q, data: dataMov, notaFiscal: notaFiscal || "", fornecedor: fornecedor || "", custoUnit: custoUnit || 0, ts: Date.now() };
+      return { ...e, quantidade: Math.max(0, e.quantidade + q), custo: custoUnit > 0 ? custoUnit : e.custo, movimentos: [...(e.movimentos || []), mov] };
+    }));
+    const total = q * (custoUnit || 0);
+    if (total > 0) {
       const caixa = contas.find((c) => c.unidadeId === unidadeId)?.id || "";
-      const dataBR = `${String(new Date().getDate()).padStart(2, "0")}/${String(MES_ATUAL + 1).padStart(2, "0")}`;
       addLancamento(unidadeId, {
-        tipo: "saida", descricao: `Compra · ${item.nome}${fornecedor ? ` · ${fornecedor}` : ""}`,
+        tipo: "saida", descricao: `Compra · ${item.nome}${notaFiscal ? ` · NF ${notaFiscal}` : ""}${fornecedor ? ` · ${fornecedor}` : ""}`,
         categoria: "Conta Movimentação", subcategoria: "Compra de estoque",
         valor: Math.round(total * 100) / 100, contaId: caixa,
-        status: pago ? "pago" : "previsto", data: dataBR, origem: "compra-estoque",
+        status: pago ? "pago" : "previsto", data: dataMov, origem: "compra-estoque",
       });
     }
+  };
+
+  // Saída/baixa de estoque com registro de DATA e DESTINO (para onde foi). Não
+  // gera lançamento financeiro (o custo já foi contabilizado na compra).
+  const registrarSaidaEstoque = (unidadeId, itemId, { quantidade = 1, data, destino = "", obs = "" }) => {
+    setEstoque((es) => es.map((e) => {
+      if (e.id !== itemId) return e;
+      const qtd = Math.min(quantidade || 0, e.quantidade);
+      if (qtd <= 0) return e;
+      const mov = { tipo: "saida", qtd, data: (data && data.trim()) || _hojeBR(), destino, obs, ts: Date.now() };
+      return { ...e, quantidade: Math.max(0, e.quantidade - qtd), movimentos: [...(e.movimentos || []), mov] };
+    }));
   };
 
   // Venda de item de REVENDA (loja) ao cliente: baixa o estoque e lança no
@@ -1213,7 +1231,7 @@ export function StoreProvider({ children }) {
       boletosDe, emitirBoleto, cancelarBoleto, baixarBoleto, sincronizarBoleto,
       contratos, contratosDe, contratosVencendoDe, mesFimContrato,
       addContrato, renovarContrato, encerrarContrato,
-      estoque, estoqueDe, estoqueBaixoDe, addItemEstoque, updateItemEstoque, removeItemEstoque, ajustarEstoque, comprarEstoque, venderEstoque,
+      estoque, estoqueDe, estoqueBaixoDe, addItemEstoque, updateItemEstoque, removeItemEstoque, ajustarEstoque, comprarEstoque, venderEstoque, registrarSaidaEstoque,
       patrimonio, patrimonioDe, addAtivo, updateAtivo, removeAtivo,
       configFiscal, configFiscalDe, updateConfigFiscal, salvarConfigFiscal, notasFiscais, notasFiscaisDe, emitirNFSe, cancelarNF, salvarCertificadoFiscal,
       planos, planosDe, addPlano, updatePlano, removePlano,
