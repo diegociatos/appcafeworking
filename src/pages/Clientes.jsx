@@ -137,6 +137,7 @@ function NovoClienteForm({ inicial = {}, unidades, planosDe, onSalvar }) {
     unidade: inicial.unidade || unidades[0]?.nome || "", fiscal: inicial.fiscal || false,
     contato: inicial.contato || "", email: inicial.email || "", tel: inicial.tel || "",
     cep: inicial.cep || "", endereco: inicial.endereco || "", numero: inicial.numero || "",
+    bairro: inicial.bairro || "", cidade: inicial.cidade || "", uf: inicial.uf || "",
   });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const [buscando, setBuscando] = useState(false);
@@ -154,11 +155,14 @@ function NovoClienteForm({ inicial = {}, unidades, planosDe, onSalvar }) {
       setF((p) => ({
         ...p,
         nome: r.razaoSocial || p.nome,
-        email: p.email || r.email,
-        tel: p.tel || r.telefone,
-        cep: p.cep || r.cep,
-        numero: p.numero || r.numero,
-        endereco: p.endereco || [r.logradouro, r.bairro, [r.municipio, r.uf].filter(Boolean).join("/")].filter(Boolean).join(", "),
+        email: p.email || r.email || "",
+        tel: p.tel || r.telefone || "",
+        cep: p.cep || r.cep || "",
+        endereco: p.endereco || r.logradouro || "",
+        numero: p.numero || r.numero || "",
+        bairro: p.bairro || r.bairro || "",
+        cidade: p.cidade || r.municipio || "",
+        uf: p.uf || r.uf || "",
       }));
     }).catch(() => setErroBusca("Não foi possível buscar agora.")).finally(() => setBuscando(false));
   };
@@ -170,7 +174,7 @@ function NovoClienteForm({ inicial = {}, unidades, planosDe, onSalvar }) {
     const v = e.target.value; setF((p) => ({ ...p, cep: v }));
     if (v.replace(/\D/g, "").length === 8) {
       setBuscando(true);
-      buscarCep(v).then((r) => { if (r) setF((p) => ({ ...p, endereco: p.endereco || [r.logradouro, r.bairro, [r.cidade, r.uf].filter(Boolean).join("/")].filter(Boolean).join(", ") })); }).finally(() => setBuscando(false));
+      buscarCep(v).then((r) => { if (r) setF((p) => ({ ...p, endereco: p.endereco || r.logradouro || "", bairro: p.bairro || r.bairro || "", cidade: p.cidade || r.cidade || "", uf: p.uf || r.uf || "" })); }).finally(() => setBuscando(false));
     }
   };
   return (
@@ -208,8 +212,13 @@ function NovoClienteForm({ inicial = {}, unidades, planosDe, onSalvar }) {
       </Field>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 0.8fr", gap: 12 }}>
         <Field label="CEP"><input value={f.cep} onChange={onCep} style={inp} placeholder="00000-000" inputMode="numeric" aria-label="CEP do cliente" /></Field>
-        <Field label="Endereço"><input value={f.endereco} onChange={set("endereco")} style={inp} placeholder="Rua, bairro, cidade" /></Field>
+        <Field label="Endereço"><input value={f.endereco} onChange={set("endereco")} style={inp} placeholder="Rua / Av." /></Field>
         <Field label="Número"><input value={f.numero} onChange={set("numero")} style={inp} placeholder="Nº" aria-label="Número do endereço" /></Field>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1.4fr 0.6fr", gap: 12 }}>
+        <Field label="Bairro"><input value={f.bairro} onChange={set("bairro")} style={inp} placeholder="Bairro" /></Field>
+        <Field label="Cidade"><input value={f.cidade} onChange={set("cidade")} style={inp} placeholder="Cidade" /></Field>
+        <Field label="UF"><input value={f.uf} onChange={set("uf")} style={inp} placeholder="UF" maxLength={2} /></Field>
       </div>
       {buscando && <div style={{ fontSize: 11, color: C.text4, marginTop: -6, marginBottom: 10 }}>Buscando dados…</div>}
       <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.text2, margin: "4px 0 14px", cursor: "pointer" }}>
