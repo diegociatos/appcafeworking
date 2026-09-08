@@ -7,6 +7,7 @@ import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/u
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 import { supabaseConfigured } from "../lib/boletosApi.js";
+import { buscarCnpj, buscarCep } from "../lib/lookup.js";
 import { oauthConfigured, conectarNoBanco } from "../lib/bankOauth.js";
 import { integracaoApi } from "../lib/asaasApi.js";
 
@@ -391,12 +392,39 @@ function EmitirForm({ contas, contaPadrao, onEmitir }) {
     bankAccountId: contaPadrao || contas[0]?.id || "",
     sacado: "",
     sacadoDocumento: "",
+    email: "",
+    cep: "", endereco: "", numero: "",
     valor: "",
     vencimento: "",
     instrucoes: "",
   });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const [buscando, setBuscando] = useState(false);
+  const [erroBusca, setErroBusca] = useState("");
   const valido = f.bankAccountId && f.sacado.trim() && f.sacadoDocumento.trim() && +f.valor > 0 && f.vencimento;
+
+  // Busca dados da empresa pelo CNPJ (14 dígitos) e preenche sacado/e-mail/endereço.
+  const buscarDoc = (v) => {
+    const doc = String(v || "").replace(/\D/g, "");
+    if (doc.length !== 14) { setErroBusca("Informe um CNPJ com 14 dígitos para buscar."); return; }
+    setErroBusca(""); setBuscando(true);
+    buscarCnpj(v).then((r) => {
+      if (!r) { setErroBusca("CNPJ não encontrado."); return; }
+      setF((p) => ({
+        ...p,
+        sacado: r.razaoSocial || r.nomeFantasia || p.sacado,
+        email: p.email || r.email,
+        cep: p.cep || r.cep,
+        numero: p.numero || r.numero,
+        endereco: p.endereco || [r.logradouro, r.bairro, [r.municipio, r.uf].filter(Boolean).join("/")].filter(Boolean).join(", "),
+      }));
+    }).catch(() => setErroBusca("Não foi possível buscar agora.")).finally(() => setBuscando(false));
+  };
+  const onDoc = (e) => { const v = e.target.value; setF((p) => ({ ...p, sacadoDocumento: v })); if (v.replace(/\D/g, "").length === 14) buscarDoc(v); };
+  const onCep = (e) => {
+    const v = e.target.value; setF((p) => ({ ...p, cep: v }));
+    if (v.replace(/\D/g, "").length === 8) { setBuscando(true); buscarCep(v).then((r) => { if (r) setF((p) => ({ ...p, endereco: p.endereco || [r.logradouro, r.bairro, [r.cidade, r.uf].filter(Boolean).join("/")].filter(Boolean).join(", ") })); }).finally(() => setBuscando(false)); }
+  };
 
   return (
     <>
@@ -407,12 +435,25 @@ function EmitirForm({ contas, contaPadrao, onEmitir }) {
           ))}
         </select>
       </Field>
+      <Field label="CPF / CNPJ do sacado">
+        <div style={{ display: "flex", gap: 6 }}>
+          <input value={f.sacadoDocumento} onChange={onDoc} style={{ ...inp, flex: 1 }} placeholder="000.000.000-00" inputMode="numeric" />
+          <button type="button" onClick={() => buscarDoc(f.sacadoDocumento)} disabled={buscando} className="cw-btn" style={{ padding: "0 14px", borderRadius: 10, border: `1px solid ${C.border}`, background: C.cafePale, color: C.cafe, fontWeight: 600, fontSize: 12.5, whiteSpace: "nowrap", opacity: buscando ? 0.6 : 1 }}>{buscando ? "…" : "Buscar"}</button>
+        </div>
+        {erroBusca && <div style={{ fontSize: 11.5, color: C.red, marginTop: 4 }}>{erroBusca}</div>}
+      </Field>
       <Field label="Sacado (pagador)">
         <input value={f.sacado} onChange={set("sacado")} style={inp} placeholder="Nome ou razão social" />
       </Field>
-      <Field label="CPF / CNPJ do sacado">
-        <input value={f.sacadoDocumento} onChange={set("sacadoDocumento")} style={inp} placeholder="000.000.000-00" />
+      <Field label="E-mail do sacado">
+        <input type="email" value={f.email} onChange={set("email")} style={inp} placeholder="contato@empresa.com.br" />
+        <div style={{ fontSize: 11, color: C.text4, marginTop: 4 }}>O boleto é enviado para este e-mail.</div>
       </Field>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 0.8fr", gap: 12 }}>
+        <Field label="CEP"><input value={f.cep} onChange={onCep} style={inp} placeholder="00000-000" inputMode="numeric" /></Field>
+        <Field label="Endereço"><input value={f.endereco} onChange={set("endereco")} style={inp} placeholder="Rua, bairro, cidade/UF" /></Field>
+        <Field label="Número"><input value={f.numero} onChange={set("numero")} style={inp} placeholder="Nº" /></Field>
+      </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Field label="Valor (R$)">
           <input type="number" min="0" step="0.01" value={f.valor} onChange={set("valor")} style={inp} placeholder="0,00" />
@@ -424,7 +465,8 @@ function EmitirForm({ contas, contaPadrao, onEmitir }) {
       <Field label="Instruções (opcional)">
         <input value={f.instrucoes} onChange={set("instrucoes")} style={inp} placeholder="Ex: Mensalidade sala privativa - Junho" />
       </Field>
-      <Btn style={{ width: "100%", justifyContent: "center", marginTop: 4, opacity: valido ? 1 : 0.5 }} onClick={() => valido && onEmitir({ ...f, valor: +f.valor })}>
+      <Btn style={{ width: "100%", justifyContent: "center", marginTop: 4, opacity: valido ? 1 : 0.5 }}
+        onClick={() => valido && onEmitir({ ...f, valor: +f.valor, sacadoEmail: f.email, sacadoCep: f.cep, sacadoEndereco: f.endereco, sacadoNumero: f.numero })}>
         <Barcode size={16} /> Emitir boleto
       </Btn>
     </>

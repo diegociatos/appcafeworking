@@ -5,12 +5,12 @@ import {
   AlertCircle, MapPin, Edit3, Trash2, Search, X,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Empty, Modal, Field, ConfirmDialog } from "../components/ui.jsx";
-import { C, serif, inp } from "../lib/theme.js";
+import { C, serif, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 import { buscarCnpj, buscarCep } from "../lib/lookup.js";
 
 export default function Clientes() {
-  const { clientes, addCliente, updateCliente, removeCliente, unidades } = useStore();
+  const { clientes, addCliente, updateCliente, removeCliente, unidades, planosDe } = useStore();
   const [sel, setSel] = useState(null);
   const [editar, setEditar] = useState(null); // null | {} novo | cliente em edição
   const [excluir, setExcluir] = useState(null);
@@ -116,7 +116,7 @@ export default function Clientes() {
 
       {editar && (
         <Modal title={editar.id ? "Editar cliente" : "Novo cliente"} onClose={() => setEditar(null)} maxWidth={460}>
-          <NovoClienteForm inicial={editar} unidades={unidades} onSalvar={(dados) => { if (editar.id) updateCliente(editar.id, dados); else addCliente(dados); setEditar(null); }} />
+          <NovoClienteForm inicial={editar} unidades={unidades} planosDe={planosDe} onSalvar={(dados) => { if (editar.id) updateCliente(editar.id, dados); else addCliente(dados); setEditar(null); }} />
         </Modal>
       )}
 
@@ -131,30 +131,40 @@ export default function Clientes() {
   );
 }
 
-function NovoClienteForm({ inicial = {}, unidades, onSalvar }) {
+function NovoClienteForm({ inicial = {}, unidades, planosDe, onSalvar }) {
   const [f, setF] = useState({
-    nome: inicial.nome || "", cnpj: inicial.cnpj || "", plano: inicial.plano || "Sala Privativa",
+    nome: inicial.nome || "", cnpj: inicial.cnpj || "", plano: inicial.plano || "",
     unidade: inicial.unidade || unidades[0]?.nome || "", fiscal: inicial.fiscal || false,
     contato: inicial.contato || "", email: inicial.email || "", tel: inicial.tel || "",
     cep: inicial.cep || "", endereco: inicial.endereco || "", numero: inicial.numero || "",
   });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const [buscando, setBuscando] = useState(false);
+  const [erroBusca, setErroBusca] = useState("");
   const valido = f.nome.trim();
-  const onCnpj = (e) => {
-    const v = e.target.value; setF((p) => ({ ...p, cnpj: v }));
-    if (v.replace(/\D/g, "").length === 14) {
-      setBuscando(true);
-      buscarCnpj(v).then((r) => { if (r) setF((p) => ({
+  const unidadeId = unidades.find((u) => u.nome === f.unidade)?.id;
+  const planos = (planosDe && unidadeId) ? planosDe(unidadeId) : [];
+  // Busca dados da empresa pelo CNPJ (só CNPJ = 14 dígitos) e preenche os campos.
+  const buscarDoc = (v) => {
+    const doc = String(v || "").replace(/\D/g, "");
+    if (doc.length !== 14) { setErroBusca("Informe um CNPJ com 14 dígitos para buscar."); return; }
+    setErroBusca(""); setBuscando(true);
+    buscarCnpj(v).then((r) => {
+      if (!r) { setErroBusca("CNPJ não encontrado."); return; }
+      setF((p) => ({
         ...p,
-        nome: p.nome || r.razaoSocial,
+        nome: r.razaoSocial || p.nome,
         email: p.email || r.email,
         tel: p.tel || r.telefone,
         cep: p.cep || r.cep,
         numero: p.numero || r.numero,
         endereco: p.endereco || [r.logradouro, r.bairro, [r.municipio, r.uf].filter(Boolean).join("/")].filter(Boolean).join(", "),
-      })); }).finally(() => setBuscando(false));
-    }
+      }));
+    }).catch(() => setErroBusca("Não foi possível buscar agora.")).finally(() => setBuscando(false));
+  };
+  const onCnpj = (e) => {
+    const v = e.target.value; setF((p) => ({ ...p, cnpj: v }));
+    if (v.replace(/\D/g, "").length === 14) buscarDoc(v);
   };
   const onCep = (e) => {
     const v = e.target.value; setF((p) => ({ ...p, cep: v }));
@@ -167,14 +177,27 @@ function NovoClienteForm({ inicial = {}, unidades, onSalvar }) {
     <>
       <Field label="Nome / razão social"><input value={f.nome} onChange={set("nome")} style={inp} placeholder="Ex: Mendes Advocacia" /></Field>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <Field label="CPF / CNPJ"><input value={f.cnpj} onChange={onCnpj} style={inp} placeholder="00.000.000/0001-00" /></Field>
+        <Field label="CPF / CNPJ">
+          <div style={{ display: "flex", gap: 6 }}>
+            <input value={f.cnpj} onChange={onCnpj} style={{ ...inp, flex: 1 }} placeholder="00.000.000/0001-00" inputMode="numeric" />
+            <button type="button" onClick={() => buscarDoc(f.cnpj)} disabled={buscando} className="cw-btn" style={{ padding: "0 14px", borderRadius: 10, border: `1px solid ${C.border}`, background: C.cafePale, color: C.cafe, fontWeight: 600, fontSize: 12.5, whiteSpace: "nowrap", opacity: buscando ? 0.6 : 1 }}>{buscando ? "…" : "Buscar"}</button>
+          </div>
+        </Field>
         <Field label="Unidade">
           <select value={f.unidade} onChange={set("unidade")} style={inp}>
             {unidades.map((u) => <option key={u.id} value={u.nome}>{u.nome}</option>)}
           </select>
         </Field>
       </div>
-      <Field label="Plano / contrato"><input value={f.plano} onChange={set("plano")} style={inp} placeholder="Ex: Sala Privativa, Endereço Fiscal" /></Field>
+      {erroBusca && <div style={{ fontSize: 11.5, color: C.red, marginTop: -6, marginBottom: 10 }}>{erroBusca}</div>}
+      <Field label="Plano / contrato">
+        <select value={f.plano} onChange={set("plano")} style={inp}>
+          <option value="">— sem plano —</option>
+          {f.plano && !planos.some((p) => p.nome === f.plano) && <option value={f.plano}>{f.plano}</option>}
+          {planos.map((p) => <option key={p.id} value={p.nome}>{p.nome}{p.preco ? ` · ${fmt(p.preco)}/mês` : ""}</option>)}
+        </select>
+        {planos.length === 0 && <div style={{ fontSize: 11, color: C.text4, marginTop: 4 }}>Cadastre planos em “Planos e serviços” para vincular aqui.</div>}
+      </Field>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Field label="Contato"><input value={f.contato} onChange={set("contato")} style={inp} placeholder="Pessoa de contato" /></Field>
         <Field label="Telefone"><input value={f.tel} onChange={set("tel")} style={inp} placeholder="(31) 9...." /></Field>

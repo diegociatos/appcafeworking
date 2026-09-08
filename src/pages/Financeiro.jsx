@@ -843,7 +843,7 @@ function Contratos({ store, activeUnit }) {
 
       {novo && (
         <Modal title="Novo contrato recorrente" onClose={() => setNovo(false)} maxWidth={520}>
-          <ContratoForm bankAccounts={bankAccounts} onSalvar={(cfg) => { store.addContrato(activeUnit, cfg); setNovo(false); }} />
+          <ContratoForm bankAccounts={bankAccounts} planos={store.planosDe(activeUnit)} onSalvar={(cfg) => { store.addContrato(activeUnit, cfg); setNovo(false); }} />
         </Modal>
       )}
       {renovar && (
@@ -855,12 +855,16 @@ function Contratos({ store, activeUnit }) {
   );
 }
 
-function ContratoForm({ bankAccounts, onSalvar }) {
+function ContratoForm({ bankAccounts, planos = [], onSalvar }) {
   const [f, setF] = useState({
-    cliente: "", documento: "", plano: "", valorMensal: "", bankAccountId: bankAccounts[0]?.id || "",
+    cliente: "", documento: "", planoId: "", plano: "", valorMensal: "", bankAccountId: bankAccounts[0]?.id || "",
     diaVencimento: "10", mesInicial: MES_ATUAL, meses: 12,
   });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const escolherPlano = (id) => {
+    const p = planos.find((x) => x.id === id);
+    setF((s) => ({ ...s, planoId: id, plano: p ? p.nome : s.plano, valorMensal: p && p.preco ? String(p.preco) : s.valorMensal }));
+  };
   const valido = f.cliente.trim() && f.plano.trim() && +f.valorMensal > 0 && f.bankAccountId;
   const ate = Math.min(f.mesInicial + (+f.meses) - 1, 11);
 
@@ -870,6 +874,14 @@ function ContratoForm({ bankAccounts, onSalvar }) {
         <Field label="Cliente"><input value={f.cliente} onChange={set("cliente")} style={inp} placeholder="Nome / razão social" /></Field>
         <Field label="CPF / CNPJ"><input value={f.documento} onChange={set("documento")} style={inp} placeholder="000.000.000-00" /></Field>
       </div>
+      {planos.length > 0 && (
+        <Field label="Vincular a um plano cadastrado">
+          <select value={f.planoId} onChange={(e) => escolherPlano(e.target.value)} style={inp}>
+            <option value="">— sem plano (personalizado) —</option>
+            {planos.map((p) => <option key={p.id} value={p.id}>{p.nome}{p.preco ? ` · ${fmt(p.preco)}/mês` : ""}</option>)}
+          </select>
+        </Field>
+      )}
       <Field label="Contrato / plano"><input value={f.plano} onChange={set("plano")} style={inp} placeholder="Ex: Sala Privativa 12" /></Field>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Field label="Valor mensal (R$)"><input type="number" min="0" step="0.01" value={f.valorMensal} onChange={set("valorMensal")} style={inp} placeholder="0,00" /></Field>

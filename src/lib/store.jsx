@@ -990,7 +990,7 @@ export function StoreProvider({ children }) {
   const addContrato = (unidadeId, cfg) => {
     const id = "ct_" + Date.now();
     const contrato = {
-      id, unidadeId, cliente: cfg.cliente, documento: cfg.documento, plano: cfg.plano,
+      id, unidadeId, cliente: cfg.cliente, documento: cfg.documento, plano: cfg.plano, planoId: cfg.planoId || null,
       valorMensal: cfg.valorMensal, bankAccountId: cfg.bankAccountId, diaVencimento: cfg.diaVencimento || "10",
       mesInicial: cfg.mesInicial, meses: cfg.meses, status: "ativo", criadoEm: new Date().toISOString().slice(0, 7),
     };
