@@ -1,8 +1,22 @@
 import { useState, useEffect } from "react";
-import { Plus, CheckCircle2, CalendarOff, AlertCircle, Trash2, Smartphone, DollarSign, Percent, CalendarClock, TrendingUp, LayoutGrid } from "lucide-react";
+import { Plus, CheckCircle2, CalendarOff, AlertCircle, Trash2, Smartphone, DollarSign, Percent, CalendarClock, TrendingUp, LayoutGrid, ChevronLeft, ChevronRight } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
 import { HORARIOS, DIAS } from "../lib/data.js";
+import { getReservaStart, getReservaEnd } from "../lib/reservas.js";
+
+const pad2 = (n) => String(n).padStart(2, "0");
+const ATIVOS_RESERVA = new Set(["solicitada", "confirmada", "checkin"]);
+const reservaAtivaLocal = (r) => !r.status || ATIVOS_RESERVA.has(r.status);
+// Date do início de um bloco a partir de (segunda da semana, dia 0..6, índice de horário).
+const dataDoSlot = (monday, diaIdx, horaIdx) => {
+  const d = new Date(monday);
+  d.setDate(monday.getDate() + diaIdx);
+  const [h, m] = (HORARIOS[horaIdx] || "07:00").split(":").map(Number);
+  d.setHours(h, m || 0, 0, 0);
+  return d;
+};
+const mesmaDataDia = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
 // Fim de um bloco: próximo horário, ou +1h após o último (ex.: 22:00 → 23:00).
 const horaFim = (inicio, dur) => {
@@ -19,16 +33,20 @@ export default function Reservas() {
   const [diaSel, setDiaSel] = useState(0);
   const [modal, setModal] = useState(null);
   const [detalhe, setDetalhe] = useState(null);
+  const [semanaRef, setSemanaRef] = useState(() => new Date()); // qualquer data da semana exibida
   const dias = DIAS;
 
-  // Datas reais da SEMANA ATUAL (segunda a domingo) para rotular cada dia.
+  // Datas reais da semana EXIBIDA (segunda a domingo) para rotular cada dia e
+  // filtrar as reservas pela DATA (não só pelo dia da semana).
   const p2 = (n) => String(n).padStart(2, "0");
   const hoje = new Date();
-  const segIdx = (hoje.getDay() + 6) % 7; // 0=Seg … 6=Dom
-  const inicioSemana = new Date(hoje); inicioSemana.setDate(hoje.getDate() - segIdx); inicioSemana.setHours(0, 0, 0, 0);
+  const segIdx = (semanaRef.getDay() + 6) % 7; // 0=Seg … 6=Dom
+  const inicioSemana = new Date(semanaRef); inicioSemana.setDate(semanaRef.getDate() - segIdx); inicioSemana.setHours(0, 0, 0, 0);
   const datasSemana = dias.map((_, i) => { const d = new Date(inicioSemana); d.setDate(inicioSemana.getDate() + i); return d; });
-  const ehHoje = (d) => d.getDate() === hoje.getDate() && d.getMonth() === hoje.getMonth() && d.getFullYear() === hoje.getFullYear();
-  const semanaLabel = `${p2(datasSemana[0].getDate())}/${p2(datasSemana[0].getMonth() + 1)} a ${p2(datasSemana[6].getDate())}/${p2(datasSemana[6].getMonth() + 1)}`;
+  const ehHoje = (d) => mesmaDataDia(d, hoje);
+  const semanaLabel = `${p2(datasSemana[0].getDate())}/${p2(datasSemana[0].getMonth() + 1)} a ${p2(datasSemana[6].getDate())}/${p2(datasSemana[6].getMonth() + 1)}/${datasSemana[6].getFullYear()}`;
+  const navegarSemana = (delta) => setSemanaRef((s) => { const d = new Date(s); d.setDate(d.getDate() + delta * 7); return d; });
+  const dataSel = datasSemana[diaSel];
 
   // Ao abrir a agenda, marca as reservas novas (feitas pelo cliente) como vistas
   useEffect(() => { marcarReservasVistas(activeUnit); }, [activeUnit]); // eslint-disable-line
@@ -36,10 +54,12 @@ export default function Reservas() {
   const salasUnidade = salasDe(activeUnit);
   const salasReservaveis = salasUnidade.filter((s) => !s.contratada);
   const salaIds = new Set(salasUnidade.map((s) => s.id));
-  const reservasDoDia = reservas.filter((r) => r.dia === diaSel && salaIds.has(r.sala));
+  // Reserva pertence a uma data da semana exibida? (usa a data real da reserva)
+  const reservaNaData = (r, d) => mesmaDataDia(getReservaStart(r), d);
+  const reservasDoDia = reservas.filter((r) => salaIds.has(r.sala) && reservaNaData(r, dataSel));
 
   // KPIs premium do dia selecionado -----------------------------------------
-  const contagemDia = (i) => reservas.filter((r) => r.dia === i && salaIds.has(r.sala)).length;
+  const contagemDia = (i) => reservas.filter((r) => salaIds.has(r.sala) && reservaNaData(r, datasSemana[i])).length;
   const slotsTotais = Math.max(1, salasReservaveis.length * HORARIOS.length);
   const horasOcupadas = reservasDoDia.reduce((s, r) => s + (r.dur || 1), 0);
   const ocupacaoDia = Math.round((horasOcupadas / slotsTotais) * 100);
@@ -70,8 +90,15 @@ export default function Reservas() {
           <MiniKpi label="Salas reserváveis" valor={salasReservaveis.length} icon={CalendarClock} cor={C.blue} />
         </div>
       )}
-      <div style={{ fontSize: 12.5, color: C.text3, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
-        <CalendarClock size={14} color={C.text4} /> Semana de <b style={{ color: C.text2 }}>{semanaLabel}</b>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+        <button onClick={() => navegarSemana(-1)} className="cw-btn" title="Semana anterior" aria-label="Semana anterior"
+          style={{ width: 30, height: 30, borderRadius: 9, border: `1px solid ${C.border}`, background: C.white, color: C.text2, display: "grid", placeItems: "center" }}><ChevronLeft size={16} /></button>
+        <button onClick={() => navegarSemana(1)} className="cw-btn" title="Próxima semana" aria-label="Próxima semana"
+          style={{ width: 30, height: 30, borderRadius: 9, border: `1px solid ${C.border}`, background: C.white, color: C.text2, display: "grid", placeItems: "center" }}><ChevronRight size={16} /></button>
+        <span style={{ fontSize: 12.5, color: C.text3, display: "flex", alignItems: "center", gap: 6 }}>
+          <CalendarClock size={14} color={C.text4} /> Semana de <b style={{ color: C.text2 }}>{semanaLabel}</b>
+        </span>
+        <button onClick={() => setSemanaRef(new Date())} className="cw-btn" style={{ fontSize: 12, fontWeight: 600, color: C.teal, background: C.tealPale, borderRadius: 8, padding: "5px 10px" }}>Hoje</button>
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
         {dias.map((d, i) => {
@@ -250,6 +277,8 @@ export default function Reservas() {
           salas={salasReservaveis}
           clientes={clientesDe(unidadeAtiva?.nome)}
           dias={dias}
+          datasSemana={datasSemana}
+          semanaInicio={inicioSemana}
           diaInicial={modal.dia ?? diaSel}
           salaInicial={modal.sala}
           inicioInicial={modal.inicio}
@@ -306,6 +335,8 @@ function MiniKpi({ label, valor, sub, icon: Icon, cor }) {
 }
 
 function ReservaDetalhe({ reserva, sala, dias, onComplemento, onCancelar }) {
+  const dt = getReservaStart(reserva);
+  const dataLabel = `${dias[reserva.dia]} ${pad2(dt.getDate())}/${pad2(dt.getMonth() + 1)}/${dt.getFullYear()}`;
   const vh = sala?.valorHora || 0;
   const [horas, setHoras] = useState(1);
   const [valor, setValor] = useState(vh);
@@ -319,7 +350,7 @@ function ReservaDetalhe({ reserva, sala, dias, onComplemento, onCancelar }) {
           {reserva.origem === "app" && <Badge color={C.teal}><Smartphone size={11} /> Reservou pelo app</Badge>}
         </div>
         <div style={{ fontSize: 13, color: C.text3, marginTop: 4 }}>
-          {sala?.nome}{reserva.base ? ` · Base ${reserva.base}` : ""} · {dias[reserva.dia]} · {HORARIOS[reserva.inicio]}–{horaFim(reserva.inicio, reserva.dur)} ({reserva.dur}h)
+          {sala?.nome}{reserva.base ? ` · Base ${reserva.base}` : ""} · {dataLabel} · {HORARIOS[reserva.inicio]}–{horaFim(reserva.inicio, reserva.dur)} ({reserva.dur}h)
         </div>
         <div style={{ fontSize: 13, color: C.text2, marginTop: 6 }}>
           Valor da reserva: <b style={{ color: C.cafe }}>{fmt(reserva.valor || 0)}</b> · já lançado no financeiro (a receber)
@@ -350,7 +381,7 @@ function ReservaDetalhe({ reserva, sala, dias, onComplemento, onCancelar }) {
   );
 }
 
-function NovaReservaModal({ salas, clientes, dias, diaInicial, salaInicial, inicioInicial, reservas, onClose, onSave }) {
+function NovaReservaModal({ salas, clientes, dias, datasSemana = [], semanaInicio, diaInicial, salaInicial, inicioInicial, reservas, onClose, onSave }) {
   const [f, setF] = useState({
     sala: (salaInicial && salas.some((s) => s.id === salaInicial) ? salaInicial : salas[0]?.id) || "",
     modo: clientes.length ? "cadastrado" : "avulso",
@@ -361,8 +392,11 @@ function NovaReservaModal({ salas, clientes, dias, diaInicial, salaInicial, inic
   const salaSel = salas.find((s) => s.id === f.sala);
   const compart = (salaSel?.bases || 0) > 0; // sala compartilhada → reserva por base
   const clienteNome = f.modo === "cadastrado" ? (clientes.find((c) => c.id === f.clienteId)?.nome || "") : f.nome.trim();
-  const overlaps = (r) => r.sala === f.sala && r.dia === f.dia && f.inicio < r.inicio + r.dur && r.inicio < f.inicio + f.dur;
-  const baseOcupada = (n) => reservas.some((r) => overlaps(r) && r.base === n);
+  // Datas reais do bloco escolhido (na semana exibida) → conflito por DATA/HORA.
+  const startDate = dataDoSlot(semanaInicio, f.dia, f.inicio);
+  const endDate = new Date(startDate); endDate.setHours(startDate.getHours() + f.dur);
+  const overlaps = (r) => r.sala === f.sala && reservaAtivaLocal(r) && getReservaStart(r) < endDate && startDate < getReservaEnd(r);
+  const baseOcupada = (n) => reservas.some((r) => overlaps(r) && (r.base ?? null) === n);
   const conflito = !compart ? reservas.find(overlaps) : null;
   const bases = compart ? Array.from({ length: salaSel.bases }, (_, i) => i + 1) : [];
   const livres = bases.filter((n) => !baseOcupada(n)).length;
@@ -439,7 +473,7 @@ function NovaReservaModal({ salas, clientes, dias, diaInicial, salaInicial, inic
       <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr", gap: 12 }}>
         <Field label="Dia">
           <select value={f.dia} onChange={(e) => setTempo({ dia: +e.target.value })} style={inp}>
-            {dias.map((d, i) => <option key={i} value={i}>{d}</option>)}
+            {dias.map((d, i) => <option key={i} value={i}>{d}{datasSemana[i] ? ` · ${pad2(datasSemana[i].getDate())}/${pad2(datasSemana[i].getMonth() + 1)}` : ""}</option>)}
           </select>
         </Field>
         <Field label="Início">
@@ -483,7 +517,7 @@ function NovaReservaModal({ salas, clientes, dias, diaInicial, salaInicial, inic
         </div>
       ) : (
         <div style={{ fontSize: 12.5, color: C.green, marginBottom: 12 }}>
-          ✓ {compart ? `Base ${f.base} livre` : "Horário livre"}: {HORARIOS[f.inicio]}–{horaFim(f.inicio, f.dur)} · {dias[f.dia]}
+          ✓ {compart ? `Base ${f.base} livre` : "Horário livre"}: {dias[f.dia]}{datasSemana[f.dia] ? ` ${pad2(datasSemana[f.dia].getDate())}/${pad2(datasSemana[f.dia].getMonth() + 1)}` : ""} · {HORARIOS[f.inicio]}–{horaFim(f.inicio, f.dur)}
         </div>
       )}
 
@@ -491,7 +525,7 @@ function NovaReservaModal({ salas, clientes, dias, diaInicial, salaInicial, inic
         variant="teal"
         disabled={!podeSalvar}
         style={{ width: "100%", justifyContent: "center", opacity: podeSalvar ? 1 : 0.5 }}
-        onClick={() => podeSalvar && onSave({ sala: f.sala, dia: f.dia, inicio: f.inicio, dur: f.dur, base: f.base, cliente: clienteNome, avulso: f.modo === "avulso", telefone: f.telefone, email: f.email })}
+        onClick={() => podeSalvar && onSave({ sala: f.sala, dia: f.dia, inicio: f.inicio, dur: f.dur, base: f.base, cliente: clienteNome, avulso: f.modo === "avulso", telefone: f.telefone, email: f.email, startAt: startDate.toISOString(), endAt: endDate.toISOString() })}
       >
         <CheckCircle2 size={17} /> Confirmar reserva
       </Btn>
