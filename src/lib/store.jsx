@@ -754,6 +754,8 @@ export function StoreProvider({ children }) {
       nfseApi.emitir({
         unidade_id: unidadeId, tomador: dados.tomador, tomador_documento: dados.tomadorDoc,
         tomador_email: dados.tomadorEmail, valor: dados.valor, descricao: dados.descricao,
+        tomador_cep: dados.tomadorCep, tomador_logradouro: dados.tomadorLogradouro, tomador_numero: dados.tomadorNumero,
+        tomador_bairro: dados.tomadorBairro, tomador_cidade: dados.tomadorCidade, tomador_uf: dados.tomadorUf,
         boleto_id: dados.boletoId,
       }).then(({ nota }) => setNotasFiscais((ns) => [_mapApiNota(nota), ...ns]))
         .catch((e) => console.warn("emitir NFS-e:", e.message));

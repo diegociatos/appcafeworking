@@ -24,6 +24,7 @@
 
 import type { NfseProvider } from "./NfseProvider.ts";
 import { assinarDpsXmlDsig } from "./xmlsign.ts";
+import { cMunDe } from "./municipios.ts";
 import {
   type ConfigFiscal,
   type FiscalCredentials,
@@ -216,7 +217,7 @@ export class NfseNacionalProvider implements NfseProvider {
 (c.inscricao_municipal ? `<IM>${esc(String(c.inscricao_municipal))}</IM>` : ``) +
 `<regTrib><opSimpNac>${opSimpNac}</opSimpNac><regEspTrib>${regEspTrib}</regEspTrib></regTrib>` +
 `</prest>` +
-`<toma><${tagToma}>${docToma}</${tagToma}><xNome>${esc(t.nome)}</xNome></toma>` +
+`<toma><${tagToma}>${docToma}</${tagToma}><xNome>${esc(t.nome)}</xNome>${montarEndToma(t)}</toma>` +
 `<serv>` +
 `<locPrest><cLocPrestacao>${cLocEmi}</cLocPrestacao></locPrest>` +
 `<cServ><cTribNac>${cTribNac}</cTribNac><xDescServ>${esc(descServ)}</xDescServ></cServ>` +
@@ -299,6 +300,21 @@ export class NfseNacionalProvider implements NfseProvider {
 function esc(s: string): string {
   return (s ?? "").replace(/[<>&'"]/g, (ch) =>
     ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" }[ch] as string));
+}
+
+// Endereço do tomador (<end>) no layout nacional. Só é incluído quando dá para
+// resolver o código IBGE (cMun) da cidade/UF E há logradouro + CEP válido —
+// senão é OMITIDO (a nota segue válida, sem endereço do tomador).
+function montarEndToma(t: { cep?: string; logradouro?: string; numero?: string; bairro?: string; municipio?: string; uf?: string }): string {
+  const cMun = cMunDe(t.municipio, t.uf);
+  const cep = (t.cep ?? "").replace(/\D/g, "");
+  if (!cMun || !t.logradouro || cep.length !== 8) return "";
+  return `<end>` +
+    `<endNac><cMun>${cMun}</cMun><CEP>${cep}</CEP></endNac>` +
+    `<xLgr>${esc(t.logradouro.slice(0, 255))}</xLgr>` +
+    `<nro>${esc((t.numero || "S/N").slice(0, 60))}</nro>` +
+    `<xBairro>${esc((t.bairro || "Centro").slice(0, 60))}</xBairro>` +
+    `</end>`;
 }
 
 async function gzipBase64(text: string): Promise<string> {

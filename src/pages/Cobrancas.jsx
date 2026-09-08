@@ -259,7 +259,11 @@ function CobrancaForm({ store, onCriada }) {
       });
 
       // Documento fiscal escolhido.
-      if (f.documento === "nf") emitirNFSe(activeUnit, { tomador: nome, tomadorDoc: doc, tomadorEmail: email, valor: +f.valor, descricao: descricaoFinal });
+      if (f.documento === "nf") emitirNFSe(activeUnit, {
+        tomador: nome, tomadorDoc: doc, tomadorEmail: email, valor: +f.valor, descricao: descricaoFinal,
+        tomadorCep: cli?.cep, tomadorLogradouro: cli?.endereco, tomadorNumero: cli?.numero,
+        tomadorBairro: cli?.bairro, tomadorCidade: cli?.cidade, tomadorUf: cli?.uf,
+      });
       let rec = null;
       if (f.documento === "recibo") rec = emitirRecibo(activeUnit, { cliente: nome, clienteDoc: doc, valor: +f.valor, descricao: descricaoFinal, forma: TIPOS.find((t) => t.v === f.tipo)?.lb, cobrancaId: cobranca.id });
 
