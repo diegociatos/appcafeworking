@@ -21,6 +21,15 @@ export default function Reservas() {
   const [detalhe, setDetalhe] = useState(null);
   const dias = DIAS;
 
+  // Datas reais da SEMANA ATUAL (segunda a domingo) para rotular cada dia.
+  const p2 = (n) => String(n).padStart(2, "0");
+  const hoje = new Date();
+  const segIdx = (hoje.getDay() + 6) % 7; // 0=Seg … 6=Dom
+  const inicioSemana = new Date(hoje); inicioSemana.setDate(hoje.getDate() - segIdx); inicioSemana.setHours(0, 0, 0, 0);
+  const datasSemana = dias.map((_, i) => { const d = new Date(inicioSemana); d.setDate(inicioSemana.getDate() + i); return d; });
+  const ehHoje = (d) => d.getDate() === hoje.getDate() && d.getMonth() === hoje.getMonth() && d.getFullYear() === hoje.getFullYear();
+  const semanaLabel = `${p2(datasSemana[0].getDate())}/${p2(datasSemana[0].getMonth() + 1)} a ${p2(datasSemana[6].getDate())}/${p2(datasSemana[6].getMonth() + 1)}`;
+
   // Ao abrir a agenda, marca as reservas novas (feitas pelo cliente) como vistas
   useEffect(() => { marcarReservasVistas(activeUnit); }, [activeUnit]); // eslint-disable-line
 
@@ -61,10 +70,15 @@ export default function Reservas() {
           <MiniKpi label="Salas reserváveis" valor={salasReservaveis.length} icon={CalendarClock} cor={C.blue} />
         </div>
       )}
+      <div style={{ fontSize: 12.5, color: C.text3, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+        <CalendarClock size={14} color={C.text4} /> Semana de <b style={{ color: C.text2 }}>{semanaLabel}</b>
+      </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
         {dias.map((d, i) => {
           const n = contagemDia(i);
           const ativo = diaSel === i;
+          const data = datasSemana[i];
+          const hojeTab = ehHoje(data);
           return (
             <button
               key={i}
@@ -73,22 +87,25 @@ export default function Reservas() {
               style={{
                 flex: 1,
                 minWidth: 90,
-                padding: "10px 0",
+                padding: "9px 0",
                 borderRadius: 12,
-                border: `1px solid ${ativo ? C.teal : C.border}`,
+                border: `1px solid ${ativo ? C.teal : hojeTab ? C.tealLine : C.border}`,
                 background: ativo ? C.teal : C.white,
                 color: ativo ? "#fff" : C.text2,
                 fontWeight: 600,
-                fontSize: 14,
+                fontSize: 13,
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                gap: 2,
+                gap: 1,
               }}
             >
-              {d}
-              <span style={{ fontSize: 10.5, fontWeight: 600, color: ativo ? "rgba(255,255,255,.85)" : n > 0 ? C.teal : C.text4 }}>
-                {n > 0 ? `${n} reserva${n > 1 ? "s" : ""}` : "livre"}
+              <span style={{ fontSize: 12, fontWeight: 600, color: ativo ? "rgba(255,255,255,.9)" : C.text3 }}>{d}</span>
+              <span style={{ fontFamily: serif, fontSize: 18, lineHeight: 1.1, color: ativo ? "#fff" : hojeTab ? C.teal : C.text }}>
+                {p2(data.getDate())}/{p2(data.getMonth() + 1)}
+              </span>
+              <span style={{ fontSize: 10.5, fontWeight: 600, color: ativo ? "rgba(255,255,255,.85)" : (n > 0 || hojeTab) ? C.teal : C.text4 }}>
+                {n > 0 ? `${n} reserva${n > 1 ? "s" : ""}` : hojeTab ? "hoje" : "livre"}
               </span>
             </button>
           );
