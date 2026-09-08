@@ -393,7 +393,7 @@ function EmitirForm({ contas, contaPadrao, onEmitir }) {
     sacado: "",
     sacadoDocumento: "",
     email: "",
-    cep: "", endereco: "", numero: "",
+    cep: "", logradouro: "", numero: "", bairro: "", cidade: "", uf: "",
     valor: "",
     vencimento: "",
     instrucoes: "",
@@ -413,17 +413,20 @@ function EmitirForm({ contas, contaPadrao, onEmitir }) {
       setF((p) => ({
         ...p,
         sacado: r.razaoSocial || r.nomeFantasia || p.sacado,
-        email: p.email || r.email,
-        cep: p.cep || r.cep,
-        numero: p.numero || r.numero,
-        endereco: p.endereco || [r.logradouro, r.bairro, [r.municipio, r.uf].filter(Boolean).join("/")].filter(Boolean).join(", "),
+        email: p.email || r.email || "",
+        cep: p.cep || r.cep || "",
+        logradouro: p.logradouro || r.logradouro || "",
+        numero: p.numero || r.numero || "",
+        bairro: p.bairro || r.bairro || "",
+        cidade: p.cidade || r.municipio || "",
+        uf: p.uf || r.uf || "",
       }));
     }).catch(() => setErroBusca("Não foi possível buscar agora.")).finally(() => setBuscando(false));
   };
   const onDoc = (e) => { const v = e.target.value; setF((p) => ({ ...p, sacadoDocumento: v })); if (v.replace(/\D/g, "").length === 14) buscarDoc(v); };
   const onCep = (e) => {
     const v = e.target.value; setF((p) => ({ ...p, cep: v }));
-    if (v.replace(/\D/g, "").length === 8) { setBuscando(true); buscarCep(v).then((r) => { if (r) setF((p) => ({ ...p, endereco: p.endereco || [r.logradouro, r.bairro, [r.cidade, r.uf].filter(Boolean).join("/")].filter(Boolean).join(", ") })); }).finally(() => setBuscando(false)); }
+    if (v.replace(/\D/g, "").length === 8) { setBuscando(true); buscarCep(v).then((r) => { if (r) setF((p) => ({ ...p, logradouro: p.logradouro || r.logradouro || "", bairro: p.bairro || r.bairro || "", cidade: p.cidade || r.cidade || "", uf: p.uf || r.uf || "" })); }).finally(() => setBuscando(false)); }
   };
 
   return (
@@ -451,8 +454,13 @@ function EmitirForm({ contas, contaPadrao, onEmitir }) {
       </Field>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 0.8fr", gap: 12 }}>
         <Field label="CEP"><input value={f.cep} onChange={onCep} style={inp} placeholder="00000-000" inputMode="numeric" /></Field>
-        <Field label="Endereço"><input value={f.endereco} onChange={set("endereco")} style={inp} placeholder="Rua, bairro, cidade/UF" /></Field>
+        <Field label="Endereço"><input value={f.logradouro} onChange={set("logradouro")} style={inp} placeholder="Rua / Av." /></Field>
         <Field label="Número"><input value={f.numero} onChange={set("numero")} style={inp} placeholder="Nº" /></Field>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1.4fr 0.6fr", gap: 12 }}>
+        <Field label="Bairro"><input value={f.bairro} onChange={set("bairro")} style={inp} placeholder="Bairro" /></Field>
+        <Field label="Cidade"><input value={f.cidade} onChange={set("cidade")} style={inp} placeholder="Cidade" /></Field>
+        <Field label="UF"><input value={f.uf} onChange={set("uf")} style={inp} placeholder="UF" maxLength={2} /></Field>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Field label="Valor (R$)">
@@ -466,7 +474,7 @@ function EmitirForm({ contas, contaPadrao, onEmitir }) {
         <input value={f.instrucoes} onChange={set("instrucoes")} style={inp} placeholder="Ex: Mensalidade sala privativa - Junho" />
       </Field>
       <Btn style={{ width: "100%", justifyContent: "center", marginTop: 4, opacity: valido ? 1 : 0.5 }}
-        onClick={() => valido && onEmitir({ ...f, valor: +f.valor, sacadoEmail: f.email, sacadoCep: f.cep, sacadoEndereco: f.endereco, sacadoNumero: f.numero })}>
+        onClick={() => valido && onEmitir({ ...f, valor: +f.valor, sacadoEmail: f.email, sacadoCep: f.cep, sacadoLogradouro: f.logradouro, sacadoNumero: f.numero, sacadoBairro: f.bairro, sacadoCidade: f.cidade, sacadoUf: f.uf })}>
         <Barcode size={16} /> Emitir boleto
       </Btn>
     </>

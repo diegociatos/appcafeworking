@@ -905,6 +905,8 @@ export function StoreProvider({ children }) {
       boletosApi.emitir({
         bank_account_id: dados.bankAccountId, sacado: dados.sacado,
         sacado_documento: dados.sacadoDocumento, sacado_email: dados.sacadoEmail,
+        sacado_cep: dados.sacadoCep, sacado_logradouro: dados.sacadoLogradouro, sacado_numero: dados.sacadoNumero,
+        sacado_bairro: dados.sacadoBairro, sacado_cidade: dados.sacadoCidade, sacado_uf: dados.sacadoUf,
         valor: dados.valor, vencimento: dados.vencimento, instrucoes: dados.instrucoes,
       }).then(({ boleto }) => {
         const b = _mapApiBoleto(boleto, unidadeId);
