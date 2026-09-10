@@ -336,9 +336,15 @@ function IntegracaoBanco({ conta, onConectar, onDesconectar, onToggle }) {
   const b = BANCOS[conta.banco] || { label: "Banco", cor: C.text3, pix: false };
   const cx = conta.conexao || { status: "desconectado" };
   const conectado = cx.status === "conectado";
+  // Inter/Itaú/Bradesco usam client_credentials + certificado (mTLS): NÃO há
+  // tela de consentimento/redirect — as credenciais (Client ID/Secret + cert/
+  // chave) são cadastradas ao criar/editar a conta e ficam no cofre (Vault).
+  // Só o BTG usa o fluxo OAuth de consentimento (Open Finance).
+  const mtls = conta.banco !== "btg";
+  const usaOAuth = !mtls && oauthConfigured(conta.banco);
   const conectar = () => {
-    if (oauthConfigured(conta.banco)) conectarNoBanco(conta.banco, conta.id); // produção: redireciona ao banco
-    else onConectar(); // demo: simula a autorização concedida
+    if (usaOAuth) conectarNoBanco(conta.banco, conta.id); // só bancos OAuth (BTG): redireciona ao consentimento
+    else onConectar(); // mTLS (Inter/Itaú/Bradesco) e demo: valida as credenciais já cadastradas
   };
   return (
     <>
@@ -355,18 +361,20 @@ function IntegracaoBanco({ conta, onConectar, onDesconectar, onToggle }) {
         <Permissao ok={cx.boleto} label="Boletos — consultar e emitir" />
         {b.pix !== false && <Permissao ok={cx.pix} label="PIX Cobrança — consultar e emitir" />}
         <div style={{ fontSize: 11.5, color: conectado ? C.green : C.text3, marginTop: 8 }}>
-          {conectado ? `✓ Conta conectada${cx.conectadoEm ? ` em ${cx.conectadoEm.split("-").reverse().join("/")}` : ""}.` : "Conta ainda não autorizada — conecte para emitir cobranças."}
+          {conectado
+            ? `✓ ${mtls ? "Credenciais validadas" : "Conta conectada"}${cx.conectadoEm ? ` em ${cx.conectadoEm.split("-").reverse().join("/")}` : ""}.`
+            : mtls ? "Credenciais ainda não validadas — cadastre Client ID/Secret + certificado ao editar a conta." : "Conta ainda não autorizada — conecte para emitir cobranças."}
         </div>
       </div>
 
       {conectado ? (
         <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
-          <Btn variant="ghost" onClick={conectar} style={{ flex: 1, justifyContent: "center" }}><RefreshCw size={15} /> Reconectar</Btn>
+          <Btn variant="ghost" onClick={conectar} style={{ flex: 1, justifyContent: "center" }}><RefreshCw size={15} /> {mtls ? "Testar conexão" : "Reconectar"}</Btn>
           <Btn variant="ghost" onClick={onDesconectar} style={{ color: C.red, borderColor: C.redPale }}>Desconectar</Btn>
         </div>
       ) : (
         <Btn onClick={conectar} style={{ width: "100%", justifyContent: "center", background: b.cor, marginBottom: 6 }}>
-          <ExternalLink size={16} /> Conectar com o {b.label}
+          {mtls ? <><RefreshCw size={16} /> Validar credenciais</> : <><ExternalLink size={16} /> Conectar com o {b.label}</>}
         </Btn>
       )}
 
@@ -378,9 +386,11 @@ function IntegracaoBanco({ conta, onConectar, onDesconectar, onToggle }) {
 
       <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: C.tealPale, borderRadius: 10, padding: "9px 12px", fontSize: 11.5, color: C.teal, marginTop: 14 }}>
         <Info size={14} style={{ flexShrink: 0, marginTop: 1 }} />
-        <span>{oauthConfigured(conta.banco)
-          ? `Ao conectar, você vai para o ${b.label} autorizar o CafeWorking (Boletos${b.pix !== false ? " + PIX" : ""}) — igual ao consentimento do Open Finance.`
-          : `Demonstração. Em produção, o CafeWorking precisa estar cadastrado como app parceiro no ${b.label} (client_id + redirect aprovados) para abrir a tela de consentimento.`}</span>
+        <span>{mtls
+          ? `O ${b.label} usa Client ID/Secret + certificado (mTLS) — não há tela de consentimento. As credenciais são cadastradas ao criar/editar esta conta e ficam guardadas no cofre (Vault). Ambiente Produção exige credenciais geradas no Internet Banking PJ real.`
+          : usaOAuth
+            ? `Ao conectar, você vai para o ${b.label} autorizar o CafeWorking (Boletos${b.pix !== false ? " + PIX" : ""}) — igual ao consentimento do Open Finance.`
+            : `Demonstração. Em produção, o ${b.label} abre a tela de consentimento (app parceiro: client_id + redirect aprovados).`}</span>
       </div>
     </>
   );
