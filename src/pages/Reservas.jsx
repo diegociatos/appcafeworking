@@ -6,6 +6,7 @@ import { HORARIOS, DIAS } from "../lib/data.js";
 import { getReservaStart, getReservaEnd } from "../lib/reservas.js";
 
 const pad2 = (n) => String(n).padStart(2, "0");
+const MESES_NOME = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 const ATIVOS_RESERVA = new Set(["solicitada", "confirmada", "checkin"]);
 const reservaAtivaLocal = (r) => !r.status || ATIVOS_RESERVA.has(r.status);
 // Date do início de um bloco a partir de (segunda da semana, dia 0..6, índice de horário).
@@ -33,7 +34,8 @@ export default function Reservas() {
   const [diaSel, setDiaSel] = useState(0);
   const [modal, setModal] = useState(null);
   const [detalhe, setDetalhe] = useState(null);
-  const [semanaRef, setSemanaRef] = useState(() => new Date()); // qualquer data da semana exibida
+  const [semanaRef, setSemanaRef] = useState(() => new Date()); // data âncora (semana/mês/ano exibido)
+  const [visao, setVisao] = useState("semana"); // semana | mes | ano
   const dias = DIAS;
 
   // Datas reais da semana EXIBIDA (segunda a domingo) para rotular cada dia e
@@ -45,7 +47,16 @@ export default function Reservas() {
   const datasSemana = dias.map((_, i) => { const d = new Date(inicioSemana); d.setDate(inicioSemana.getDate() + i); return d; });
   const ehHoje = (d) => mesmaDataDia(d, hoje);
   const semanaLabel = `${p2(datasSemana[0].getDate())}/${p2(datasSemana[0].getMonth() + 1)} a ${p2(datasSemana[6].getDate())}/${p2(datasSemana[6].getMonth() + 1)}/${datasSemana[6].getFullYear()}`;
-  const navegarSemana = (delta) => setSemanaRef((s) => { const d = new Date(s); d.setDate(d.getDate() + delta * 7); return d; });
+  const navegar = (delta) => setSemanaRef((s) => {
+    const d = new Date(s);
+    if (visao === "mes") d.setMonth(d.getMonth() + delta);
+    else if (visao === "ano") d.setFullYear(d.getFullYear() + delta);
+    else d.setDate(d.getDate() + delta * 7);
+    return d;
+  });
+  const navLabel = visao === "mes" ? `${MESES_NOME[semanaRef.getMonth()]} de ${semanaRef.getFullYear()}`
+    : visao === "ano" ? `${semanaRef.getFullYear()}`
+    : semanaLabel;
   const dataSel = datasSemana[diaSel];
 
   // Ao abrir a agenda, marca as reservas novas (feitas pelo cliente) como vistas
@@ -60,6 +71,11 @@ export default function Reservas() {
 
   // KPIs premium do dia selecionado -----------------------------------------
   const contagemDia = (i) => reservas.filter((r) => salaIds.has(r.sala) && reservaNaData(r, datasSemana[i])).length;
+  // Contagens por data e por mês (para as visões Mês e Ano).
+  const contagemNaData = (d) => reservas.filter((r) => salaIds.has(r.sala) && reservaNaData(r, d)).length;
+  const contagemNoMes = (ano, mes) => reservas.filter((r) => salaIds.has(r.sala) && (() => { const s = getReservaStart(r); return s.getFullYear() === ano && s.getMonth() === mes; })()).length;
+  // Ir para uma data específica e cair na visão semana daquele dia.
+  const irParaData = (d) => { setSemanaRef(new Date(d)); setDiaSel((d.getDay() + 6) % 7); setVisao("semana"); };
   const slotsTotais = Math.max(1, salasReservaveis.length * HORARIOS.length);
   const horasOcupadas = reservasDoDia.reduce((s, r) => s + (r.dur || 1), 0);
   const ocupacaoDia = Math.round((horasOcupadas / slotsTotais) * 100);
@@ -82,7 +98,7 @@ export default function Reservas() {
           </Btn>
         }
       />
-      {salasReservaveis.length > 0 && (
+      {visao === "semana" && salasReservaveis.length > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 14, marginBottom: 16 }}>
           <MiniKpi label={`Ocupação · ${dias[diaSel]}`} valor={`${ocupacaoDia}%`} icon={Percent} cor={C.teal} />
           <MiniKpi label="Reservas no dia" valor={reservasDoDia.length} icon={LayoutGrid} cor={C.cafe} />
@@ -90,16 +106,23 @@ export default function Reservas() {
           <MiniKpi label="Salas reserváveis" valor={salasReservaveis.length} icon={CalendarClock} cor={C.blue} />
         </div>
       )}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-        <button onClick={() => navegarSemana(-1)} className="cw-btn" title="Semana anterior" aria-label="Semana anterior"
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", background: C.cream, borderRadius: 10, padding: 3, gap: 2, marginRight: 2 }}>
+          {[["semana", "Semana"], ["mes", "Mês"], ["ano", "Ano"]].map(([v, lb]) => (
+            <button key={v} onClick={() => setVisao(v)} className="cw-btn"
+              style={{ padding: "6px 14px", borderRadius: 8, fontSize: 12.5, fontWeight: 600, border: "none", background: visao === v ? C.white : "transparent", color: visao === v ? C.teal : C.text3, boxShadow: visao === v ? "0 1px 3px rgba(0,0,0,.08)" : "none" }}>{lb}</button>
+          ))}
+        </div>
+        <button onClick={() => navegar(-1)} className="cw-btn" title="Anterior" aria-label="Anterior"
           style={{ width: 30, height: 30, borderRadius: 9, border: `1px solid ${C.border}`, background: C.white, color: C.text2, display: "grid", placeItems: "center" }}><ChevronLeft size={16} /></button>
-        <button onClick={() => navegarSemana(1)} className="cw-btn" title="Próxima semana" aria-label="Próxima semana"
+        <button onClick={() => navegar(1)} className="cw-btn" title="Próximo" aria-label="Próximo"
           style={{ width: 30, height: 30, borderRadius: 9, border: `1px solid ${C.border}`, background: C.white, color: C.text2, display: "grid", placeItems: "center" }}><ChevronRight size={16} /></button>
         <span style={{ fontSize: 12.5, color: C.text3, display: "flex", alignItems: "center", gap: 6 }}>
-          <CalendarClock size={14} color={C.text4} /> Semana de <b style={{ color: C.text2 }}>{semanaLabel}</b>
+          <CalendarClock size={14} color={C.text4} /> {visao === "semana" ? "Semana de " : ""}<b style={{ color: C.text2 }}>{navLabel}</b>
         </span>
         <button onClick={() => setSemanaRef(new Date())} className="cw-btn" style={{ fontSize: 12, fontWeight: 600, color: C.teal, background: C.tealPale, borderRadius: 8, padding: "5px 10px" }}>Hoje</button>
       </div>
+      {visao === "semana" && (<>
       <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
         {dias.map((d, i) => {
           const n = contagemDia(i);
@@ -271,6 +294,15 @@ export default function Reservas() {
       <div style={{ marginTop: 10, fontSize: 12, color: C.text3, fontStyle: "italic" }}>
         💡 Clique numa reserva para ver detalhes, lançar valor complementar ou cancelar. 📱 = feita pelo cliente no app.
       </div>
+      </>)}
+
+      {visao === "mes" && (
+        <MesGrade ano={semanaRef.getFullYear()} mes={semanaRef.getMonth()} hoje={hoje} contagemNaData={contagemNaData} onDia={irParaData} />
+      )}
+      {visao === "ano" && (
+        <AnoGrade ano={semanaRef.getFullYear()} hoje={hoje} contagemNoMes={contagemNoMes} contagemNaData={contagemNaData}
+          onMes={(m) => { setSemanaRef(new Date(semanaRef.getFullYear(), m, 1)); setVisao("mes"); }} onDia={irParaData} />
+      )}
 
       {modal && (
         <NovaReservaModal
@@ -313,6 +345,81 @@ export default function Reservas() {
           />
         </Modal>
       )}
+    </div>
+  );
+}
+
+// Visão MÊS — grade de calendário do mês, cada dia com a contagem de reservas.
+function MesGrade({ ano, mes, hoje, contagemNaData, onDia }) {
+  const DIASH = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+  const primeiro = new Date(ano, mes, 1);
+  const offset = (primeiro.getDay() + 6) % 7;
+  const inicio = new Date(ano, mes, 1 - offset);
+  const todas = Array.from({ length: 42 }, (_, i) => { const d = new Date(inicio); d.setDate(inicio.getDate() + i); return d; });
+  const semanas = [];
+  for (let w = 0; w < 6; w++) { const wk = todas.slice(w * 7, w * 7 + 7); if (wk.some((d) => d.getMonth() === mes)) semanas.push(wk); }
+  return (
+    <Card style={{ padding: 0, overflow: "hidden" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", background: C.cream, borderBottom: `1px solid ${C.border2}` }}>
+        {DIASH.map((d) => <div key={d} style={{ padding: "10px 6px", textAlign: "center", fontSize: 11, fontWeight: 700, color: C.text3 }}>{d}</div>)}
+      </div>
+      {semanas.map((wk, wi) => (
+        <div key={wi} style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)" }}>
+          {wk.map((d, di) => {
+            const inMes = d.getMonth() === mes;
+            const n = inMes ? contagemNaData(d) : 0;
+            const today = mesmaDataDia(d, hoje);
+            return (
+              <button key={di} onClick={() => onDia(d)} className="cw-btn"
+                style={{ minHeight: 76, borderRight: di < 6 ? `1px solid ${C.border2}` : "none", borderTop: `1px solid ${C.border2}`,
+                  background: today ? C.tealPale : C.white, opacity: inMes ? 1 : 0.4, display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 5, padding: "8px 10px", cursor: "pointer", textAlign: "left" }}>
+                <span style={{ fontFamily: serif, fontSize: 16, color: today ? C.teal : C.text }}>{d.getDate()}</span>
+                {n > 0 && <span style={{ fontSize: 10.5, fontWeight: 700, color: "#fff", background: C.teal, borderRadius: 8, padding: "2px 7px" }}>{n} reserva{n > 1 ? "s" : ""}</span>}
+              </button>
+            );
+          })}
+        </div>
+      ))}
+    </Card>
+  );
+}
+
+// Visão ANO — 12 mini-calendários; clique no mês abre a visão mês, no dia abre a semana.
+function AnoGrade({ ano, hoje, contagemNoMes, contagemNaData, onMes, onDia }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(232px,1fr))", gap: 14 }}>
+      {MESES_NOME.map((nome, m) => {
+        const total = contagemNoMes(ano, m);
+        const primeiro = new Date(ano, m, 1);
+        const offset = (primeiro.getDay() + 6) % 7;
+        const inicio = new Date(ano, m, 1 - offset);
+        const todas = Array.from({ length: 42 }, (_, i) => { const d = new Date(inicio); d.setDate(inicio.getDate() + i); return d; });
+        const nSem = todas.some((d, i) => i >= 35 && d.getMonth() === m) ? 6 : 5;
+        return (
+          <Card key={m} style={{ padding: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <button onClick={() => onMes(m)} className="cw-btn" style={{ fontFamily: serif, fontSize: 15, color: C.text, background: "transparent", border: "none", cursor: "pointer", padding: 0 }}>{nome}</button>
+              {total > 0 && <span style={{ fontSize: 10.5, fontWeight: 700, color: C.teal, background: C.tealPale, borderRadius: 8, padding: "2px 7px" }}>{total}</span>}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2 }}>
+              {["S", "T", "Q", "Q", "S", "S", "D"].map((d, i) => <div key={i} style={{ textAlign: "center", fontSize: 9, color: C.text4, fontWeight: 700 }}>{d}</div>)}
+              {todas.slice(0, nSem * 7).map((d, i) => {
+                const inMes = d.getMonth() === m;
+                const n = inMes ? contagemNaData(d) : 0;
+                const today = mesmaDataDia(d, hoje);
+                return (
+                  <button key={i} onClick={() => inMes && onDia(d)} disabled={!inMes} title={inMes ? `${d.getDate()}/${m + 1} · ${n} reserva(s)` : ""}
+                    style={{ height: 22, borderRadius: 6, border: "none", fontSize: 10, cursor: inMes ? "pointer" : "default",
+                      background: !inMes ? "transparent" : n > 0 ? C.teal : today ? C.tealPale : C.cream2,
+                      color: !inMes ? "transparent" : n > 0 ? "#fff" : today ? C.teal : C.text2, fontWeight: (n > 0 || today) ? 700 : 500 }}>
+                    {inMes ? d.getDate() : ""}
+                  </button>
+                );
+              })}
+            </div>
+          </Card>
+        );
+      })}
     </div>
   );
 }
