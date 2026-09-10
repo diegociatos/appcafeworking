@@ -50,7 +50,10 @@ Deno.serve(async (req) => {
     const provider = getProvider(account as BankAccount, creds);
 
     // 4) emissão
-    const seuNumero = `CW${Date.now().toString(36).toUpperCase()}`;
+    // seuNumero: o Inter PRODUÇÃO exige o padrão [1-9]\d* (só dígitos, sem zero
+    // à esquerda; o sandbox é mais permissivo). Date.now() em ms já é numérico e
+    // começa em 1..9 — único o suficiente por conta. (lição do ContaOne)
+    const seuNumero = String(Date.now()).replace(/^0+/, "");
     const input: EmitirBoletoInput = {
       seuNumero,
       valor: Number(body.valor),

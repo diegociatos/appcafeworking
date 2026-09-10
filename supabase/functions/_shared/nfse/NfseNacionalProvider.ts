@@ -59,14 +59,18 @@ export class NfseNacionalProvider implements NfseProvider {
 
   /**
    * fetch com mTLS: o ADN/SEFIN exige certificado de cliente na conexão.
-   * No Deno (Supabase Edge) isso é feito com Deno.createHttpClient({certChain,
-   * privateKey}). Requer o certificado em PEM (cert_pem + key_pem). Quando só
-   * houver o .pfx, é preciso convertê-lo para PEM antes (etapa de assinatura).
+   * No Deno (Supabase Edge) isso é feito com Deno.createHttpClient. O runtime
+   * ATUAL espera `{ cert, key }` — os nomes antigos `{ certChain, privateKey }`
+   * são IGNORADOS SILENCIOSAMENTE (client sem certificado → mTLS falha). Por
+   * isso passamos os DOIS pares de nomes por compatibilidade (mesma pegadinha
+   * do Inter no ContaOne). Requer o certificado em PEM (cert_pem + key_pem).
    */
   private async mtlsFetch(url: string, init?: RequestInit): Promise<Response> {
     const anyDeno = (globalThis as any).Deno;
     if (this.creds.cert_pem && this.creds.key_pem && anyDeno?.createHttpClient) {
       const client = anyDeno.createHttpClient({
+        cert: this.creds.cert_pem,
+        key: this.creds.key_pem,
         certChain: this.creds.cert_pem,
         privateKey: this.creds.key_pem,
       });

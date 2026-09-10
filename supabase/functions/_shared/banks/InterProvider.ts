@@ -57,7 +57,11 @@ export class InterProvider implements BankProvider {
     private readonly creds: BankCredentials,
   ) {
     this.base = BASE_URL[account.ambiente] ?? BASE_URL.sandbox;
-    this.contaCorrente = (creds.conta_corrente as string) || account.conta || undefined;
+    // x-conta-corrente: o Inter PRODUÇÃO exige o padrão [1-9]\d* (só dígitos, sem
+    // DV/traço nem zero à esquerda). Ex.: "2307821-9" → "23078219". Se vier
+    // vazio, omite o header (o Inter usa a conta padrão das credenciais). (ContaOne)
+    const ccRaw = ((creds.conta_corrente as string) || account.conta || "").replace(/\D/g, "").replace(/^0+/, "");
+    this.contaCorrente = ccRaw || undefined;
     if (!creds.cert_pem || !creds.key_pem) {
       throw new BankError("Inter exige certificado mTLS (cert_pem/key_pem)", "inter");
     }
