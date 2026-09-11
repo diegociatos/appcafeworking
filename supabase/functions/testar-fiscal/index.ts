@@ -72,7 +72,10 @@ Deno.serve(async (req) => {
       temCert = Boolean(creds.cert_pfx_base64 || (creds.cert_pem && creds.key_pem));
       const anyDeno = (globalThis as any).Deno;
       if (creds.cert_pem && creds.key_pem && anyDeno?.createHttpClient) {
-        httpClient = anyDeno.createHttpClient({ certChain: creds.cert_pem, privateKey: creds.key_pem });
+        // Deno atual espera { cert, key }; os nomes antigos { certChain, privateKey }
+        // são IGNORADOS em silêncio (client SEM cert → gov recusa o mTLS → "sem
+        // resposta"). Passa os dois pares por compatibilidade.
+        httpClient = anyDeno.createHttpClient({ cert: creds.cert_pem, key: creds.key_pem, certChain: creds.cert_pem, privateKey: creds.key_pem });
         certMtls = true;
       }
     } catch (_) { /* segue sem cert */ }

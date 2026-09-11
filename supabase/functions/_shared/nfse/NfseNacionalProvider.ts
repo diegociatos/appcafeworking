@@ -206,7 +206,7 @@ export class NfseNacionalProvider implements NfseProvider {
     const descServ = (input.descricao || c.descricao_servico || "Serviço").slice(0, 2000);
 
     return `<?xml version="1.0" encoding="UTF-8"?>` +
-`<DPS xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.00">` +
+`<DPS xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.01">` +
 `<infDPS Id="${idDps}">` +
 `<tpAmb>${c.ambiente === "producao" ? 1 : 2}</tpAmb>` +
 `<dhEmi>${new Date().toISOString().replace(/\.\d{3}Z$/, "Z")}</dhEmi>` +
@@ -282,7 +282,7 @@ export class NfseNacionalProvider implements NfseProvider {
 
   private montarCancelamento(nfseId: string, motivo: string): string {
     return `<?xml version="1.0" encoding="UTF-8"?>
-<pedRegEvento xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.00">
+<pedRegEvento xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.01">
   <infPedReg><chNFSe>${nfseId}</chNFSe><xMotivo>${esc(motivo)}</xMotivo></infPedReg>
 </pedRegEvento>`;
   }
