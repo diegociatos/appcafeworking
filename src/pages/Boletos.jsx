@@ -6,7 +6,7 @@ import {
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
-import { supabaseConfigured } from "../lib/boletosApi.js";
+import { supabaseConfigured, boletosApi } from "../lib/boletosApi.js";
 import { buscarCnpj, buscarCep } from "../lib/lookup.js";
 import { oauthConfigured, conectarNoBanco } from "../lib/bankOauth.js";
 import { integracaoApi } from "../lib/asaasApi.js";
@@ -342,9 +342,19 @@ function IntegracaoBanco({ conta, onConectar, onDesconectar, onToggle }) {
   // Só o BTG usa o fluxo OAuth de consentimento (Open Finance).
   const mtls = conta.banco !== "btg";
   const usaOAuth = !mtls && oauthConfigured(conta.banco);
+  const [testando, setTestando] = useState(false);
+  const [resultado, setResultado] = useState(null); // { ok, detalhe }
   const conectar = () => {
-    if (usaOAuth) conectarNoBanco(conta.banco, conta.id); // só bancos OAuth (BTG): redireciona ao consentimento
-    else onConectar(); // mTLS (Inter/Itaú/Bradesco) e demo: valida as credenciais já cadastradas
+    if (usaOAuth) { conectarNoBanco(conta.banco, conta.id); return; } // BTG: redireciona ao consentimento
+    if (mtls && boletosApi.configured) {
+      setTestando(true); setResultado(null);
+      boletosApi.testar(conta.id)
+        .then((r) => { setResultado(r); if (r?.ok) onConectar(); })
+        .catch((e) => setResultado({ ok: false, detalhe: e.message }))
+        .finally(() => setTestando(false));
+      return;
+    }
+    onConectar(); // demo (sem backend): simula validado
   };
   return (
     <>
@@ -369,13 +379,20 @@ function IntegracaoBanco({ conta, onConectar, onDesconectar, onToggle }) {
 
       {conectado ? (
         <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
-          <Btn variant="ghost" onClick={conectar} style={{ flex: 1, justifyContent: "center" }}><RefreshCw size={15} /> {mtls ? "Testar conexão" : "Reconectar"}</Btn>
+          <Btn variant="ghost" onClick={conectar} disabled={testando} style={{ flex: 1, justifyContent: "center", opacity: testando ? 0.6 : 1 }}><RefreshCw size={15} /> {testando ? "Testando…" : mtls ? "Testar conexão" : "Reconectar"}</Btn>
           <Btn variant="ghost" onClick={onDesconectar} style={{ color: C.red, borderColor: C.redPale }}>Desconectar</Btn>
         </div>
       ) : (
-        <Btn onClick={conectar} style={{ width: "100%", justifyContent: "center", background: b.cor, marginBottom: 6 }}>
-          {mtls ? <><RefreshCw size={16} /> Validar credenciais</> : <><ExternalLink size={16} /> Conectar com o {b.label}</>}
+        <Btn onClick={conectar} disabled={testando} style={{ width: "100%", justifyContent: "center", background: b.cor, marginBottom: 6, opacity: testando ? 0.6 : 1 }}>
+          {testando ? <><RefreshCw size={16} /> Testando…</> : mtls ? <><RefreshCw size={16} /> Validar credenciais</> : <><ExternalLink size={16} /> Conectar com o {b.label}</>}
         </Btn>
+      )}
+
+      {resultado && (
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: resultado.ok ? C.greenPale : C.redPale, color: resultado.ok ? C.green : C.red, borderRadius: 10, padding: "9px 12px", fontSize: 12, marginBottom: 6 }}>
+          {resultado.ok ? <CheckCircle2 size={15} style={{ flexShrink: 0, marginTop: 1 }} /> : <XCircle size={15} style={{ flexShrink: 0, marginTop: 1 }} />}
+          <span>{resultado.ok ? (resultado.detalhe || "Conexão validada com sucesso.") : `Falha: ${resultado.detalhe || "credenciais inválidas ou não cadastradas."}`}</span>
+        </div>
       )}
 
       <div style={{ borderTop: `1px solid ${C.border2}`, marginTop: 12, paddingTop: 4 }}>

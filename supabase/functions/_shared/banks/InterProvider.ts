@@ -138,6 +138,14 @@ export class InterProvider implements BankProvider {
     return (await res.json()) as T;
   }
 
+  // --- teste de conexão ---------------------------------------------------
+  async testarConexao(): Promise<{ ok: boolean; detalhe?: string }> {
+    // Basta autenticar (client_credentials + mTLS): se der token, as credenciais
+    // e o certificado estão válidos. accessToken() lança BankError em falha.
+    await this.accessToken();
+    return { ok: true, detalhe: `Conexão validada (${this.account.ambiente === "prod" ? "produção" : "sandbox"}).` };
+  }
+
   // --- emissão ------------------------------------------------------------
   async emitirBoleto(input: EmitirBoletoInput): Promise<EmitirBoletoResult> {
     const doc = onlyDigits(input.pagador.documento);

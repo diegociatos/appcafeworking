@@ -20,6 +20,12 @@ import type {
 export interface BankProvider {
   readonly banco: Banco;
 
+  /**
+   * Valida as credenciais (autentica no banco) SEM emitir boleto — usado pelo
+   * "Testar conexão". Opcional; providers sem teste caem numa mensagem padrão.
+   */
+  testarConexao?(): Promise<{ ok: boolean; detalhe?: string }>;
+
   /** Emite (registra) um boleto e retorna linha digitável / PIX / PDF. */
   emitirBoleto(input: EmitirBoletoInput): Promise<EmitirBoletoResult>;
 

@@ -42,4 +42,7 @@ export const boletosApi = {
   emitir: (dados) => callFn("emitir-boleto", dados),
   consultar: (boleto_id) => callFn("consultar-boleto", { boleto_id }),
   cancelar: (boleto_id, motivo) => callFn("cancelar-boleto", { boleto_id, motivo }),
+  // Valida as credenciais da conta (OAuth + mTLS) sem emitir boleto. Retorna
+  // { ok, detalhe, ambiente } — não lança em falha de credencial (ok:false).
+  testar: (bank_account_id) => callFn("testar-banco", { bank_account_id }),
 };
