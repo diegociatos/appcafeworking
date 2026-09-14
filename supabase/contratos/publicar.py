@@ -29,6 +29,7 @@ MODELOS = [
     ("endereco_fiscal", "Contrato de endereço fiscal e comercial", "endereco_fiscal_luxemburgo_v1.txt"),
     ("coworking", "Contrato de sala compartilhada (coworking)", "coworking_luxemburgo_v1.txt"),
     ("sala_privativa", "Contrato de sala privativa", "sala_privativa_luxemburgo_v1.txt"),
+    ("sala_hora", "Termo de reserva de sala de reunião por hora", "sala_hora_luxemburgo_v1.txt"),
 ]
 
 
@@ -44,10 +45,21 @@ def literal(texto, tag):
     return f"{marcador}{texto}{marcador}"
 
 
-def montar_sql(testar):
+def vigentes():
+    """categoria -> hash da versão vigente na unidade."""
+    r = subprocess.run(["supabase", "db", "query", "--linked",
+                        f"select categoria, hash from public.contratos_modelos where unidade_id = '{UNIDADE}' and vigente"],
+                       cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    m = re.search(r"\{.*\}", (r.stdout or ""), re.S)
+    if not m:
+        sys.exit("não consegui ler as versões vigentes:\n" + (r.stdout or "") + (r.stderr or ""))
+    return {row["categoria"]: row["hash"] for row in json.loads(m.group(0)).get("rows", [])}
+
+
+def montar_sql(testar, modelos):
     partes = ["begin;"]
     chamadas = []
-    for i, (categoria, titulo, arquivo) in enumerate(MODELOS):
+    for i, (categoria, titulo, arquivo) in enumerate(modelos):
         corpo = normalizar((AQUI / arquivo).read_text(encoding="utf-8"))
         chamadas.append(
             f"(select to_jsonb(c) - 'corpo' from public.publicar_contrato_modelo("
@@ -73,8 +85,17 @@ def main():
         corpo = normalizar((AQUI / arquivo).read_text(encoding="utf-8"))
         esperado[categoria] = hashlib.sha256(corpo.encode("utf-8")).hexdigest()
 
+    atuais = vigentes()
+    modelos = [m for m in MODELOS if atuais.get(m[0]) != esperado[m[0]]]
+    for categoria, _, _ in MODELOS:
+        if atuais.get(categoria) == esperado[categoria]:
+            print(f"  --  {categoria:<16} sem mudança (vigente {esperado[categoria][:12]}…)")
+    if not modelos:
+        print("\nNada a publicar: os textos vigentes já são os dos arquivos.")
+        return 0
+
     with tempfile.NamedTemporaryFile("w", suffix=".sql", delete=False, encoding="utf-8", newline="\n") as f:
-        f.write(montar_sql(testar))
+        f.write(montar_sql(testar, modelos))
         caminho = f.name
     try:
         r = subprocess.run(["supabase", "db", "query", "--linked", "-f", caminho], cwd=REPO,

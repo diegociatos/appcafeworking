@@ -111,7 +111,7 @@ const TEMPLATES: Record<Evento, (d: any) => Render> = {
   reserva: (d) => ({
     assunto: `Reserva confirmada · ${d.sala || "sala"}`,
     texto: `Olá ${d.cliente}, sua reserva de ${d.sala} foi confirmada.`,
-    html: layout("Reserva confirmada", `Olá <b>${d.cliente}</b>,<br><br>Sua reserva${d.sala ? ` da <b>${d.sala}</b>` : ""}${d.quando ? ` para <b>${d.quando}</b>` : ""} está confirmada.`,
+    html: layout("Reserva confirmada", `Olá <b>${esc(d.cliente)}</b>,<br><br>Sua reserva${d.sala ? ` da <b>${esc(d.sala)}</b>` : ""}${d.quando ? ` para <b>${esc(d.quando)}</b>` : ""} está confirmada.<br><br>Chegue alguns minutos antes e procure a recepção. Para remarcar ou cancelar, fale com a gente com pelo menos 24 horas de antecedência.`,
       { label: "Ver reserva", url: `${APP_URL}/reservas` }),
   }),
   assinatura_ativa: (d) => ({

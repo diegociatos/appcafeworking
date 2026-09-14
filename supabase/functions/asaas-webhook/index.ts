@@ -26,6 +26,7 @@ import { adminClient } from "../_shared/supabaseAdmin.ts";
 import { garantirCobranca } from "../_shared/cobrancas.ts";
 import { getNotifProvider, renderTemplate } from "../_shared/notify/index.ts";
 import { proximaCobranca } from "../_shared/ciclo.ts";
+import { avisarEquipe } from "../_shared/assinaturas.ts";
 import {
   creditosDoPlano, fidelidadeAte, hojeBRT, idCreditoPagamento, referenciaExterna, STATUS_PAGAMENTO_ASAAS,
 } from "../_shared/venda.ts";
@@ -198,9 +199,29 @@ async function ativarCadastro(
 // Por origem
 // ---------------------------------------------------------------------------
 
+/** E-mail de reserva confirmada (template "reserva"). Nunca lança. */
+async function confirmarReservaPorEmail(admin: SupabaseClient, r: Linha) {
+  if (!r.cliente_email) return;
+  try {
+    const { data: sala } = await admin.from("salas").select("nome").eq("id", r.sala_id).maybeSingle();
+    const fmt = (iso: string, o: Intl.DateTimeFormatOptions) => new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", ...o });
+    const quando = `${fmt(r.start_at, { day: "2-digit", month: "2-digit", year: "numeric" })}, das ${fmt(r.start_at, { hour: "2-digit", minute: "2-digit" })} às ${fmt(r.end_at, { hour: "2-digit", minute: "2-digit" })}`;
+    const msg = renderTemplate("reserva", { cliente: r.cliente_nome, email: r.cliente_email, sala: sala?.nome || "sala", quando });
+    const envio = await getNotifProvider("email").enviar({ ...msg, para: r.cliente_email });
+    await admin.from("notificacoes").insert({
+      unidade_id: r.unidade_id, cliente_nome: r.cliente_nome, destinatario: r.cliente_email, canal: "email",
+      evento: "reserva", template: "reserva", dados: { reserva_id: r.id },
+      status: envio.ok ? "enviado" : "erro", assunto: msg.assunto, provider_id: envio.providerId ?? null,
+      sent_at: envio.ok ? new Date().toISOString() : null, erro: envio.ok ? null : envio.erro,
+    });
+  } catch (e) {
+    console.error(`reserva ${r.id} e-mail:`, (e as Error).message);
+  }
+}
+
 async function tratarReserva(admin: SupabaseClient, reservaId: string, pay: Linha, status: string): Promise<string> {
   const { data: r } = await admin
-    .from("reservas").select("id, unidade_id, cliente_nome, cliente_email, cliente_documento, status")
+    .from("reservas").select("id, unidade_id, sala_id, cliente_nome, cliente_email, cliente_documento, status, start_at, end_at")
     .eq("id", reservaId).maybeSingle();
   if (!r) return "reserva_inexistente";
 
@@ -215,7 +236,11 @@ async function tratarReserva(admin: SupabaseClient, reservaId: string, pay: Linh
     if (resultado === "sem_horario" || resultado === "nao_reconfirmavel") {
       // Pagou, mas o horário não pode ser dado: a equipe precisa estornar.
       console.error(`[reserva ${r.id}] paga sem horário (${resultado}) — ESTORNAR pagamento ${pay.id}`);
+      await avisarEquipe(`ESTORNAR: reserva paga sem horário (${r.cliente_nome})`, [
+        `Reserva ${r.id}, pagamento ${pay.id}, situação ${resultado}.`, `Cliente: ${r.cliente_nome} (${r.cliente_email})`,
+      ]);
     }
+    if (resultado === "confirmada") await confirmarReservaPorEmail(admin, r);
     return `reserva_${resultado}`;
   }
 
