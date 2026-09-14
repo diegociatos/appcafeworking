@@ -9,7 +9,8 @@ import { useStore, PERFIS } from "./lib/store.jsx";
 import Logo from "./components/Logo.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import Login from "./pages/Login.jsx";
-import { supabaseConfigured, getSession, onAuthChange, signOut } from "./lib/supabaseAuth.js";
+import { supabaseConfigured, getSession, onAuthChange, signOut, precisaDefinirSenha } from "./lib/supabaseAuth.js";
+import DefinirSenha from "./pages/DefinirSenha.jsx";
 import { fetchMemberships, fetchTenant, fetchAppState, fetchBoletosDb, fetchNotasDb, fetchConfigFiscalDb, fetchIsPlatformAdmin, fetchReservasDb, fetchCreditosDb } from "./lib/supabaseDb.js";
 
 import Dashboard from "./pages/Dashboard.jsx";
@@ -105,7 +106,8 @@ export default function App() {
   // No login real: carrega contas/unidades/equipe do banco e define o perfil/
   // unidade do usuário a partir dos vínculos (unidade_members).
   useEffect(() => {
-    if (!(supabaseConfigured && session)) return;
+    // Quem entrou pelo link de criar senha só carrega o app depois de definir a senha.
+    if (!(supabaseConfigured && session) || precisaDefinirSenha()) return;
     let vivo = true;
     fetchTenant().then((dados) => { if (vivo) hydrateFromDb(dados); });
     const u = session.user || {};
@@ -123,6 +125,7 @@ export default function App() {
   const autenticadoReal = supabaseConfigured && !!session;
 
   // Com Supabase configurado, exige login. Sem configurar (demo), libera direto.
+  if (supabaseConfigured && session && precisaDefinirSenha()) return <DefinirSenha />;
   if (supabaseConfigured && !session) return <Login />;
 
   // No perfil cliente, a navegação do portal vai toda para o sidebar

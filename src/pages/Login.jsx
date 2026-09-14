@@ -3,7 +3,7 @@ import { LogIn, Lock, Mail, User, Phone, MapPin, Building2, Loader2, FileText, C
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
 import { Btn } from "../components/ui.jsx";
 import Logo from "../components/Logo.jsx";
-import { signInWithPassword } from "../lib/supabaseAuth.js";
+import { signInWithPassword, pedirLinkDeSenha, erroDoLinkDeSenha } from "../lib/supabaseAuth.js";
 import { fetchUnidadesPublicas, fetchPlanosPublicos, iniciarAssinatura } from "../lib/authPublic.js";
 import { buscarCnpj } from "../lib/lookup.js";
 
@@ -59,8 +59,22 @@ export default function Login() {
 function LoginCard({ irParaCadastro }) {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
-  const [erro, setErro] = useState("");
+  const [erroLink] = useState(() => erroDoLinkDeSenha());
+  const [erro, setErro] = useState(
+    erroLink === "expirado" ? "O link de criar senha venceu. Informe seu e-mail e clique em \"Esqueci minha senha\" para receber outro."
+      : erroLink ? "O link de criar senha não é mais válido. Informe seu e-mail e clique em \"Esqueci minha senha\" para receber outro." : "",
+  );
+  const [aviso, setAviso] = useState("");
   const [carregando, setCarregando] = useState(false);
+
+  const esqueci = async () => {
+    setErro(""); setAviso("");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setErro("Informe seu e-mail para receber o link."); return; }
+    try {
+      await pedirLinkDeSenha(email.trim());
+    } catch { /* não revela se o e-mail existe */ }
+    setAviso("Se este e-mail tiver conta, você vai receber um link para criar uma nova senha.");
+  };
 
   const entrar = async (e) => {
     e?.preventDefault?.();
@@ -92,7 +106,12 @@ function LoginCard({ irParaCadastro }) {
         <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} placeholder="••••••••" style={{ ...inp, paddingLeft: 36 }} autoComplete="current-password" />
       </div>
 
-      {erro && <div style={{ fontSize: 12.5, color: C.red, background: C.redPale, borderRadius: 9, padding: "8px 12px", margin: "10px 0" }}>{erro}</div>}
+      <div style={{ textAlign: "right" }}>
+        <button type="button" onClick={esqueci} style={{ fontSize: 12.5, color: C.cafe, fontWeight: 600 }}>Esqueci minha senha</button>
+      </div>
+
+      {erro && <div role="alert" style={{ fontSize: 12.5, color: C.red, background: C.redPale, borderRadius: 9, padding: "8px 12px", margin: "10px 0" }}>{erro}</div>}
+      {aviso && <div role="status" style={{ fontSize: 12.5, color: C.green, background: C.greenPale, borderRadius: 9, padding: "8px 12px", margin: "10px 0" }}>{aviso}</div>}
 
       <Btn type="submit" disabled={carregando || !email.trim() || !senha} style={{ width: "100%", marginTop: 14, opacity: (carregando || !email.trim() || !senha) ? 0.7 : 1 }}>
         {carregando ? <><Loader2 size={16} className="cw-spin" /> Entrando…</> : <><LogIn size={16} /> Entrar</>}

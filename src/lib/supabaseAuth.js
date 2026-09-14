@@ -16,8 +16,85 @@ const ANON = import.meta.env?.VITE_SUPABASE_ANON_KEY || "";
 export const supabaseConfigured = Boolean(URL && ANON);
 
 const STORAGE_KEY = "cw_session";
+const FLAG_DEFINIR_SENHA = "cw_definir_senha";
 const listeners = new Set();
+let erroLinkSenha = null; // "expirado" | "invalido" — só nesta carga da página
+lerRetornoDoLinkDeSenha();
 let session = loadSession();
+
+// Volta do e-mail "Criar minha senha" (link de recuperação do Supabase): a
+// sessão chega no fragmento da URL. Guarda a sessão, marca que falta definir a
+// senha e limpa a URL para o token não ficar no histórico.
+function lerRetornoDoLinkDeSenha() {
+  try {
+    const hash = window.location.hash.slice(1);
+    if (!hash) return;
+    const params = new URLSearchParams(hash);
+    const tipo = params.get("type");
+    const acesso = params.get("access_token");
+    const erro = params.get("error_code") || params.get("error");
+    if (erro) {
+      erroLinkSenha = params.get("error_code") === "otp_expired" ? "expirado" : "invalido";
+    } else if (acesso && ["recovery", "invite"].includes(tipo)) {
+      const nova = normalize({
+        access_token: acesso,
+        refresh_token: params.get("refresh_token"),
+        expires_at: Number(params.get("expires_at")) || undefined,
+        expires_in: Number(params.get("expires_in")) || 3600,
+        user: null,
+      });
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(nova));
+      sessionStorage.setItem(FLAG_DEFINIR_SENHA, "1");
+    } else {
+      return;
+    }
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+  } catch { /* sem storage ou URL inválida: segue sem sessão */ }
+}
+
+/** O cliente entrou pelo link do e-mail e ainda precisa criar a senha. */
+export function precisaDefinirSenha() {
+  try { return sessionStorage.getItem(FLAG_DEFINIR_SENHA) === "1"; } catch { return false; }
+}
+
+/** "expirado" | "invalido" | null — o link do e-mail não serviu (vale para esta carga da página). */
+export function erroDoLinkDeSenha() {
+  return erroLinkSenha;
+}
+
+/** Grava a senha nova do usuário logado pelo link e libera o app. */
+export async function definirSenha(novaSenha) {
+  const token = await getAccessToken();
+  if (!token) throw new Error("O link expirou. Peça um novo na tela de entrada.");
+  let res;
+  try {
+    res = await fetch(`${URL}/auth/v1/user`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", apikey: ANON, authorization: `Bearer ${token}` },
+      body: JSON.stringify({ password: novaSenha }),
+    });
+  } catch {
+    throw new Error("Sem conexão com o servidor. Confira a internet e tente de novo.");
+  }
+  if (res.status === 401 || res.status === 403) {
+    throw new Error("O link expirou. Clique em Sair e peça um novo em \"Esqueci minha senha\".");
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = data?.error_description || data?.msg || data?.error || "";
+    if (/should be different/i.test(msg)) throw new Error("Use uma senha diferente da anterior.");
+    if (/at least|characters|weak/i.test(msg)) throw new Error("Senha fraca. Use pelo menos 8 caracteres, com letras e números.");
+    throw new Error(msg || "Não foi possível salvar a senha.");
+  }
+  try { sessionStorage.removeItem(FLAG_DEFINIR_SENHA); } catch { /* ignore */ }
+  saveSession({ ...session, user: data?.id ? data : session?.user || null });
+  return data;
+}
+
+/** Pede o e-mail de redefinição de senha (link volta para o app). */
+export async function pedirLinkDeSenha(email) {
+  await authFetch(`recover?redirect_to=${encodeURIComponent(window.location.origin + "/")}`, { email });
+}
 
 function loadSession() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"); } catch { return null; }
@@ -86,5 +163,6 @@ export async function signOut() {
       });
     }
   } catch { /* ignore */ }
+  try { sessionStorage.removeItem(FLAG_DEFINIR_SENHA); } catch { /* ignore */ }
   saveSession(null);
 }
