@@ -3,36 +3,21 @@
 //
 // GET/POST /functions/v1/planos-publicos   (deploy --no-verify-jwt)
 //
-//   ?unidade_id=...        planos ativos de uma unidade (autocadastro do app)
-//   (sem unidade_id)       todas as unidades — vitrine do site
-//   &site=1                só o que está marcado "vender no site", com categoria e preço
-//   &categoria=...         filtra por categoria (endereco_fiscal, coworking, sala_privativa)
+//   ?unidade_id=...        planos ativos de uma unidade (autocadastro do app;
+//                          sem os "sob consulta", que não se compram sozinhos)
+//   (sem unidade_id)       todas as unidades — só com site=1
+//   &site=1                só o publicado no site, com categoria e preço (ou sob consulta)
+//   &categoria=...         filtra por categoria (endereco_fiscal, coworking, sala_privativa, sala_hora)
 //
-// Resposta: { planos: [...], unidades?: [...] }. Os planos vêm do app_state
-// (entity='planos'), cadastrados na tela Planos do app.
+// Resposta: { planos: PlanoPublico[], unidades?: {id,nome,cidade}[] }. Os planos
+// vêm do app_state (entity 'planos'); o desconto do anual, do doc 'configVenda'
+// de cada unidade.
 // ============================================================================
 
 import { handleOptions, json } from "../_shared/cors.ts";
 import { adminClient } from "../_shared/supabaseAdmin.ts";
-import { categoriaValida } from "../_shared/venda.ts";
-
-// deno-lint-ignore no-explicit-any
-function planoPublico(p: any, unidadeId: string) {
-  return {
-    id: p.id,
-    unidade_id: unidadeId,
-    nome: p.nome,
-    preco: Number(p.preco || 0),
-    recorrencia: p.recorrencia || "mensal",
-    emiteNF: !!p.emiteNF,
-    descricao: p.descricao || "",
-    categoria: categoriaValida(p.categoria) ? p.categoria : null,
-    prazoMinimoMeses: Math.max(0, Math.floor(Number(p.prazoMinimoMeses || 0))),
-    capacidade: Number(p.capacidade) > 0 ? Number(p.capacidade) : null,
-    direitos: p.direitos || {},
-    venderNoSite: p.venderNoSite === true,
-  };
-}
+import { categoriaValida, DESCONTO_ANUAL_PADRAO, descontoAnualValido } from "../_shared/venda.ts";
+import { ordenarPlanos, planoPublico, visivelNoSite } from "../_shared/catalogo.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -55,17 +40,22 @@ Deno.serve(async (req) => {
     if (!unidadeId && !soSite) return json({ error: "unidade_id é obrigatório." }, 400, req);
 
     const admin = adminClient();
-    let consulta = admin.from("app_state").select("unidade_id, doc").eq("entity", "planos");
+    let consulta = admin.from("app_state").select("unidade_id, entity, doc").in("entity", ["planos", "configVenda"]);
     if (unidadeId) consulta = consulta.eq("unidade_id", unidadeId);
     const { data, error } = await consulta;
     if (error) return json({ error: error.message }, 500, req);
 
+    const descontoPorUnidade = new Map<string, number>();
+    for (const r of data || []) {
+      if (r.entity === "configVenda") descontoPorUnidade.set(r.unidade_id, descontoAnualValido(r.doc?.descontoAnualPct));
+    }
+
     const planos = (data || [])
-      .filter((r) => r.doc && r.doc.ativo !== false)
-      .map((r) => planoPublico(r.doc, r.unidade_id))
-      .filter((p) => !soSite || (p.venderNoSite && p.categoria && p.preco > 0))
+      .filter((r) => r.entity === "planos" && r.doc && r.doc.ativo !== false)
+      .map((r) => planoPublico(r.doc, r.unidade_id, descontoPorUnidade.get(r.unidade_id) ?? DESCONTO_ANUAL_PADRAO))
+      .filter((p) => (soSite ? visivelNoSite(p) : !p.sobConsulta))
       .filter((p) => !categoria || p.categoria === categoria)
-      .sort((a, b) => a.preco - b.preco);
+      .sort(ordenarPlanos);
 
     if (unidadeId) return json({ planos }, 200, req);
 
