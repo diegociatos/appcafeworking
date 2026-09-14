@@ -2,25 +2,31 @@
 // Edge Function: iniciar-assinatura  (checkout do plano — site e autocadastro)
 //
 // POST /functions/v1/iniciar-assinatura   (deploy com --no-verify-jwt)
-// body: { nome, email, senha, documento, telefone?, unidade_id, plano_id, tipo?,
-//         aceite?: { modelo_id, hash }, origem?: "site" | "app", turnstile? }
+// body: { nome, email, documento, telefone?, unidade_id, plano_id,
+//         periodicidade?: "mensal" | "anual", forma?: "PIX" | "BOLETO" | "CREDIT_CARD",
+//         senha?, aceite?: { modelo_id, hash }, origem?: "site" | "app", turnstile? }
 //
-// 1. Cria o login BLOQUEADO até o pagamento confirmar.
-// 2. Plano mensal → assinatura no Asaas (cobra sozinha todo mês).
-//    Plano avulso → uma cobrança.
+// Regras (Diego, 14/09/2026):
+//   mensal → só cartão pelo site, assinatura MONTHLY, valor do plano
+//   anual  → PIX, boleto ou cartão à vista, assinatura YEARLY,
+//            valor = 12 × preço − desconto da unidade (padrão 10%)
+//   plano avulso → uma cobrança; plano sob consulta → recusado
+//   autocadastro do app (origem "app", sem periodicidade) → mensal, forma livre
+//
+// 1. Cria o login BLOQUEADO até o pagamento confirmar. Sem senha no corpo
+//    (compra pelo site), nasce com senha aleatória e o asaas-webhook manda o
+//    link de criar senha quando o pagamento confirma.
+// 2. Assinatura no Asaas (ou cobrança, se avulso).
 // 3. Registra o cadastro pendente e a prova do aceite do contrato.
-// 4. Devolve o link de pagamento da primeira fatura.
-// A ativação (desbloquear login, criar cliente, assinatura e créditos) acontece
-// no asaas-webhook quando o pagamento confirma.
+// 4. Devolve o link de pagamento e o status_token para a página de pagamento
+//    acompanhar a compra.
 //
 // Contrato: se existe versão vigente para a categoria do plano, o aceite é
 // obrigatório e precisa bater com ela (id + hash). Pelo site, sem contrato
 // publicado o plano não é vendido.
 //
 // Se o mesmo e-mail já tem uma compra aguardando pagamento: é a mesma compra →
-// retoma (devolve o link de antes e atualiza a senha); é outra → descarta a
-// anterior. Antes disso o cliente que abandonava o pagamento ficava travado
-// com "já existe conta com este e-mail" numa conta que continuava bloqueada.
+// retoma (devolve o link de antes); é outra → descarta a anterior.
 // ============================================================================
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -31,11 +37,13 @@ import { asaas, cancelarNoAsaas, type CredAsaas, credenciaisAsaas, pixDoPagament
 import { verificarTurnstile } from "../_shared/turnstile.ts";
 import { aceiteConfere, contratoVigente, registrarAceite } from "../_shared/contratos.ts";
 import {
-  categoriaValida, documentoValido, emailValido, hojeBRT, normalizarDocumento, payloadAssinaturaAsaas,
+  billingTypePara, categoriaValida, DESCONTO_ANUAL_PADRAO, descontoAnualValido, documentoValido, emailValido,
+  hojeBRT, normalizarDocumento, payloadAssinaturaAsaas, precoAnual,
 } from "../_shared/venda.ts";
 
 const JANELA_RETOMADA_MS = 48 * 3600_000;
 const BLOQUEIO = "876000h"; // ~100 anos
+const FORMAS = ["PIX", "BOLETO", "CREDIT_CARD"];
 
 // deno-lint-ignore no-explicit-any
 type Linha = Record<string, any>;
@@ -51,6 +59,13 @@ async function primeiraFatura(cred: CredAsaas, subscriptionId: string): Promise<
     await new Promise((r) => setTimeout(r, 1500));
   }
   return null;
+}
+
+/** Desconto do anual gravado na tela Planos do app (doc configVenda da unidade). */
+async function descontoDaUnidade(admin: SupabaseClient, unidadeId: string): Promise<number> {
+  const { data } = await admin.from("app_state").select("doc")
+    .eq("entity", "configVenda").eq("unidade_id", unidadeId).eq("item_id", "geral").maybeSingle();
+  return data ? descontoAnualValido(data.doc?.descontoAnualPct) : DESCONTO_ANUAL_PADRAO;
 }
 
 /** Descarta uma tentativa anterior que ficou aguardando pagamento. Best-effort. */
@@ -90,7 +105,7 @@ Deno.serve(async (req) => {
       if (!robo.ok) return json({ error: "Não foi possível confirmar que você não é um robô. Recarregue a página." }, 403, req);
     }
 
-    for (const k of ["nome", "email", "senha", "documento", "unidade_id", "plano_id"]) {
+    for (const k of ["nome", "email", "documento", "unidade_id", "plano_id"]) {
       if (!body?.[k]) {
         const msg = k === "documento" ? "Informe seu CPF ou CNPJ (necessário para o pagamento)." : `Campo obrigatório ausente: ${k}`;
         return json({ error: msg }, 400, req);
@@ -99,10 +114,12 @@ Deno.serve(async (req) => {
     const nome = String(body.nome).trim();
     const email = String(body.email).toLowerCase().trim();
     if (!emailValido(email)) return json({ error: "E-mail inválido." }, 400, req);
-    if (String(body.senha).length < 6) return json({ error: "A senha precisa de pelo menos 6 caracteres." }, 400, req);
     const documento = normalizarDocumento(body.documento);
     if (!documentoValido(documento)) return json({ error: "CPF ou CNPJ inválido." }, 400, req);
     const telefone = body.telefone ? String(body.telefone) : null;
+    const senhaInformada = typeof body.senha === "string" && body.senha.length > 0;
+    if (senhaInformada && body.senha.length < 6) return json({ error: "A senha precisa de pelo menos 6 caracteres." }, 400, req);
+    if (origem === "app" && !senhaInformada) return json({ error: "Campo obrigatório ausente: senha" }, 400, req);
 
     const admin = adminClient();
 
@@ -113,12 +130,23 @@ Deno.serve(async (req) => {
     const plano = (planosRows || []).map((r) => r.doc).find((p) => p && p.id === body.plano_id && p.ativo !== false);
     if (!plano) return json({ error: "Plano indisponível." }, 404, req);
     if (origem === "site" && plano.venderNoSite !== true) return json({ error: "Plano indisponível para contratação online." }, 404, req);
-    const valor = Number(plano.preco || 0);
-    if (!(valor > 0)) return json({ error: "Plano sem preço válido." }, 400, req);
+    if (plano.sobConsulta === true) {
+      return json({ error: "Este plano é sob consulta. Peça uma proposta.", codigo: "SOB_CONSULTA" }, 400, req);
+    }
+    const precoMensal = Number(plano.preco || 0);
+    if (!(precoMensal > 0)) return json({ error: "Plano sem preço válido." }, 400, req);
 
-    const categoria = categoriaValida(plano.categoria) ? plano.categoria : null;
     const recorrente = (plano.recorrencia || "mensal") === "mensal";
-    const prazoMinimo = Math.max(0, Math.floor(Number(plano.prazoMinimoMeses || 0)));
+    const periodicidade = recorrente ? (body.periodicidade === "anual" ? "anual" : "mensal") : "avulso";
+    let billingType: string | null;
+    if (!recorrente) billingType = FORMAS.includes(body.forma) ? body.forma : "UNDEFINED";
+    else if (origem === "app" && !body.periodicidade) billingType = FORMAS.includes(body.tipo) ? body.tipo : "UNDEFINED";
+    else billingType = billingTypePara(periodicidade, body.forma);
+    if (!billingType) return json({ error: "No plano anual, escolha PIX, boleto ou cartão." }, 400, req);
+
+    const valor = periodicidade === "anual" ? precoAnual(precoMensal, await descontoDaUnidade(admin, unidade.id)) : precoMensal;
+    const prazoMinimo = periodicidade === "anual" ? 12 : Math.max(0, Math.floor(Number(plano.prazoMinimoMeses || 0)));
+    const categoria = categoriaValida(plano.categoria) ? plano.categoria : null;
 
     const contrato = categoria ? await contratoVigente(admin, unidade.id, categoria) : null;
     if (origem === "site" && !contrato) {
@@ -133,7 +161,7 @@ Deno.serve(async (req) => {
 
     const dadosAceite = {
       unidade_id: unidade.id, cliente_nome: nome, cliente_email: email, cliente_documento: documento,
-      plano_id: plano.id, plano_nome: plano.nome, valor, recorrencia: recorrente ? "mensal" : "avulso",
+      plano_id: plano.id, plano_nome: plano.nome, valor, recorrencia: periodicidade,
       prazo_minimo_meses: prazoMinimo, referencia_tipo: "signup" as const, origem,
     };
 
@@ -142,14 +170,18 @@ Deno.serve(async (req) => {
       .from("pending_signups").select("*").eq("email", email).eq("status", "aguardando").maybeSingle();
     if (anterior) {
       const recente = Date.now() - new Date(anterior.created_at).getTime() < JANELA_RETOMADA_MS;
-      const mesmaCompra = anterior.plano_id === plano.id && anterior.unidade_id === unidade.id && Number(anterior.valor) === valor;
+      const mesmaCompra = anterior.plano_id === plano.id && anterior.unidade_id === unidade.id
+        && Number(anterior.valor) === valor && anterior.recorrencia === periodicidade;
       if (recente && mesmaCompra && anterior.invoice_url) {
-        if (anterior.user_id) await admin.auth.admin.updateUserById(anterior.user_id, { password: String(body.senha) });
+        if (senhaInformada && anterior.user_id) {
+          await admin.auth.admin.updateUserById(anterior.user_id, { password: String(body.senha) });
+        }
         if (contrato) await registrarAceite(admin, req, contrato, { ...dadosAceite, referencia_id: anterior.id });
-        const pix = anterior.asaas_payment_id ? await pixDoPagamento(cred, anterior.asaas_payment_id) : { payload: "" };
+        const pix = anterior.asaas_payment_id ? await pixDoPagamento(cred, anterior.asaas_payment_id) : { payload: "", imagem: "" };
         return json({
           ok: true, retomado: true, checkoutUrl: anterior.invoice_url, payment_id: anterior.asaas_payment_id,
-          pix_payload: pix.payload, plano: anterior.plano_nome, valor: Number(anterior.valor),
+          pix_payload: pix.payload, pix_imagem: pix.imagem, boleto_url: null, plano: anterior.plano_nome,
+          valor: Number(anterior.valor), periodicidade, forma: billingType, status_token: anterior.status_token,
           recorrente: !!anterior.asaas_subscription_id, fidelidade_meses: anterior.prazo_minimo_meses ?? 0,
         }, 200, req);
       }
@@ -157,15 +189,16 @@ Deno.serve(async (req) => {
     }
 
     // ---- 1) login bloqueado até pagar ---------------------------------------
+    const senha = senhaInformada ? String(body.senha) : `${crypto.randomUUID()}Aa1!`;
     const { data: created, error: cErr } = await admin.auth.admin.createUser({
-      email, password: String(body.senha), email_confirm: true,
+      email, password: senha, email_confirm: true,
       user_metadata: { nome, tipo: "cliente" },
     });
     if (cErr || !created?.user) {
       const dup = /already|registered|exists/i.test(cErr?.message || "");
       return json({
         error: dup
-          ? "Já existe uma conta com este e-mail. Entre na área do cliente em app.cafeworking.com.br."
+          ? "Você já tem conta no CafeWorking. Entre na área do cliente em app.cafeworking.com.br."
           : `Não foi possível criar a conta: ${cErr?.message}`,
         codigo: dup ? "EMAIL_EXISTENTE" : undefined,
       }, dup ? 409 : 422, req);
@@ -174,6 +207,7 @@ Deno.serve(async (req) => {
     await admin.auth.admin.updateUserById(userId, { ban_duration: BLOQUEIO });
 
     const pendingId = crypto.randomUUID();
+    const statusToken = crypto.randomUUID();
     let subscriptionId: string | null = null;
     let pagamento: Linha | null = null;
     let customerId = "";
@@ -184,8 +218,7 @@ Deno.serve(async (req) => {
 
     // ---- 2) Asaas -----------------------------------------------------------
     try {
-      const tipo = ["BOLETO", "PIX", "CREDIT_CARD", "UNDEFINED"].includes(body.tipo) ? body.tipo : "UNDEFINED";
-      const descricao = `${plano.nome} · ${unidade.nome}`;
+      const descricao = `${plano.nome}${periodicidade === "anual" ? " (anual)" : ""} · ${unidade.nome}`;
       const customer = await asaas(cred, "/customers", "POST", {
         name: nome, cpfCnpj: documento, email,
         mobilePhone: telefone ? telefone.replace(/\D/g, "") : undefined,
@@ -195,14 +228,15 @@ Deno.serve(async (req) => {
       if (recorrente) {
         const assinatura = await asaas(cred, "/subscriptions", "POST", payloadAssinaturaAsaas({
           customer: customer.id, valor, descricao, nextDueDate: hojeBRT(),
-          externalReference: `assinatura:${pendingId}`, billingType: tipo,
+          externalReference: `assinatura:${pendingId}`, billingType,
+          ciclo: periodicidade === "anual" ? "YEARLY" : "MONTHLY",
         }));
         subscriptionId = assinatura.id;
         pagamento = await primeiraFatura(cred, assinatura.id);
         if (!pagamento) throw new Error("o Asaas não gerou a primeira fatura da assinatura");
       } else {
         pagamento = await asaas(cred, "/payments", "POST", {
-          customer: customer.id, billingType: tipo, value: valor,
+          customer: customer.id, billingType, value: valor,
           dueDate: hojeBRT(new Date(Date.now() + 2 * 864e5)),
           description: descricao, externalReference: `signup:${pendingId}`,
         });
@@ -219,8 +253,8 @@ Deno.serve(async (req) => {
       plano_id: plano.id, plano_nome: plano.nome, valor, emite_nf: !!plano.emiteNF,
       asaas_customer_id: customerId, asaas_payment_id: pagamento!.id, asaas_subscription_id: subscriptionId,
       invoice_url: pagamento!.invoiceUrl || "", status: "aguardando",
-      categoria, recorrencia: recorrente ? "mensal" : "avulso", prazo_minimo_meses: prazoMinimo,
-      direitos: plano.direitos || {}, origem,
+      categoria, recorrencia: periodicidade, prazo_minimo_meses: prazoMinimo,
+      direitos: plano.direitos || {}, origem, status_token: statusToken, senha_definida: senhaInformada,
     });
     if (pErr) {
       await desfazer();
@@ -243,11 +277,15 @@ Deno.serve(async (req) => {
       }
     }
 
-    const pix = await pixDoPagamento(cred, pagamento!.id);
+    const pix = billingType === "PIX" || billingType === "UNDEFINED"
+      ? await pixDoPagamento(cred, pagamento!.id)
+      : { payload: "", imagem: "" };
 
     return json({
       ok: true, checkoutUrl: pagamento!.invoiceUrl || "", payment_id: pagamento!.id,
-      pix_payload: pix.payload, plano: plano.nome, valor, recorrente, fidelidade_meses: prazoMinimo,
+      pix_payload: pix.payload, pix_imagem: pix.imagem, boleto_url: pagamento!.bankSlipUrl || null,
+      plano: plano.nome, valor, periodicidade, forma: billingType, status_token: statusToken,
+      recorrente, fidelidade_meses: prazoMinimo,
     }, 201, req);
   } catch (e) {
     console.error(e);
