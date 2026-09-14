@@ -1,7 +1,8 @@
 // deno test supabase/functions/_shared/venda_test.ts
 import { assert, assertEquals, assertFalse, assertThrows } from "jsr:@std/assert@1";
 import {
-  categoriaValida, cnpjValido, cpfValido, creditosDoPlano, documentoValido, emailValido, fidelidadeAte,
+  billingTypePara, categoriaValida, cnpjValido, cpfValido, creditosDoPlano, documentoValido, economiaAnual,
+  emailValido, fidelidadeAte, precoAnual, statusPublicoDoCadastro,
   hojeBRT, idCreditoPagamento, normalizarDocumento, payloadAssinaturaAsaas, referenciaExterna, sha256Hex,
   somarMeses, validarPeriodoReserva, valorReserva, type JanelaReserva, JANELA_PADRAO,
 } from "./venda.ts";
@@ -113,4 +114,41 @@ Deno.test("payload de assinatura mensal", () => {
   assertEquals(p.cycle, "MONTHLY");
   assertEquals(p.billingType, "UNDEFINED");
   assertEquals(p.value, 149);
+});
+
+Deno.test("preço anual com desconto, ao centavo", () => {
+  assertEquals(precoAnual(149, 10), 1609.2);
+  assertEquals(precoAnual(119, 10), 1285.2);
+  assertEquals(precoAnual(299, 10), 3229.2);
+  assertEquals(economiaAnual(149, 10), 178.8);
+  assertEquals(precoAnual(100, 0), 1200);
+  assertEquals(precoAnual(100, 99), 1080, "desconto fora de 0–50 cai no padrão de 10%");
+  assertThrows(() => precoAnual(0, 10));
+});
+
+Deno.test("forma de pagamento por periodicidade", () => {
+  assertEquals(billingTypePara("mensal", "PIX"), "CREDIT_CARD");
+  assertEquals(billingTypePara("mensal", undefined), "CREDIT_CARD");
+  assertEquals(billingTypePara("anual", "PIX"), "PIX");
+  assertEquals(billingTypePara("anual", "BOLETO"), "BOLETO");
+  assertEquals(billingTypePara("anual", "CREDIT_CARD"), "CREDIT_CARD");
+  assertEquals(billingTypePara("anual", "UNDEFINED"), null);
+  assertEquals(billingTypePara("semanal", "PIX"), null);
+});
+
+Deno.test("status público do cadastro não vaza estado interno", () => {
+  assertEquals(statusPublicoDoCadastro("aguardando"), "aguardando");
+  assertEquals(statusPublicoDoCadastro("ativando"), "aguardando");
+  assertEquals(statusPublicoDoCadastro("ativo"), "confirmado");
+  assertEquals(statusPublicoDoCadastro("cancelado"), "cancelado");
+  assertEquals(statusPublicoDoCadastro(undefined), "aguardando");
+});
+
+Deno.test("assinatura anual usa ciclo YEARLY", () => {
+  const p = payloadAssinaturaAsaas({
+    customer: "c", valor: 1609.2, descricao: "x", nextDueDate: "2026-09-14",
+    externalReference: "assinatura:1", billingType: "PIX", ciclo: "YEARLY",
+  });
+  assertEquals(p.cycle, "YEARLY");
+  assertEquals(p.billingType, "PIX");
 });

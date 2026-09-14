@@ -219,7 +219,8 @@ export function referenciaExterna(ref: unknown): { tipo: "signup" | "assinatura"
 }
 
 export function payloadAssinaturaAsaas(p: {
-  customer: string; valor: number; descricao: string; nextDueDate: string; externalReference: string; billingType?: string;
+  customer: string; valor: number; descricao: string; nextDueDate: string; externalReference: string;
+  billingType?: string; ciclo?: "MONTHLY" | "YEARLY";
 }) {
   const billingType = ["BOLETO", "PIX", "CREDIT_CARD", "UNDEFINED"].includes(p.billingType || "") ? p.billingType : "UNDEFINED";
   return {
@@ -227,8 +228,47 @@ export function payloadAssinaturaAsaas(p: {
     billingType,
     value: p.valor,
     nextDueDate: p.nextDueDate,
-    cycle: "MONTHLY",
+    cycle: p.ciclo === "YEARLY" ? "YEARLY" : "MONTHLY",
     description: p.descricao,
     externalReference: p.externalReference,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Periodicidade e desconto do anual (regra do Diego, 14/09/2026)
+// ---------------------------------------------------------------------------
+
+export const DESCONTO_ANUAL_PADRAO = 10;
+
+/** Desconto entre 0 e 50; qualquer outro valor cai no padrão. */
+export function descontoAnualValido(pct: unknown): number {
+  const n = Number(pct);
+  return pct !== null && pct !== "" && Number.isFinite(n) && n >= 0 && n <= 50 ? n : DESCONTO_ANUAL_PADRAO;
+}
+
+/** 12 mensalidades menos o desconto, ao centavo. */
+export function precoAnual(precoMensal: number, descontoPct: number): number {
+  const p = Number(precoMensal);
+  if (!(p > 0)) throw new Error("VALOR_INVALIDO");
+  return Math.round(p * 12 * (1 - descontoAnualValido(descontoPct) / 100) * 100) / 100;
+}
+
+export function economiaAnual(precoMensal: number, descontoPct: number): number {
+  return Math.round((Number(precoMensal) * 12 - precoAnual(precoMensal, descontoPct)) * 100) / 100;
+}
+
+/** Mensal só cartão; anual PIX, boleto ou cartão à vista. null = combinação proibida. */
+export function billingTypePara(periodicidade: unknown, forma: unknown): string | null {
+  if (periodicidade === "mensal") return "CREDIT_CARD";
+  if (periodicidade === "anual") {
+    return ["PIX", "BOLETO", "CREDIT_CARD"].includes(String(forma)) ? String(forma) : null;
+  }
+  return null;
+}
+
+/** O que a página de pagamento pode saber: nada além de aguardando/confirmado/cancelado. */
+export function statusPublicoDoCadastro(status: unknown): "aguardando" | "confirmado" | "cancelado" {
+  if (status === "ativo") return "confirmado";
+  if (status === "cancelado") return "cancelado";
+  return "aguardando";
 }
