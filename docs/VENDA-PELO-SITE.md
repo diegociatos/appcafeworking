@@ -35,6 +35,22 @@ contrato, pagamento e reserva gravados nas mesmas tabelas.
 
 Sem os itens 1, 3 e 4 o checkout não vende; sem o 5 e o 6 não deve ir para produção.
 
+## Segurança e validação em produção (14/09/2026)
+
+- **Correção aplicada em produção** (SQL avulso, repetido de forma idempotente na migration):
+  `criar_reserva_segura` era executável por qualquer usuário logado — um cliente
+  criava reserva confirmada para qualquer e-mail e valor pela API, sem pagar e sem
+  descontar crédito. As funções do Vault também tinham EXECUTE para anon e logado
+  (reaberto pela migration `20260605140000_grants_authenticated`), mas recusavam no
+  corpo quem não é backend. Agora as cinco só executam com `service_role`; verificado
+  no catálogo. Nenhuma Edge Function nem o front dependiam dessas permissões.
+- **Migration `venda_site` validada** com `python supabase/tests/dryrun_venda_site.py`:
+  roda inteira em transação no banco linkado (Postgres 17.6), testa contrato (hash do
+  banco igual ao do código, versões, imutabilidade), aceite append-only, reserva
+  (chamada legada, horário segurado, conflito, expiração, pagamento a tempo, pago sem
+  horário, cancelada pela equipe, liberação) e permissões — e desfaz tudo. Nada gravado.
+  Rodar de novo antes do `db push` se a migration mudar.
+
 ## Fases
 
 ### Fase 1 — Backend (este repo, `supabase/`)
