@@ -397,6 +397,7 @@ export function SalaForm({ inicial, unidade, onSave }) {
     valor: inicial.valor || "",
     valorHora: inicial.valorHora || 0,
     contratada: inicial.contratada || false,
+    reservaOnline: inicial.reservaOnline === true,
     contratante: inicial.contratante || "",
     valorMensal: inicial.valorMensal || 0,
     planos: inicial.planos || [],
@@ -482,6 +483,17 @@ export function SalaForm({ inicial, unidade, onSave }) {
           O valor por hora contabiliza a reserva no financeiro automaticamente.
         </div>
       )}
+      <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer", padding: "10px 12px", border: `1px solid ${C.border}`, borderRadius: 11, marginBottom: 14, background: f.reservaOnline ? C.tealPale : C.white }}>
+        <input type="checkbox" checked={f.reservaOnline} onChange={(e) => setF({ ...f, reservaOnline: e.target.checked })} style={{ marginTop: 3 }} />
+        <span>
+          <span style={{ fontSize: 13.5, fontWeight: 600 }}>Reservável por hora no site</span>
+          <span style={{ display: "block", fontSize: 11.5, color: C.text3 }}>
+            Aparece em cafeworking.com.br/reservar-sala com o valor por hora e pagamento por PIX ou cartão.
+            {f.reservaOnline && !(+f.valorHora > 0) ? " Informe o valor por hora para a sala aparecer." : ""}
+            {f.reservaOnline && f.contratada ? " Sala marcada como locada não aparece no site." : ""}
+          </span>
+        </span>
+      </label>
 
       {/* Planos / preços da sala (hora, turno, diária, semana, mês, ano) */}
       <div style={{ background: C.cream2, borderRadius: 12, padding: 14, marginBottom: 14 }}>

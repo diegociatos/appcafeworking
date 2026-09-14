@@ -220,6 +220,7 @@ function salaToRow(s) {
     bases: s.bases ?? 0, descricao: s.descricao, comodidades: s.comodidades || [], fotos: s.fotos || [],
     valor_hora: s.valorHora ?? null, valor_mensal: s.valorMensal ?? null,
     contratada: !!s.contratada, active: s.active !== false,
+    reserva_online: s.reservaOnline === true,
   };
   Object.keys(row).forEach((k) => row[k] === undefined && delete row[k]);
   return row;
