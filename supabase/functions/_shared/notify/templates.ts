@@ -125,6 +125,70 @@ const TEMPLATES: Record<Evento, (d: any) => Render> = {
       d.linkSenha ? { label: "Criar minha senha", url: esc(d.linkSenha) } : { label: "Entrar na área do cliente", url: APP_URL },
     ),
   }),
+  renovacao_anual: (d) => ({
+    assunto: `Seu plano ${d.plano} renova em ${dataBR(d.data)}`,
+    texto: `Olá ${d.cliente}, seu plano anual ${d.plano} renova em ${dataBR(d.data)}, com cobrança de ${brl(d.valor)}. Para não renovar, cancele antes dessa data em ${APP_URL}.`,
+    html: layout(
+      "Seu plano anual vai renovar",
+      `Olá <b>${esc(d.cliente)}</b>,<br><br>O plano anual <b>${esc(d.plano)}</b>${d.unidade ? ` na unidade <b>${esc(d.unidade)}</b>` : ""} renova em <b>${dataBR(d.data)}</b>, com a cobrança de <b>${brl(d.valor)}</b> por mais 12 meses.<br><br>
+       Não precisa fazer nada para continuar. Se não quiser renovar, cancele a renovação na área do cliente até essa data, sem nenhum custo.`,
+      { label: "Gerenciar meu plano", url: APP_URL },
+    ),
+  }),
+  cancelamento_confirmado: (d) => {
+    const imediato = d.tipo !== "aviso_previo";
+    const fiscal = d.categoria === "endereco_fiscal";
+    const reembolso = d.reembolso === "automatico"
+      ? "A devolução integral já foi solicitada à operadora de pagamento e aparece em até 10 dias úteis (no cartão, pode sair na próxima fatura)."
+      : d.reembolso === "manual"
+      ? "A devolução integral será feita pela nossa equipe em até 10 dias úteis. Vamos entrar em contato para combinar a conta de destino."
+      : "";
+    return {
+      assunto: imediato ? `Cancelamento do plano ${d.plano} confirmado` : `Cancelamento do plano ${d.plano} agendado para ${dataBR(d.cancelaEm)}`,
+      texto: `Olá ${d.cliente}, ${imediato ? `o plano ${d.plano} foi cancelado.` : `o plano ${d.plano} será encerrado em ${dataBR(d.cancelaEm)}.`}`,
+      html: layout(
+        imediato ? "Plano cancelado" : "Cancelamento agendado",
+        `Olá <b>${esc(d.cliente)}</b>,<br><br>
+         ${imediato
+           ? `O plano <b>${esc(d.plano)}</b> foi cancelado${d.tipo === "arrependimento" ? " dentro do prazo de arrependimento de 7 dias" : ""}.`
+           : `Recebemos o pedido de cancelamento do plano <b>${esc(d.plano)}</b>. Pelo aviso prévio de 30 dias, o plano segue ativo até <b>${dataBR(d.cancelaEm)}</b> e é encerrado nessa data.`}
+         ${reembolso ? `<br><br>${reembolso}` : ""}
+         ${d.requerAcerto ? "<br><br>Seu plano tem valores a acertar no cancelamento (fidelidade ou plano anual), como previsto no contrato. Nossa equipe vai enviar o cálculo do acerto antes do encerramento." : ""}
+         ${fiscal ? "<br><br><b>Importante:</b> em até 30 dias do encerramento, altere o endereço da sua empresa na Receita Federal, na Junta Comercial e na Prefeitura, e envie o comprovante para nós." : ""}`,
+        { label: "Ver na área do cliente", url: APP_URL },
+      ),
+    };
+  },
+  documentos_aprovados: (d) => ({
+    assunto: `Documentos aprovados · ${d.plano}`,
+    texto: `Olá ${d.cliente}, conferimos seus documentos. Já pode registrar o endereço fiscal.`,
+    html: layout(
+      "Documentos aprovados",
+      `Olá <b>${esc(d.cliente)}</b>,<br><br>Conferimos seus documentos do plano <b>${esc(d.plano)}</b>. Está tudo certo.<br><br>
+       Os documentos para registrar o endereço (declaração de anuência e dados do imóvel) ficam disponíveis na área do cliente ou são enviados pela nossa equipe. Depois do registro, envie o comprovante para concluirmos o seu cadastro.`,
+      { label: "Abrir a área do cliente", url: APP_URL },
+    ),
+  }),
+  documentos_reprovados: (d) => ({
+    assunto: `Não foi possível aprovar o endereço fiscal · ${d.plano}`,
+    texto: `Olá ${d.cliente}, não foi possível aprovar seus documentos. O plano foi cancelado e o valor pago será devolvido.`,
+    html: layout(
+      "Não foi possível aprovar",
+      `Olá <b>${esc(d.cliente)}</b>,<br><br>Conferimos os documentos do plano <b>${esc(d.plano)}</b> e não foi possível aprovar a contratação.
+       ${d.parecer ? `<br><br><b>Motivo:</b> ${esc(d.parecer)}` : ""}
+       <br><br>Como previsto no contrato, o plano foi cancelado e o valor pago será devolvido integralmente em até 10 dias úteis${d.reembolso === "manual" ? ". Nossa equipe vai entrar em contato para combinar a devolução" : ", pela mesma forma de pagamento"}.
+       <br><br>Se quiser conversar sobre outra solução, responda este e-mail.`,
+    ),
+  }),
+  aviso_equipe: (d) => ({
+    assunto: `[CafeWorking] ${d.assunto}`,
+    texto: [d.assunto, ...((d.linhas as string[]) || [])].join("\n"),
+    html: layout(
+      esc(d.assunto),
+      ((d.linhas as string[]) || []).map((l) => esc(l)).join("<br>"),
+      d.link ? { label: "Abrir no app", url: esc(d.link) } : undefined,
+    ),
+  }),
 };
 
 export function renderTemplate(evento: Evento, dados: Record<string, unknown>): OutboundMessage & { texto: string } {

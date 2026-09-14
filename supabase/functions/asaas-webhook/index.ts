@@ -25,6 +25,7 @@ import { handleOptions, json } from "../_shared/cors.ts";
 import { adminClient } from "../_shared/supabaseAdmin.ts";
 import { garantirCobranca } from "../_shared/cobrancas.ts";
 import { getNotifProvider, renderTemplate } from "../_shared/notify/index.ts";
+import { proximaCobranca } from "../_shared/ciclo.ts";
 import {
   creditosDoPlano, fidelidadeAte, hojeBRT, idCreditoPagamento, referenciaExterna, STATUS_PAGAMENTO_ASAAS,
 } from "../_shared/venda.ts";
@@ -170,6 +171,8 @@ async function ativarCadastro(
         direitos: ps.direitos || {}, asaas_customer_id: ps.asaas_customer_id,
         asaas_subscription_id: ps.asaas_subscription_id, aceite_id: ps.aceite_id, pending_signup_id: ps.id,
         status: "ativa", inicio,
+        proxima_cobranca: proximaCobranca(inicio, ps.recorrencia === "anual" ? "anual" : "mensal"),
+        docs_status: ps.categoria === "endereco_fiscal" ? "pendente" : null,
       }).select("*").single();
       if (error && error.code !== "23505") throw new Error(`assinaturas: ${error.message}`);
       assinatura = data ?? (await admin.from("assinaturas").select("*")
@@ -263,6 +266,13 @@ async function tratarAssinatura(admin: SupabaseClient, pay: Linha, status: strin
     }, pay.id);
     if (assinatura.status === "inadimplente") {
       await admin.from("assinaturas").update({ status: "ativa" }).eq("id", assinatura.id);
+    }
+    // próxima cobrança = vencimento desta fatura + ciclo (base do aviso de renovação do anual)
+    if (pay.dueDate) {
+      const proxima = proximaCobranca(String(pay.dueDate).slice(0, 10), assinatura.recorrencia);
+      if (!assinatura.proxima_cobranca || proxima > assinatura.proxima_cobranca) {
+        await admin.from("assinaturas").update({ proxima_cobranca: proxima }).eq("id", assinatura.id);
+      }
     }
   } else if (status === "vencido" && assinatura.status === "ativa") {
     await admin.from("assinaturas").update({ status: "inadimplente" }).eq("id", assinatura.id);

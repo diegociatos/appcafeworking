@@ -1,0 +1,102 @@
+// ============================================================================
+// Edge Function: gestao-assinaturas  (equipe da unidade)
+//
+// GET  /functions/v1/gestao-assinaturas?unidade_id=...   (JWT de equipe)
+//   → { assinaturas: [...com documentos e aceite] }
+// POST { acao: "avaliar_documentos", assinatura_id, decisao: "aprovado"|"reprovado", parecer }
+// POST { acao: "resolver_acerto", assinatura_id, observacao? }
+//
+// Documentos reprovados (contrato de endereço fiscal, 3.4): cancela na hora e
+// devolve integralmente o que foi pago.
+// ============================================================================
+
+import { handleOptions, json } from "../_shared/cors.ts";
+import { adminClient } from "../_shared/supabaseAdmin.ts";
+import {
+  APP_URL, avisarCliente, avisarEquipe, cancelarAgora, carregarAssinatura, documentosComLink, ehEquipe, usuarioDoReq,
+} from "../_shared/assinaturas.ts";
+
+Deno.serve(async (req) => {
+  const pre = handleOptions(req);
+  if (pre) return pre;
+
+  try {
+    const usuario = await usuarioDoReq(req);
+    if (!usuario) return json({ error: "Não autenticado" }, 401, req);
+    const admin = adminClient();
+
+    if (req.method === "GET") {
+      const unidadeId = new URL(req.url).searchParams.get("unidade_id") || "";
+      if (!unidadeId) return json({ error: "unidade_id é obrigatório." }, 400, req);
+      if (!(await ehEquipe(req, unidadeId))) return json({ error: "Acesso só da equipe da unidade." }, 403, req);
+
+      const { data, error } = await admin.from("assinaturas").select("*")
+        .eq("unidade_id", unidadeId).order("created_at", { ascending: false }).limit(300);
+      if (error) return json({ error: error.message }, 500, req);
+
+      const assinaturas = await Promise.all((data || []).map(async (a) => {
+        const [documentos, aceite, { data: cobrancas }] = await Promise.all([
+          a.docs_status ? documentosComLink(admin, a.id) : Promise.resolve([]),
+          a.aceite_id
+            ? admin.from("aceites_contrato").select("aceito_em, versao, ip, origem").eq("id", a.aceite_id).maybeSingle().then((r) => r.data)
+            : Promise.resolve(null),
+          admin.from("cobrancas").select("valor, vencimento, status, forma:tipo").eq("assinatura_id", a.id)
+            .order("vencimento", { ascending: false }).limit(6),
+        ]);
+        return { ...a, documentos, aceite, cobrancas: cobrancas || [] };
+      }));
+      return json({ assinaturas }, 200, req);
+    }
+
+    if (req.method !== "POST") return json({ error: "Método não permitido" }, 405, req);
+    const body = await req.json().catch(() => ({}));
+    const a = await carregarAssinatura(admin, body?.assinatura_id);
+    if (!a) return json({ error: "Assinatura não encontrada." }, 404, req);
+    if (!(await ehEquipe(req, a.unidade_id))) return json({ error: "Acesso só da equipe da unidade." }, 403, req);
+
+    if (body.acao === "avaliar_documentos") {
+      const parecer = typeof body.parecer === "string" ? body.parecer.trim().slice(0, 1000) : "";
+      if (!a.docs_status) return json({ error: "Este plano não tem conferência de documentos." }, 400, req);
+
+      if (body.decisao === "aprovado") {
+        await admin.from("assinaturas").update({
+          docs_status: "aprovado", docs_parecer: parecer || null,
+          docs_avaliado_em: new Date().toISOString(), docs_avaliado_por: usuario.id,
+        }).eq("id", a.id);
+        await avisarCliente(admin, a, "documentos_aprovados", {});
+        return json({ ok: true, docs_status: "aprovado" }, 200, req);
+      }
+
+      if (body.decisao === "reprovado") {
+        if (!parecer) return json({ error: "Informe o motivo da reprovação: ele vai no e-mail ao cliente." }, 400, req);
+        const r = await cancelarAgora(admin, a, "documentos_reprovados", parecer, {
+          docs_status: "reprovado", docs_parecer: parecer,
+          docs_avaliado_em: new Date().toISOString(), docs_avaliado_por: usuario.id,
+        });
+        if (r.jaCancelada) return json({ error: "Este plano já está cancelado." }, 409, req);
+        await avisarCliente(admin, a, "documentos_reprovados", { parecer, reembolso: r.reembolso });
+        await avisarEquipe(`Documentos reprovados, plano cancelado: ${a.plano_nome}`, [
+          `Cliente: ${a.cliente_nome} (${a.cliente_email})`, `Motivo: ${parecer}`, `Por: ${usuario.email}`,
+          `Devolução: ${r.reembolso === "manual" ? `MANUAL, R$ ${r.valorManual.toFixed(2)}` : r.reembolso}`,
+        ], APP_URL);
+        return json({ ok: true, docs_status: "reprovado", reembolso: r.reembolso }, 200, req);
+      }
+      return json({ error: "Decisão inválida." }, 400, req);
+    }
+
+    if (body.acao === "resolver_acerto") {
+      if (!a.requer_acerto) return json({ error: "Esta assinatura não tem acerto pendente." }, 400, req);
+      const obs = typeof body.observacao === "string" ? body.observacao.trim().slice(0, 500) : "";
+      await admin.from("assinaturas").update({
+        acerto_resolvido_em: new Date().toISOString(),
+        cancelamento_motivo: [a.cancelamento_motivo, obs && `Acerto: ${obs} (${usuario.email})`].filter(Boolean).join(" | ") || null,
+      }).eq("id", a.id);
+      return json({ ok: true }, 200, req);
+    }
+
+    return json({ error: "Ação inválida." }, 400, req);
+  } catch (e) {
+    console.error(e);
+    return json({ error: (e as Error).message ?? "Erro interno" }, 500, req);
+  }
+});

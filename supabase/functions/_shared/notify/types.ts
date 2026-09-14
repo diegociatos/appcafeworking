@@ -31,7 +31,12 @@ export type Evento =
   | "cafe_pedido"
   | "cafe_pronto"
   | "reserva"
-  | "assinatura_ativa";
+  | "assinatura_ativa"
+  | "renovacao_anual"
+  | "cancelamento_confirmado"
+  | "documentos_aprovados"
+  | "documentos_reprovados"
+  | "aviso_equipe";
 
 export class NotifyError extends Error {
   constructor(message: string, public readonly canal: Canal, public readonly status?: number) {
