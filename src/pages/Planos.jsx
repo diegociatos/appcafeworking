@@ -1,18 +1,19 @@
 import { useState } from "react";
-import { Tags, Plus, Edit3, Trash2, Check, X, FileText, Repeat, Zap, ShoppingBag } from "lucide-react";
+import { Tags, Plus, Edit3, Trash2, Check, X, FileText, Repeat, Zap, ShoppingBag, Globe } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, ConfirmDialog } from "../components/ui.jsx";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 
 export default function Planos() {
-  const { activeUnit, unidadeAtiva, planosDe, addPlano, updatePlano, removePlano } = useStore();
+  const { activeUnit, unidadeAtiva, planosDe, addPlano, updatePlano, removePlano, configVenda, setConfigVenda } = useStore();
   const planos = planosDe(activeUnit, true); // inclui inativos para gerir
   const [modal, setModal] = useState(null); // {} novo | plano editar
   const [excluir, setExcluir] = useState(null); // plano a excluir
 
   const ativos = planos.filter((p) => p.ativo !== false);
-  const ticketMedio = ativos.length ? ativos.reduce((s, p) => s + p.preco, 0) / ativos.length : 0;
-  const mrr = ativos.filter((p) => p.recorrencia === "mensal").reduce((s, p) => s + p.preco, 0);
+  const comPreco = ativos.filter((p) => !p.sobConsulta);
+  const ticketMedio = comPreco.length ? comPreco.reduce((s, p) => s + p.preco, 0) / comPreco.length : 0;
+  const mrr = comPreco.filter((p) => p.recorrencia === "mensal").reduce((s, p) => s + p.preco, 0);
 
   return (
     <div>
@@ -21,6 +22,17 @@ export default function Planos() {
         sub={`O que ${unidadeAtiva?.nome || "sua unidade"} vende. Usado nas cobranças e no autocadastro do cliente.`}
         action={<Btn onClick={() => setModal({})}><Plus size={16} /> Novo plano</Btn>}
       />
+
+      <Card style={{ marginBottom: 18, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <div style={{ fontWeight: 600 }}>Desconto do plano anual</div>
+          <div style={{ fontSize: 12.5, color: C.text3 }}>Vale para todos os planos mensais no site: 12 mensalidades menos este percentual, no PIX, boleto ou cartão à vista.</div>
+        </div>
+        <input type="number" min="0" max="50" step="1" value={configVenda.descontoAnualPct}
+          onChange={(e) => setConfigVenda({ descontoAnualPct: Math.min(50, Math.max(0, Math.floor(+e.target.value || 0))) })}
+          style={{ ...inp, width: 90 }} aria-label="Desconto do plano anual em porcentagem" />
+        <span style={{ color: C.text3 }}>%</span>
+      </Card>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 16, marginBottom: 18 }}>
         <Kpi label="Planos ativos" valor={ativos.length} cor={C.cafe} icon={Tags} />
@@ -44,14 +56,21 @@ export default function Planos() {
                         {p.recorrencia === "mensal" ? <><Repeat size={11} /> Mensal</> : <><Zap size={11} /> Avulso</>}
                       </Badge>
                       {inativo && <Badge color={C.text3} bg={C.cream2}>Inativo</Badge>}
+                      {p.venderNoSite && <Badge color={C.green} bg={C.greenPale}><Globe size={11} /> No site</Badge>}
                     </div>
                     {p.descricao && <div style={{ fontSize: 12.5, color: C.text3, marginTop: 4 }}>{p.descricao}</div>}
                   </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginTop: 12 }}>
                   <div>
-                    <span style={{ fontFamily: serif, fontSize: 24, color: C.cafe }}>{fmt(p.preco)}</span>
-                    <span style={{ fontSize: 12, color: C.text3 }}>{p.recorrencia === "mensal" ? " /mês" : ""}</span>
+                    {p.sobConsulta ? (
+                      <span style={{ fontFamily: serif, fontSize: 20, color: C.cafe }}>Sob consulta</span>
+                    ) : (
+                      <>
+                        <span style={{ fontFamily: serif, fontSize: 24, color: C.cafe }}>{fmt(p.preco)}</span>
+                        <span style={{ fontSize: 12, color: C.text3 }}>{p.recorrencia === "mensal" ? " /mês" : ""}</span>
+                      </>
+                    )}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     {p.emiteNF && <span title="Emite nota fiscal" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: C.teal, background: C.tealPale, padding: "3px 8px", borderRadius: 8 }}><FileText size={12} /> NF</span>}
@@ -91,6 +110,10 @@ function PlanoForm({ inicial, onSave }) {
   const [f, setF] = useState({
     nome: inicial.nome || "", preco: inicial.preco ?? "", recorrencia: inicial.recorrencia || "mensal",
     emiteNF: inicial.emiteNF !== false, descricao: inicial.descricao || "",
+    categoria: inicial.categoria || "", venderNoSite: inicial.venderNoSite === true,
+    sobConsulta: inicial.sobConsulta === true, destaque: inicial.destaque || "",
+    beneficiosTexto: (inicial.beneficios || []).join("\n"),
+    prazoMinimoMeses: inicial.prazoMinimoMeses ?? 0, ordem: inicial.ordem ?? "",
     direitos: {
       horasReuniao: 0, horasCoworking: 0, dayPass: 0, correspondencias: 0,
       cafeIncluso: false, descontoSala: 0, descontoCafe: 0, ...(inicial.direitos || {}),
@@ -98,13 +121,26 @@ function PlanoForm({ inicial, onSave }) {
   });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const setD = (k) => (e) => setF({ ...f, direitos: { ...f.direitos, [k]: e.target.type === "checkbox" ? e.target.checked : +e.target.value } });
-  const valido = f.nome.trim() && +f.preco > 0;
+  const setB = (k) => (e) => setF({ ...f, [k]: e.target.checked });
+  const valido = f.nome.trim() && (f.sobConsulta || +f.preco > 0) && (!f.venderNoSite || f.categoria);
+  const salvar = () => {
+    if (!valido) return;
+    const { beneficiosTexto, ...resto } = f;
+    onSave({
+      ...resto,
+      preco: f.sobConsulta ? 0 : +f.preco,
+      prazoMinimoMeses: Math.max(0, Math.floor(+f.prazoMinimoMeses || 0)),
+      ordem: f.ordem === "" ? "" : Math.floor(+f.ordem),
+      destaque: f.destaque.trim(),
+      beneficios: beneficiosTexto.split("\n").map((b) => b.trim()).filter(Boolean),
+    });
+  };
 
   return (
     <>
       <Field label="Nome do plano"><input value={f.nome} onChange={set("nome")} style={inp} placeholder="Ex: Endereço Fiscal" autoFocus /></Field>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <Field label="Preço (R$)"><input type="number" min="0" step="0.01" value={f.preco} onChange={set("preco")} style={inp} placeholder="0,00" /></Field>
+        <Field label="Preço (R$)"><input type="number" min="0" step="0.01" value={f.sobConsulta ? "" : f.preco} onChange={set("preco")} disabled={f.sobConsulta} style={{ ...inp, opacity: f.sobConsulta ? 0.5 : 1 }} placeholder={f.sobConsulta ? "Sob consulta" : "0,00"} /></Field>
         <Field label="Cobrança">
           <div style={{ display: "flex", gap: 8 }}>
             {[["mensal", "Mensal"], ["avulso", "Avulso"]].map(([v, lb]) => (
@@ -117,6 +153,38 @@ function PlanoForm({ inicial, onSave }) {
         </Field>
       </div>
       <Field label="Descrição (aparece para o cliente)"><input value={f.descricao} onChange={set("descricao")} style={inp} placeholder="O que está incluso" /></Field>
+      <div style={{ background: C.cream2, borderRadius: 12, padding: 14, marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13.5, fontWeight: 600, marginBottom: 10 }}><Globe size={15} color={C.cafe} /> Site</div>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 8, cursor: "pointer" }}>
+          <input type="checkbox" checked={f.venderNoSite} onChange={setB("venderNoSite")} /> Publicar no site (cafeworking.com.br)
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 10, cursor: "pointer" }}>
+          <input type="checkbox" checked={f.sobConsulta} onChange={setB("sobConsulta")} /> Preço sob consulta (o site mostra "Pedir proposta")
+        </label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <Field label="Categoria" style={{ marginBottom: 0 }}>
+            <select value={f.categoria} onChange={set("categoria")} style={inp}>
+              <option value="">Sem categoria</option>
+              <option value="endereco_fiscal">Endereço fiscal</option>
+              <option value="coworking">Coworking</option>
+              <option value="sala_privativa">Sala privativa</option>
+            </select>
+          </Field>
+          <Field label="Selo do card" style={{ marginBottom: 0 }}>
+            <input value={f.destaque} onChange={set("destaque")} style={inp} placeholder="Mais procurado" maxLength={30} />
+          </Field>
+          <Field label="Fidelidade no mensal (meses)" style={{ marginBottom: 0 }}>
+            <input type="number" min="0" value={f.prazoMinimoMeses} onChange={set("prazoMinimoMeses")} style={inp} />
+          </Field>
+          <Field label="Ordem na vitrine" style={{ marginBottom: 0 }}>
+            <input type="number" min="0" value={f.ordem} onChange={set("ordem")} style={inp} placeholder="1" />
+          </Field>
+        </div>
+        <Field label="O que inclui (um item por linha)" style={{ marginTop: 10, marginBottom: 0 }}>
+          <textarea value={f.beneficiosTexto} onChange={set("beneficiosTexto")} rows={4} style={{ ...inp, height: "auto", resize: "vertical" }} placeholder={"Endereço para CNPJ\nRecebimento de correspondências"} />
+        </Field>
+        {f.venderNoSite && !f.categoria && <div style={{ fontSize: 12, color: C.red, marginTop: 8 }}>Escolha a categoria para publicar no site.</div>}
+      </div>
       <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", padding: "10px 12px", border: `1px solid ${C.border}`, borderRadius: 11, marginBottom: 14, background: f.emiteNF ? C.tealPale : C.white }}>
         <input type="checkbox" checked={f.emiteNF} onChange={(e) => setF({ ...f, emiteNF: e.target.checked })} />
         <FileText size={16} color={C.teal} />
@@ -137,7 +205,7 @@ function PlanoForm({ inicial, onSave }) {
           <input type="checkbox" checked={f.direitos.cafeIncluso} onChange={setD("cafeIncluso")} /> Café incluso
         </label>
       </div>
-      <Btn style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.5 }} onClick={() => valido && onSave({ ...f, preco: +f.preco })}>
+      <Btn style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.5 }} onClick={salvar}>
         {inicial.id ? "Salvar plano" : "Criar plano"}
       </Btn>
     </>

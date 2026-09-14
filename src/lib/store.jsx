@@ -71,6 +71,8 @@ export function StoreProvider({ children }) {
   const [bankAccounts, setBankAccounts] = useState(seedOr(seedBankAccounts));
   const [boletos, setBoletos] = useState(seedOr(seedBoletos));
   const [contratos, setContratos] = useState(seedOr(seedContratos));
+  // Desconto do plano anual (%), usado na vitrine e no checkout do site.
+  const [configVenda, setConfigVenda] = useState({ descontoAnualPct: 10 });
   const [estoque, setEstoque] = useState(seedOr(seedEstoque));
   const [patrimonio, setPatrimonio] = useState(seedOr(seedPatrimonio));
   const [configFiscal, setConfigFiscal] = useState(seedOr(seedConfigFiscal));
@@ -215,6 +217,7 @@ export function StoreProvider({ children }) {
   useEffect(() => { _gravarDocGlobal("crmEtapas", { itens: crmEtapas }); }, [crmEtapas, activeUnit]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { _gravarDocGlobal("crmOrigens", { itens: crmOrigens }); }, [crmOrigens, activeUnit]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { _gravarDocGlobal("cobrancaTemplate", { texto: cobrancaTemplate }); }, [cobrancaTemplate, activeUnit]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { _gravarDocGlobal("configVenda", configVenda); }, [configVenda, activeUnit]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [viewAs, setViewAs] = useState(null); // id do franqueado, ou null = franqueador
   const [perfil, setPerfilState] = useState("franqueador"); // perfil de acesso previewado
@@ -1166,6 +1169,8 @@ export function StoreProvider({ children }) {
         if (typeof ctDoc?.texto === "string" && ctDoc.texto.trim()) setCobrancaTemplate(ctDoc.texto);
         const coDoc = pickDocGlobal("crmOrigens");
         if (coDoc?.itens?.length) setCrmOrigens(coDoc.itens);
+        const cvDoc = pickDocGlobal("configVenda");
+        if (cvDoc && Number.isFinite(Number(cvDoc.descontoAnualPct))) setConfigVenda({ descontoAnualPct: Number(cvDoc.descontoAnualPct) });
       }
       // creditLedger NÃO vem do app_state (migrado para a tabela relacional).
       // Backfill: as salas vivem no app_state; garante que existam também na
@@ -1241,13 +1246,14 @@ export function StoreProvider({ children }) {
       planos, planosDe, addPlano, updatePlano, removePlano,
       recibos, recibosDe, emitirRecibo, removeRecibo,
       creditLedger, CREDITO_TIPOS, ledgerDe, saldoCreditos, saldosCliente, concederCreditosPlano, consumirCredito, ajustarCredito,
+      configVenda, setConfigVenda,
       syncErrors,
     }),
     // As ações (addX/updateX/...) são closures estáveis recriadas a cada render;
     // memorizamos o value apenas pelos ESTADOS. Incluir as funções nas deps
     // anularia o useMemo (novo objeto a cada render) — comportamento indesejado.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, configFiscal, notasFiscais, planos, recibos, creditLedger, syncErrors, reservas, leads, crmEtapas, crmOrigens, cobrancaTemplate, eventos, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail, clienteNotifPrefs]
+    [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, configFiscal, notasFiscais, planos, recibos, creditLedger, configVenda, syncErrors, reservas, leads, crmEtapas, crmOrigens, cobrancaTemplate, eventos, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail, clienteNotifPrefs]
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
