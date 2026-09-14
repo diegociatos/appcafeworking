@@ -19,25 +19,25 @@ export const PERFIS = {
   master: {
     label: "Master (coworking)",
     cor: "#B8862F",
-    modules: ["dash", "equipe", "crm", "planos", "unidades", "salas", "patrimonio", "reservas", "corresp", "pdv", "kds", "catalogo", "estoque", "clientes", "chat", "financeiro", "boletos", "cobrancas", "notafiscal", "eventos", "auditoria"],
+    modules: ["dash", "equipe", "crm", "planos", "assinaturas", "unidades", "salas", "patrimonio", "reservas", "corresp", "pdv", "kds", "catalogo", "estoque", "clientes", "chat", "financeiro", "boletos", "cobrancas", "notafiscal", "eventos", "auditoria"],
     landing: "dash",
   },
   recepcao: {
     label: "Recepção",
     cor: "#335C81",
-    modules: ["salas", "reservas", "pdv", "kds", "catalogo", "estoque", "crm", "corresp", "clientes", "chat"],
+    modules: ["salas", "reservas", "pdv", "kds", "catalogo", "estoque", "crm", "assinaturas", "corresp", "clientes", "chat"],
     landing: "reservas",
   },
   financeiro: {
     label: "Financeiro",
     cor: "#3D7A5A",
-    modules: ["dash", "financeiro", "boletos", "cobrancas", "notafiscal", "planos", "patrimonio", "estoque", "catalogo", "clientes", "crm"],
+    modules: ["dash", "financeiro", "boletos", "cobrancas", "notafiscal", "planos", "assinaturas", "patrimonio", "estoque", "catalogo", "clientes", "crm"],
     landing: "financeiro",
   },
   cliente: {
     label: "Cliente",
     cor: "#6E4E3B",
-    modules: ["cli_inicio", "cli_reservar", "cli_cafe", "cli_faturas", "cli_docs", "cli_fiscal", "cli_chat", "cli_notif"],
+    modules: ["cli_inicio", "cli_plano", "cli_reservar", "cli_cafe", "cli_faturas", "cli_docs", "cli_fiscal", "cli_chat", "cli_notif"],
     landing: "cli_inicio",
   },
 };

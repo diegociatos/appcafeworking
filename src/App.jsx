@@ -38,12 +38,15 @@ import Salas from "./pages/Salas.jsx";
 import Configuracoes from "./pages/Configuracoes.jsx";
 import Auditoria from "./pages/Auditoria.jsx";
 import KDS from "./pages/KDS.jsx";
+import Assinaturas from "./pages/Assinaturas.jsx";
+import MeuPlano from "./pages/MeuPlano.jsx";
 
 const NAV = [
   { id: "dash", label: "Dashboard", icon: LayoutDashboard, group: "principal" },
   { id: "franqueados", label: "Contas", icon: Store, group: "comercial" },
   { id: "crm", label: "CRM · Leads", icon: KanbanSquare, group: "comercial" },
   { id: "planos", label: "Planos e serviços", icon: Tags, group: "comercial" },
+  { id: "assinaturas", label: "Assinaturas e contratos", icon: ScrollText, group: "comercial" },
   { id: "unidades", label: "Unidades", icon: Building2, group: "gestao" },
   { id: "equipe", label: "Equipe", icon: ShieldCheck, group: "gestao" },
   { id: "auditoria", label: "Auditoria", icon: ScrollText, group: "gestao" },
@@ -81,6 +84,7 @@ const PAGES = {
   reservas: Reservas, corresp: Correspondencias, pdv: PDV, clientes: Clientes,
   financeiro: Financeiro, boletos: Boletos, cobrancas: Cobrancas, notafiscal: NotaFiscal, estoque: Estoque, patrimonio: Patrimonio, eventos: Eventos, chat: Chat,
   area: AreaCliente, equipe: Equipe, catalogo: Catalogo, planos: Planos, salas: Salas, config: Configuracoes, auditoria: Auditoria, kds: KDS,
+  assinaturas: Assinaturas, cli_plano: MeuPlano,
   cli_inicio: AreaCliente, cli_reservar: AreaCliente, cli_cafe: AreaCliente,
   cli_faturas: AreaCliente, cli_docs: AreaCliente, cli_fiscal: AreaCliente, cli_chat: AreaCliente, cli_notif: AreaCliente,
 };
@@ -135,6 +139,7 @@ export default function App() {
   const novoDocs = (cliRef.docs || []).filter((d) => d.status === "novo").length + corrNovasCli;
   const CLIENT_NAV = [
     { id: "cli_inicio", label: "Início", icon: Home },
+    { id: "cli_plano", label: "Meu plano", icon: ScrollText },
     { id: "cli_reservar", label: "Reservar sala", icon: CalendarDays },
     { id: "cli_cafe", label: "Cafeteria", icon: Coffee },
     { id: "cli_faturas", label: "Faturas", icon: Wallet },
