@@ -13,6 +13,9 @@ const APP_URL = Deno.env.get("APP_URL") ?? "https://app.cafeworking.com.br";
 const brl = (n: number) =>
   "R$ " + Number(n || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
 const dataBR = (iso: string) => (iso ? iso.split("-").reverse().join("/") : "");
+/** Texto vindo de formulário público (nome, plano) não pode virar HTML. */
+const esc = (s: unknown) =>
+  String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 /** Layout base: cabeçalho com a marca + corpo + rodapé com descadastro. */
 function layout(titulo: string, corpo: string, cta?: { label: string; url: string }) {
@@ -110,6 +113,17 @@ const TEMPLATES: Record<Evento, (d: any) => Render> = {
     texto: `Olá ${d.cliente}, sua reserva de ${d.sala} foi confirmada.`,
     html: layout("Reserva confirmada", `Olá <b>${d.cliente}</b>,<br><br>Sua reserva${d.sala ? ` da <b>${d.sala}</b>` : ""}${d.quando ? ` para <b>${d.quando}</b>` : ""} está confirmada.`,
       { label: "Ver reserva", url: `${APP_URL}/reservas` }),
+  }),
+  assinatura_ativa: (d) => ({
+    assunto: `${d.plano} ativo no CafeWorking`,
+    texto: `Olá ${d.cliente}, seu plano ${d.plano} na unidade ${d.unidade} está ativo. ${d.linkSenha ? `Crie sua senha: ${d.linkSenha}` : `Entre em ${APP_URL}`}`,
+    html: layout(
+      `Seu plano ${esc(d.plano)} está ativo`,
+      `Olá <b>${esc(d.cliente)}</b>,<br><br>Pagamento confirmado. O plano <b>${esc(d.plano)}</b>${d.unidade ? ` na unidade <b>${esc(d.unidade)}</b>` : ""} já está ativo.<br><br>
+       ${d.linkSenha ? "O próximo passo é criar sua senha para entrar na área do cliente. O link vale por tempo limitado." : "Entre na área do cliente com seu e-mail e senha."}
+       ${d.categoria === "endereco_fiscal" ? "<br><br>Na área do cliente, envie o cartão CNPJ e o documento dos sócios. Assim que conferirmos, liberamos o kit para registrar o endereço." : ""}`,
+      d.linkSenha ? { label: "Criar minha senha", url: esc(d.linkSenha) } : { label: "Entrar na área do cliente", url: APP_URL },
+    ),
   }),
 };
 

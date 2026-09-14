@@ -30,7 +30,8 @@ export type Evento =
   | "correspondencia"
   | "cafe_pedido"
   | "cafe_pronto"
-  | "reserva";
+  | "reserva"
+  | "assinatura_ativa";
 
 export class NotifyError extends Error {
   constructor(message: string, public readonly canal: Canal, public readonly status?: number) {

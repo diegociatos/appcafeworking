@@ -24,12 +24,43 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { handleOptions, json } from "../_shared/cors.ts";
 import { adminClient } from "../_shared/supabaseAdmin.ts";
 import { garantirCobranca } from "../_shared/cobrancas.ts";
+import { getNotifProvider, renderTemplate } from "../_shared/notify/index.ts";
 import {
   creditosDoPlano, fidelidadeAte, hojeBRT, idCreditoPagamento, referenciaExterna, STATUS_PAGAMENTO_ASAAS,
 } from "../_shared/venda.ts";
 
+const APP_URL = Deno.env.get("APP_URL") ?? "https://app.cafeworking.com.br";
+
 // deno-lint-ignore no-explicit-any
 type Linha = Record<string, any>;
+
+/**
+ * Boas-vindas depois da ativação. Compra pelo site não tem senha: gera o link de
+ * criar senha (recovery) e manda junto. O link não vai para `notificacoes`
+ * porque dá acesso à conta.
+ */
+async function enviarBoasVindas(admin: SupabaseClient, ps: Linha) {
+  let linkSenha = "";
+  if (ps.senha_definida === false) {
+    const { data, error } = await admin.auth.admin.generateLink({
+      type: "recovery", email: ps.email, options: { redirectTo: `${APP_URL}/` },
+    });
+    if (error) throw new Error(`link de senha: ${error.message}`);
+    linkSenha = data?.properties?.action_link || "";
+  }
+  const { data: unidade } = await admin.from("unidades").select("nome").eq("id", ps.unidade_id).maybeSingle();
+  const msg = renderTemplate("assinatura_ativa", {
+    cliente: ps.nome, email: ps.email, plano: ps.plano_nome, unidade: unidade?.nome || "",
+    categoria: ps.categoria, linkSenha,
+  });
+  const envio = await getNotifProvider("email").enviar({ ...msg, para: ps.email });
+  await admin.from("notificacoes").insert({
+    unidade_id: ps.unidade_id, cliente_nome: ps.nome, destinatario: ps.email, canal: "email",
+    evento: "assinatura_ativa", template: "assinatura_ativa", dados: { plano: ps.plano_nome, link_senha: !!linkSenha },
+    status: envio.ok ? "enviado" : "erro", assunto: msg.assunto, provider_id: envio.providerId ?? null,
+    sent_at: envio.ok ? new Date().toISOString() : null, erro: envio.ok ? null : envio.erro,
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Utilitários
@@ -61,13 +92,22 @@ async function clienteDaUnidade(admin: SupabaseClient, ps: Linha): Promise<strin
   return clienteId;
 }
 
-/** Créditos do plano por pagamento confirmado. Id determinístico = não duplica. */
+/**
+ * Créditos do plano por pagamento confirmado. Id determinístico = não duplica.
+ * O plano anual é um pagamento por 12 meses: libera os créditos dos 12 meses.
+ */
 async function concederCreditos(
   admin: SupabaseClient,
-  alvo: { unidade_id: string; cliente_id: string | null; cliente_email: string; plano_nome: string; direitos: unknown },
+  alvo: {
+    unidade_id: string; cliente_id: string | null; cliente_email: string; plano_nome: string; direitos: unknown;
+    recorrencia?: string | null;
+  },
   paymentId: string,
 ) {
-  for (const { tipo, quantidade } of creditosDoPlano(alvo.direitos as Record<string, unknown>)) {
+  const meses = alvo.recorrencia === "anual" ? 12 : 1;
+  for (const credito of creditosDoPlano(alvo.direitos as Record<string, unknown>)) {
+    const tipo = credito.tipo;
+    const quantidade = credito.quantidade * meses;
     const { data: movs } = await admin
       .from("creditos_ledger").select("quantidade")
       .eq("unidade_id", alvo.unidade_id).eq("cliente_email", alvo.cliente_email).eq("tipo", tipo);
@@ -126,7 +166,7 @@ async function ativarCadastro(
       const { data, error } = await admin.from("assinaturas").insert({
         unidade_id: ps.unidade_id, cliente_id: clienteId, cliente_nome: ps.nome, cliente_email: ps.email,
         cliente_documento: ps.documento, plano_id: ps.plano_id, plano_nome: ps.plano_nome, categoria: ps.categoria,
-        valor: ps.valor, recorrencia: "mensal", prazo_minimo_meses: prazo, fidelidade_ate: fidelidadeAte(inicio, prazo),
+        valor: ps.valor, recorrencia: ps.recorrencia === "anual" ? "anual" : "mensal", prazo_minimo_meses: prazo, fidelidade_ate: fidelidadeAte(inicio, prazo),
         direitos: ps.direitos || {}, asaas_customer_id: ps.asaas_customer_id,
         asaas_subscription_id: ps.asaas_subscription_id, aceite_id: ps.aceite_id, pending_signup_id: ps.id,
         status: "ativa", inicio,
@@ -137,6 +177,12 @@ async function ativarCadastro(
     }
 
     await admin.from("pending_signups").update({ status: "ativo", ativado_em: new Date().toISOString() }).eq("id", ps.id);
+    try {
+      await enviarBoasVindas(admin, ps);
+    } catch (e) {
+      // e-mail não desfaz a ativação; o erro fica no log para a equipe reenviar
+      console.error(`boas-vindas ${ps.email}:`, (e as Error).message);
+    }
     return { clienteId, assinatura };
   } catch (e) {
     // devolve para a próxima entrega do webhook tentar de novo
@@ -213,7 +259,7 @@ async function tratarAssinatura(admin: SupabaseClient, pay: Linha, status: strin
   if (status === "pago") {
     await concederCreditos(admin, {
       unidade_id: assinatura.unidade_id, cliente_id: assinatura.cliente_id, cliente_email: assinatura.cliente_email,
-      plano_nome: assinatura.plano_nome, direitos: assinatura.direitos,
+      plano_nome: assinatura.plano_nome, direitos: assinatura.direitos, recorrencia: assinatura.recorrencia,
     }, pay.id);
     if (assinatura.status === "inadimplente") {
       await admin.from("assinaturas").update({ status: "ativa" }).eq("id", assinatura.id);

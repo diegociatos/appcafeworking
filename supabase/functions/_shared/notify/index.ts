@@ -24,7 +24,7 @@ export type { Canal, Evento } from "./types.ts";
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { renderTemplate } from "./templates.ts";
-import type { Canal, Evento } from "./types.ts";
+import type { Evento } from "./types.ts";
 
 /**
  * Dispara uma notificação (registra em `notificacoes` + envia pelo provedor).
