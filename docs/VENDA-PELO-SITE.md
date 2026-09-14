@@ -12,9 +12,19 @@ contrato, pagamento e reserva gravados nas mesmas tabelas.
 
 | Tema | Decisão |
 |---|---|
-| Pagamento | **Asaas** — cartão, PIX e boleto; mensais viram **assinatura** que cobra sozinha |
+| Pagamento | **Asaas** |
 | Produtos da fase 1 | endereço fiscal · planos de coworking · sala de reunião por hora · sala privativa (preço publicado como plano) |
 | Contrato | **aceite no checkout**, com versão do termo, data, IP, navegador e hash gravados |
+| Catálogo | **um só, o do app**: o site mostra os planos cadastrados na tela Planos; mudou no app, muda no site |
+| Unidades | **planos e preços diferentes por unidade**; no site a pessoa escolhe a unidade antes |
+| Sob consulta | existe: o card aparece sem preço e o botão vira "Pedir proposta", que cai no CRM do app |
+| Vitrine | **híbrida**: cards gerados no HTML na publicação (SEO), conferidos ao vivo no navegador, republicação diária |
+| Checkout | **tela única**: clicou em Contratar → resumo + nome, CPF/CNPJ, e-mail, celular + aceite do contrato + Pagar. Sem senha na compra: depois do pagamento chega o e-mail para criar a senha |
+| Mensal | **só cartão de crédito**, cobrança recorrente automática |
+| Anual | **10% de desconto**, pago de uma vez no **PIX, boleto ou cartão à vista**; renova sozinho com a fatura do ano seguinte 30 dias antes. Percentual configurável no app, vale para todos os planos |
+| Sala por hora | PIX ou cartão (a regra do anual vale só para planos) |
+| Documentos do endereço fiscal | **conferidos depois do pagamento**, na área do cliente; reprovação → estorno e cancelamento |
+| Site | **revisão completa**: todo botão de contratação passa para a vitrine nova |
 
 ## Estado encontrado em produção (14/09/2026)
 
