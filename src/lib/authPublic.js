@@ -59,6 +59,11 @@ export async function iniciarAssinatura(dados) {
     body: JSON.stringify(dados),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error || "Não foi possível iniciar a assinatura.");
+  if (!res.ok) {
+    const erro = new Error(data?.error || "Não foi possível iniciar a assinatura.");
+    erro.codigo = data?.codigo;
+    erro.contrato = data?.contrato;
+    throw erro;
+  }
   return data;
 }

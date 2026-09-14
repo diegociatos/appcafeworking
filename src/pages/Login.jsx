@@ -136,6 +136,9 @@ function SignupCard({ irParaLogin }) {
   const [erro, setErro] = useState("");
   const [carregando, setCarregando] = useState(false);
   const [checkout, setCheckout] = useState(null); // { checkoutUrl, plano, valor, pix_payload }
+  // Plano com contrato publicado: o servidor devolve o texto vigente e exige o aceite.
+  const [contrato, setContrato] = useState(null); // { id, titulo, versao, corpo, hash }
+  const [aceite, setAceite] = useState(false);
   const [buscandoDoc, setBuscandoDoc] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const onDoc = (e) => {
@@ -159,6 +162,9 @@ function SignupCard({ irParaLogin }) {
     fetchPlanosPublicos(unidadeId).then((ps) => { setPlanos(ps); setPlanoId(ps[0]?.id || ""); }).finally(() => setCarregandoPlanos(false));
   }, [unidadeId]);
 
+  // Trocou de plano: o contrato exibido era do plano anterior.
+  useEffect(() => { setContrato(null); setAceite(false); }, [planoId]);
+
   const valido = f.nome.trim() && f.email.trim() && f.senha.length >= 6 && unidadeId && planoId && f.documento.trim();
 
   const cadastrar = async (e) => {
@@ -167,15 +173,27 @@ function SignupCard({ irParaLogin }) {
       setErro(!unidadeId ? "Escolha a cidade e a unidade." : !planoId ? "Escolha um plano." : "Preencha nome, CPF/CNPJ, e-mail e senha (mín. 6).");
       return;
     }
+    if (contrato && !aceite) {
+      setErro("Para continuar, leia e aceite o contrato.");
+      return;
+    }
     setErro(""); setCarregando(true);
     try {
       const r = await iniciarAssinatura({
         nome: f.nome.trim(), email: f.email.trim(), senha: f.senha, telefone: f.telefone,
         documento: f.documento, unidade_id: unidadeId, plano_id: planoId,
+        aceite: contrato && aceite ? { modelo_id: contrato.id, hash: contrato.hash } : undefined,
       });
       setCheckout(r);
     } catch (err) {
-      setErro(err?.message || "Não foi possível iniciar a assinatura.");
+      if (err?.codigo === "ACEITE_NECESSARIO" && err.contrato) {
+        const mudou = contrato && contrato.id !== err.contrato.id;
+        setContrato(err.contrato);
+        setAceite(false);
+        setErro(mudou ? "O contrato foi atualizado. Leia a versão nova e aceite para continuar." : "Este plano tem contrato. Leia e aceite para continuar.");
+      } else {
+        setErro(err?.message || "Não foi possível iniciar a assinatura.");
+      }
     } finally {
       setCarregando(false);
     }
@@ -314,6 +332,23 @@ function SignupCard({ irParaLogin }) {
         <Lock size={16} color={C.text4} style={iconWrap} />
         <input type="password" value={f.senha} onChange={set("senha")} placeholder="mínimo 6 caracteres" style={{ ...inp, paddingLeft: 36 }} autoComplete="new-password" />
       </div>
+
+      {contrato && (
+        <div style={{ marginTop: 12 }}>
+          <details style={{ border: `1px solid ${C.border}`, borderRadius: 11, padding: "8px 12px", background: C.cream }}>
+            <summary style={{ cursor: "pointer", fontSize: 13, fontWeight: 600, color: C.cafe }}>
+              Ler o contrato: {contrato.titulo} (versão {contrato.versao})
+            </summary>
+            <div style={{ whiteSpace: "pre-wrap", maxHeight: 260, overflow: "auto", fontSize: 12, lineHeight: 1.6, color: C.text2, marginTop: 8 }}>
+              {contrato.corpo}
+            </div>
+          </details>
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12.5, color: C.text2, marginTop: 8, cursor: "pointer" }}>
+            <input type="checkbox" checked={aceite} onChange={(e) => setAceite(e.target.checked)} style={{ marginTop: 2 }} />
+            Li e aceito o contrato "{contrato.titulo}", versão {contrato.versao}.
+          </label>
+        </div>
+      )}
 
       {erro && <div style={{ fontSize: 12.5, color: C.red, background: C.redPale, borderRadius: 9, padding: "8px 12px", margin: "10px 0" }}>{erro}</div>}
 
