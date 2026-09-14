@@ -42,7 +42,7 @@ if ($atual -and ($atual.ToString() -match $hash)) {
 }
 
 $resp = Read-Host 'O Supabase tem outro valor. Gravar este token no lugar? (s/n)'
-if ($resp -ne 's') {
+if ($resp.Trim() -notmatch '^(s|sim|y|yes)$') {
   Write-Host 'Nada foi alterado.'
   exit 0
 }

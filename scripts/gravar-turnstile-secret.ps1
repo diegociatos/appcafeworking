@@ -35,7 +35,7 @@ $hash = Sha256Hex $chave
 Write-Host "Chave recebida: $($chave.Length) caracteres (codigo $($hash.Substring(0,12))...)"
 
 $resp = Read-Host 'Gravar no Supabase como TURNSTILE_SECRET_KEY? (s/n)'
-if ($resp -ne 's') {
+if ($resp.Trim() -notmatch '^(s|sim|y|yes)$') {
   Write-Host 'Nada foi alterado.'
   exit 0
 }

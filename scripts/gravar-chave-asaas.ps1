@@ -49,7 +49,7 @@ if ($doc -ne $cnpjCafe) {
 Write-Host "Chave valida na conta: $($conta.companyName) (CNPJ $($conta.cpfCnpj))" -ForegroundColor Green
 
 $resp = Read-Host 'Gravar esta chave no cofre do Supabase para a unidade do CafeWorking? (s/n)'
-if ($resp -ne 's') {
+if ($resp.Trim() -notmatch '^(s|sim|y|yes)$') {
   Write-Host 'Nada foi alterado.'
   exit 0
 }
