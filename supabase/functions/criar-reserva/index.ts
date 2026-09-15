@@ -8,37 +8,43 @@
 // Autorização por papel:
 //   • staff (master/recepcao/financeiro) ou platform_admin → reserva para
 //     qualquer cliente da unidade;
-//   • cliente final → só para si mesmo (cliente_email = e-mail do JWT).
+//   • cliente final → só para si mesmo, com as regras da área do cliente:
+//     horário futuro (seg–sex, 8h–18h, hora cheia, até 30 dias), só salas
+//     reserváveis pelo app, valor calculado aqui (o que vier do navegador é
+//     ignorado) e, em sala sem preço por hora, precisa ter horas no plano.
 // A não-corrida e o conflito são garantidos no banco (criar_reserva_segura).
+// Com e-mail do cliente, manda a confirmação (respeita a preferência "reservas").
 // ============================================================================
 
 import { handleOptions, json } from "../_shared/cors.ts";
 import { userClient, adminClient } from "../_shared/supabaseAdmin.ts";
 import { registrarAuditoria, ipDaReq } from "../_shared/audit.ts";
+import { dispatchNotificacao } from "../_shared/notify/index.ts";
+import {
+  calcularReserva, mensagemReserva, padraoEmail, salaReservavelPeloCliente, tipoCredito, validarReservaCliente,
+} from "../_shared/reservaCliente.ts";
 
-// Tipo de sala → tipo de crédito do plano. Salas que não casam (ex.: privativa)
-// não consomem crédito e são cobradas pelo valor cheio.
-function mapTipoCredito(tipoSala?: string | null): string | null {
-  const t = (tipoSala || "").toLowerCase();
-  if (t.includes("reuni")) return "sala_reuniao";
-  if (t.includes("compartilh") || t.includes("cowork")) return "coworking";
-  return null;
+const CODIGOS_CONHECIDOS = /CONFLITO|SALA_CONTRATADA|SALA_INATIVA|BASE_INVALIDA|PERIODO_INVALIDO|PERIODO_PASSADO|SALA_INEXISTENTE|SALA_DE_OUTRA_UNIDADE/;
+
+function quandoBR(startISO: string, endISO: string): string {
+  const f = (iso: string, o: Intl.DateTimeFormatOptions) => new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", ...o });
+  return `${f(startISO, { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" })}, das ${f(startISO, { hour: "2-digit", minute: "2-digit" })} às ${f(endISO, { hour: "2-digit", minute: "2-digit" })}`;
 }
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
-  if (req.method !== "POST") return json({ error: "Método não permitido" }, 405);
+  if (req.method !== "POST") return json({ error: "Método não permitido" }, 405, req);
 
   try {
-    const b = await req.json();
+    const b = await req.json().catch(() => null);
     for (const k of ["unidade_id", "sala_id", "cliente_nome", "start_at", "end_at"]) {
-      if (!b?.[k]) return json({ error: `Campo obrigatório ausente: ${k}` }, 400);
+      if (!b?.[k]) return json({ error: "Preencha sala, data e horário." }, 400, req);
     }
 
     const user = userClient(req);
     const { data: auth } = await user.auth.getUser();
-    if (!auth?.user) return json({ error: "Não autenticado" }, 401);
+    if (!auth?.user) return json({ error: "Entre na sua conta para reservar." }, 401, req);
     const email = (auth.user.email || "").toLowerCase();
     const admin = adminClient();
 
@@ -50,80 +56,93 @@ Deno.serve(async (req) => {
     const ehCliente = (mems || []).some((m) => m.role === "cliente");
 
     if (!ehAdmin && !ehStaff && !ehCliente) {
-      return json({ error: "Sem acesso a esta unidade." }, 403);
+      return json({ error: "Sem acesso a esta unidade." }, 403, req);
     }
-    // Cliente só reserva para si mesmo.
-    if (!ehAdmin && !ehStaff) {
-      const alvo = String(b.cliente_email || "").toLowerCase();
-      if (!alvo || alvo !== email) {
-        return json({ error: "Como cliente, você só pode reservar para si mesmo." }, 403);
+    const comoCliente = !ehAdmin && !ehStaff;
+
+    const { data: sala } = await admin.from("salas")
+      .select("id, unidade_id, nome, tipo, valor_hora, active, contratada").eq("id", b.sala_id).maybeSingle();
+    if (!sala || sala.unidade_id !== b.unidade_id) return json({ error: mensagemReserva("SALA_INEXISTENTE") }, 400, req);
+
+    const alvoEmail = String(b.cliente_email || "").trim().toLowerCase();
+    const tipoCred = tipoCredito(sala.tipo);
+    const valorHora = Number(sala.valor_hora || 0);
+    let valorPedido: number | null = b.valor ?? null;
+    let clienteNome = String(b.cliente_nome).slice(0, 200);
+    let clienteId: string | null = b.cliente_id ?? null;
+
+    // Saldo de horas do plano (antes de reservar, para o cliente não reservar sem cobertura).
+    const saldoDoPlano = async () => {
+      if (!alvoEmail || !tipoCred) return 0;
+      const { data: movs } = await admin.from("creditos_ledger").select("quantidade")
+        .eq("unidade_id", b.unidade_id).ilike("cliente_email", padraoEmail(alvoEmail)).eq("tipo", tipoCred);
+      return (movs || []).reduce((s: number, m: { quantidade: number }) => s + Number(m.quantidade || 0), 0);
+    };
+
+    if (comoCliente) {
+      if (!alvoEmail || alvoEmail !== email) {
+        return json({ error: "Como cliente, você só pode reservar para si mesmo." }, 403, req);
       }
+      const periodo = validarReservaCliente(b.start_at, b.end_at);
+      if (!periodo.ok) return json({ error: mensagemReserva(periodo.erro), codigo: periodo.erro }, 400, req);
+      if (!salaReservavelPeloCliente(sala)) return json({ error: mensagemReserva("SALA_NAO_RESERVAVEL") }, 400, req);
+
+      const calculo = calcularReserva(periodo.horas, await saldoDoPlano(), valorHora);
+      if (valorHora <= 0 && calculo.excedente > 0) {
+        return json({ error: mensagemReserva("SEM_CREDITO"), codigo: "SEM_CREDITO" }, 400, req);
+      }
+      valorPedido = Math.round(periodo.horas * valorHora * 100) / 100;
+
+      // Nome e id do próprio cadastro, quando existir (não confia no navegador).
+      const { data: cad } = await admin.from("clientes").select("id, nome")
+        .eq("unidade_id", b.unidade_id).ilike("email", padraoEmail(email)).limit(1).maybeSingle();
+      if (cad) { clienteId = cad.id; clienteNome = cad.nome || clienteNome; } else { clienteId = null; }
     }
 
     const { data, error } = await admin.rpc("criar_reserva_segura", {
-      p_id: b.id ?? null,
+      p_id: comoCliente ? null : (b.id ?? null),
       p_unidade_id: b.unidade_id,
       p_sala_id: b.sala_id,
-      p_cliente_id: b.cliente_id ?? null,
-      p_cliente_nome: b.cliente_nome,
-      p_cliente_email: b.cliente_email ?? null,
+      p_cliente_id: clienteId,
+      p_cliente_nome: clienteNome,
+      p_cliente_email: alvoEmail || null,
       p_start_at: b.start_at,
       p_end_at: b.end_at,
       p_base: b.base ?? null,
-      p_origem: b.origem ?? "recepcao",
-      p_valor: b.valor ?? null,
+      p_origem: comoCliente ? "app" : (b.origem ?? "recepcao"),
+      p_valor: valorPedido,
     });
 
     if (error) {
       const msg = error.message || "";
-      const amigavel: Record<string, string> = {
-        CONFLITO: "Esse horário/base já está reservado para este espaço.",
-        SALA_CONTRATADA: "Esta sala está em locação fixa e não aceita reservas.",
-        SALA_INATIVA: "Esta sala está inativa.",
-        BASE_INVALIDA: "Base de trabalho inválida para esta sala.",
-        PERIODO_INVALIDO: "Período inválido (início depois do fim).",
-        SALA_INEXISTENTE: "Sala não encontrada.",
-        SALA_DE_OUTRA_UNIDADE: "Sala não pertence a esta unidade.",
-      };
-      const chave = Object.keys(amigavel).find((k) => msg.includes(k));
-      const status = msg.includes("CONFLITO") ? 409 : 400;
-      return json({ error: chave ? amigavel[chave] : `Falha ao reservar: ${msg}` }, status);
+      const conhecido = CODIGOS_CONHECIDOS.test(msg);
+      if (!conhecido) console.error("[criar-reserva] criar_reserva_segura", msg);
+      return json({ error: mensagemReserva(msg, "Não foi possível reservar agora. Tente de novo.") }, msg.includes("CONFLITO") ? 409 : conhecido ? 400 : 500, req);
     }
 
     // --- Consumo de crédito do plano + excedente (fail-safe) ----------------
     // Nunca derruba a reserva: qualquer erro aqui apenas mantém o valor cheio.
     let credito: Record<string, unknown> | null = null;
     try {
-      const alvoEmail = String(b.cliente_email || "").toLowerCase();
-      if (alvoEmail) {
-        const { data: sala } = await admin.from("salas").select("tipo, valor_hora").eq("id", b.sala_id).maybeSingle();
-        const tipoCred = mapTipoCredito(sala?.tipo as string | null);
-        if (tipoCred) {
-          const horas = Math.max(1, Math.ceil((new Date(b.end_at).getTime() - new Date(b.start_at).getTime()) / 3_600_000));
-          const { data: movs } = await admin.from("creditos_ledger")
-            .select("quantidade")
-            .eq("unidade_id", b.unidade_id).eq("cliente_email", alvoEmail).eq("tipo", tipoCred);
-          const saldo = (movs || []).reduce((s: number, m: { quantidade: number }) => s + Number(m.quantidade || 0), 0);
-          const cobertas = Math.max(0, Math.min(saldo, horas));
-          const excedente = horas - cobertas;
-          if (cobertas > 0) {
-            await admin.from("creditos_ledger").insert({
-              id: "cl_" + Date.now() + Math.floor(Math.random() * 1000),
-              unidade_id: b.unidade_id, cliente_id: b.cliente_id ?? null, cliente_email: alvoEmail,
-              tipo: tipoCred, quantidade: -cobertas, saldo_apos: saldo - cobertas,
-              origem: "consumo", motivo: `Reserva ${sala?.tipo || ""}`.trim(), referencia_id: data?.id ?? null,
-              created_by: auth.user.id,
-            });
-          }
-          const valorHora = Number(sala?.valor_hora || 0);
-          const valorExcedente = excedente * valorHora;
-          // Só reescreve o valor quando há preço por hora — evita zerar um valor fixo.
-          if (data?.id && valorHora > 0) {
-            await admin.from("reservas").update({ valor: valorExcedente }).eq("id", data.id);
-            (data as { valor?: number }).valor = valorExcedente;
-          }
-          credito = { tipo: tipoCred, horas, cobertas, excedente, saldoAntes: saldo, saldoApos: saldo - cobertas, valorExcedente };
+      if (alvoEmail && tipoCred) {
+        const horas = Math.max(1, Math.ceil((new Date(b.end_at).getTime() - new Date(b.start_at).getTime()) / 3_600_000));
+        const saldo = await saldoDoPlano();
+        const calc = calcularReserva(horas, saldo, valorHora);
+        if (calc.cobertas > 0) {
+          await admin.from("creditos_ledger").insert({
+            id: "cl_" + Date.now() + Math.floor(Math.random() * 1000),
+            unidade_id: b.unidade_id, cliente_id: clienteId, cliente_email: alvoEmail,
+            tipo: tipoCred, quantidade: -calc.cobertas, saldo_apos: saldo - calc.cobertas,
+            origem: "consumo", motivo: `Reserva ${sala.nome || sala.tipo || ""}`.trim(), referencia_id: data?.id ?? null,
+            created_by: auth.user.id,
+          });
         }
+        // Só reescreve o valor quando há preço por hora — evita zerar um valor fixo.
+        if (data?.id && valorHora > 0) {
+          await admin.from("reservas").update({ valor: calc.valorExcedente }).eq("id", data.id);
+          (data as { valor?: number }).valor = calc.valorExcedente;
+        }
+        credito = { tipo: tipoCred, horas, cobertas: calc.cobertas, excedente: calc.excedente, saldoAntes: saldo, saldoApos: saldo - calc.cobertas, valorExcedente: calc.valorExcedente };
       }
     } catch (e) {
       console.error("[criar-reserva] consumo de crédito falhou (segue sem debitar)", e);
@@ -138,16 +157,23 @@ Deno.serve(async (req) => {
       entidade_id: data?.id ?? null,
       detalhe: {
         sala_id: b.sala_id, base: b.base ?? null, start_at: b.start_at, end_at: b.end_at,
-        cliente_nome: b.cliente_nome, cliente_email: b.cliente_email ?? null,
-        origem: b.origem ?? "recepcao", valor: (data as { valor?: number })?.valor ?? b.valor ?? null,
+        cliente_nome: clienteNome, cliente_email: alvoEmail || null,
+        origem: comoCliente ? "app" : (b.origem ?? "recepcao"), valor: (data as { valor?: number })?.valor ?? valorPedido,
         credito,
       },
       ip: ipDaReq(req),
     });
 
-    return json({ ok: true, reserva: data, credito }, 201);
+    if (alvoEmail && data?.id) {
+      await dispatchNotificacao(admin, {
+        unidade_id: b.unidade_id, evento: "reserva", email: alvoEmail, cliente: clienteNome,
+        dados: { sala: sala.nome, quando: quandoBR(b.start_at, b.end_at), reserva_id: data.id },
+      });
+    }
+
+    return json({ ok: true, reserva: data, credito }, 201, req);
   } catch (e) {
-    console.error(e);
-    return json({ error: (e as Error).message ?? "Erro interno" }, 500);
+    console.error("[criar-reserva]", e);
+    return json({ error: "Não foi possível reservar agora. Tente de novo." }, 500, req);
   }
 });

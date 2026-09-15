@@ -6,39 +6,81 @@
 //  B) { unidade_id, evento, email,  → envia na hora e registra
 //       cliente, dados, canal? }
 //
-// Renderiza o template, chama o provedor (Resend) e grava o status em
-// `notificacoes`. A API key fica nos secrets — nunca no front-end.
+// Quem pode chamar (deploy --no-verify-jwt; a função confere):
+//   • backend com a service_role no Authorization; ou
+//   • equipe da unidade (master/financeiro/recepção) ou admin da plataforma,
+//     só com os eventos de aviso ao cliente abaixo.
+// Antes o endpoint não conferia ninguém: qualquer um com a chave pública podia
+// disparar e-mail com a marca do CafeWorking para qualquer endereço.
+//
+// Renderiza o template, respeita a preferência do cliente (lembretes/reservas),
+// chama o provedor (Resend) e grava o status real em `notificacoes`.
 // ============================================================================
 
 import { handleOptions, json } from "../_shared/cors.ts";
 import { adminClient } from "../_shared/supabaseAdmin.ts";
-import { getNotifProvider, renderTemplate, NotifyError, type Canal, type Evento } from "../_shared/notify/index.ts";
+import { ehEquipe } from "../_shared/assinaturas.ts";
+import { getNotifProvider, NotifyError, preferenciaPermite, renderTemplate, type Canal, type Evento } from "../_shared/notify/index.ts";
+import { emailValido } from "../_shared/venda.ts";
+
+/** Avisos ao cliente que a equipe pode disparar pelo app. */
+const EVENTOS_EQUIPE: Evento[] = [
+  "boleto_nova", "boleto_lembrete", "boleto_pago", "boleto_vencido", "cobranca_nova", "nfse_emitida",
+  "correspondencia", "cafe_pedido", "cafe_pronto", "reserva",
+];
+
+function ehServiceRole(req: Request): boolean {
+  const chave = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  const auth = req.headers.get("Authorization") || "";
+  return !!chave && auth === `Bearer ${chave}`;
+}
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
-  if (req.method !== "POST") return json({ error: "Método não permitido" }, 405);
+  if (req.method !== "POST") return json({ error: "Método não permitido" }, 405, req);
 
   const admin = adminClient();
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
+    const backend = ehServiceRole(req);
+    // deno-lint-ignore no-explicit-any
     let row: any;
 
     if (body.notificacao_id) {
-      const { data } = await admin.from("notificacoes").select("*").eq("id", body.notificacao_id).single();
-      if (!data) return json({ error: "Notificação não encontrada" }, 404);
+      const { data } = await admin.from("notificacoes").select("*").eq("id", body.notificacao_id).maybeSingle();
+      if (!data) return json({ error: "Notificação não encontrada" }, 404, req);
+      if (!backend && !(EVENTOS_EQUIPE.includes(data.evento) && await ehEquipe(req, data.unidade_id))) {
+        return json({ error: "Sem permissão para enviar este aviso." }, 403, req);
+      }
       row = data;
     } else {
       if (!body.unidade_id || !body.evento || !body.email) {
-        return json({ error: "Campos obrigatórios: unidade_id, evento, email" }, 400);
+        return json({ error: "Campos obrigatórios: unidade_id, evento, email" }, 400, req);
+      }
+      if (!emailValido(body.email)) return json({ error: "E-mail do cliente inválido." }, 400, req);
+      if (!backend && !(EVENTOS_EQUIPE.includes(body.evento) && await ehEquipe(req, body.unidade_id))) {
+        return json({ error: "Sem permissão para enviar este aviso." }, 403, req);
       }
       const canal: Canal = body.canal ?? "email";
+      const email = String(body.email).trim();
+      if (!(await preferenciaPermite(admin, email, body.evento))) {
+        const { data } = await admin.from("notificacoes").insert({
+          unidade_id: body.unidade_id, cliente_nome: body.cliente ?? null, destinatario: email, canal,
+          evento: body.evento, template: body.evento, dados: body.dados ?? {}, status: "cancelado",
+          erro: "cliente optou por não receber este tipo de e-mail",
+        }).select().single();
+        return json({ notificacao: data, enviado: false, ignorado: true }, 200, req);
+      }
       const ins = {
-        unidade_id: body.unidade_id, cliente_nome: body.cliente ?? null, destinatario: body.email,
+        unidade_id: body.unidade_id, cliente_nome: body.cliente ?? null, destinatario: email,
         canal, evento: body.evento, template: body.evento, dados: body.dados ?? {}, status: "fila",
       };
       const { data, error } = await admin.from("notificacoes").insert(ins).select().single();
-      if (error) return json({ error: `Falha ao enfileirar: ${error.message}` }, 500);
+      if (error) {
+        console.error("enviar-email: enfileirar", error.message);
+        return json({ error: "Não foi possível registrar o aviso." }, 500, req);
+      }
       row = data;
     }
 
@@ -53,10 +95,13 @@ Deno.serve(async (req) => {
       : { status: "erro", assunto: msg.assunto, erro: result.erro };
     const { data: updated } = await admin.from("notificacoes").update(patch).eq("id", row.id).select().single();
 
-    return json({ notificacao: updated, enviado: result.ok }, result.ok ? 200 : 502);
+    return json({ notificacao: updated, enviado: result.ok }, result.ok ? 200 : 502, req);
   } catch (e) {
-    if (e instanceof NotifyError) return json({ error: e.message, canal: e.canal }, e.status ?? 502);
+    if (e instanceof NotifyError) {
+      console.error("enviar-email:", e.message);
+      return json({ error: "O envio de e-mails está indisponível no momento.", canal: e.canal }, e.status ?? 502, req);
+    }
     console.error("enviar-email:", e);
-    return json({ error: (e as Error).message ?? "Erro interno" }, 500);
+    return json({ error: "Não foi possível enviar o aviso agora." }, 500, req);
   }
 });

@@ -10,6 +10,7 @@ import { getNotifProvider, renderTemplate } from "./notify/index.ts";
 import type { Evento } from "./notify/types.ts";
 import { reembolsoAutomatico } from "./ciclo.ts";
 import { liberarSala } from "./disponibilidade.ts";
+import { nomeExibicaoUnidade } from "./unidadeNome.ts";
 
 // deno-lint-ignore no-explicit-any
 export type Linha = Record<string, any>;
@@ -40,9 +41,10 @@ export async function carregarAssinatura(admin: SupabaseClient, id: unknown): Pr
   return data;
 }
 
+/** Nome da unidade para o cliente ler ("Luxemburgo", sem a marca repetida). */
 export async function nomeDaUnidade(admin: SupabaseClient, unidadeId: string): Promise<string> {
   const { data } = await admin.from("unidades").select("nome").eq("id", unidadeId).maybeSingle();
-  return data?.nome || "";
+  return nomeExibicaoUnidade(data?.nome);
 }
 
 /** E-mail ao cliente + registro em notificacoes. Nunca lança: o e-mail não desfaz a operação. */

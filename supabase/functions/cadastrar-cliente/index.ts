@@ -26,7 +26,7 @@ Deno.serve(async (req) => {
     }
     const email = String(body.email).toLowerCase().trim();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return json({ error: "E-mail inválido." }, 400);
-    if (String(body.senha).length < 6) return json({ error: "A senha precisa de pelo menos 6 caracteres." }, 400);
+    if (String(body.senha).length < 8) return json({ error: "A senha precisa de pelo menos 8 caracteres." }, 400);
 
     const admin = adminClient();
 

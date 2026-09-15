@@ -28,6 +28,7 @@ import { getNotifProvider, renderTemplate } from "../_shared/notify/index.ts";
 import { proximaCobranca } from "../_shared/ciclo.ts";
 import { avisarEquipe } from "../_shared/assinaturas.ts";
 import { ocuparSala } from "../_shared/disponibilidade.ts";
+import { nomeExibicaoUnidade } from "../_shared/unidadeNome.ts";
 import {
   creditosDoPlano, fidelidadeAte, hojeBRT, idCreditoPagamento, referenciaExterna, servicosDaVenda, STATUS_PAGAMENTO_ASAAS,
 } from "../_shared/venda.ts";
@@ -46,14 +47,15 @@ async function enviarBoasVindas(admin: SupabaseClient, ps: Linha) {
   let linkSenha = "";
   if (ps.senha_definida === false) {
     const { data, error } = await admin.auth.admin.generateLink({
-      type: "recovery", email: ps.email, options: { redirectTo: `${APP_URL}/` },
+      // ?acesso=novo: a tela de senha fala de primeiro acesso, não de "esqueci a senha"
+      type: "recovery", email: ps.email, options: { redirectTo: `${APP_URL}/?acesso=novo` },
     });
     if (error) throw new Error(`link de senha: ${error.message}`);
     linkSenha = data?.properties?.action_link || "";
   }
   const { data: unidade } = await admin.from("unidades").select("nome").eq("id", ps.unidade_id).maybeSingle();
   const msg = renderTemplate("assinatura_ativa", {
-    cliente: ps.nome, email: ps.email, plano: ps.plano_nome, unidade: unidade?.nome || "",
+    cliente: ps.nome, email: ps.email, plano: ps.plano_nome, unidade: nomeExibicaoUnidade(unidade?.nome),
     categoria: ps.categoria, linkSenha, ...servicosDaVenda(ps.categoria, ps.direitos),
   });
   const envio = await getNotifProvider("email").enviar({ ...msg, para: ps.email });
@@ -89,7 +91,7 @@ async function clienteDaUnidade(admin: SupabaseClient, ps: Linha): Promise<strin
   const { error } = await admin.from("clientes").insert({
     id: clienteId, unidade_id: ps.unidade_id, nome: ps.nome, documento: ps.documento || null,
     plano: ps.plano_nome || "Assinante", fiscal: ps.categoria === "endereco_fiscal", status: "ativo",
-    desde: String(new Date().getFullYear()), contato: ps.nome, email: ps.email, telefone: ps.telefone || null,
+    desde: hojeBRT(), contato: ps.nome, email: ps.email, telefone: ps.telefone || null,
   });
   if (error) throw new Error(`clientes: ${error.message}`);
   return clienteId;

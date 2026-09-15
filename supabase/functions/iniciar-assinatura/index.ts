@@ -121,7 +121,7 @@ Deno.serve(async (req) => {
     if (!documentoValido(documento)) return json({ error: "CPF ou CNPJ inválido." }, 400, req);
     const telefone = body.telefone ? String(body.telefone) : null;
     const senhaInformada = typeof body.senha === "string" && body.senha.length > 0;
-    if (senhaInformada && body.senha.length < 6) return json({ error: "A senha precisa de pelo menos 6 caracteres." }, 400, req);
+    if (senhaInformada && body.senha.length < 8) return json({ error: "A senha precisa de pelo menos 8 caracteres." }, 400, req);
     if (origem === "app" && !senhaInformada) return json({ error: "Campo obrigatório ausente: senha" }, 400, req);
 
     const admin = adminClient();
