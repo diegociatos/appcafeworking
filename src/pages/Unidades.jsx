@@ -7,6 +7,7 @@ import { Card, Badge, Btn, PageHead, Modal, Field, Empty, ImageInput } from "../
 import { C, serif, sans, fmt, fmtShort, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 import { onboardApi } from "../lib/onboardApi.js";
+import { enviarFotoSala } from "../lib/fotosSalas.js";
 import { buscarCnpj, buscarCep } from "../lib/lookup.js";
 
 const PALETA = [C.cafe, C.teal, C.cafe2, C.teal3, C.green, C.amber, C.blue, C.red];
@@ -364,7 +365,28 @@ const PERIODOS_SALA = [
 ];
 const periodoLabel = (v) => (PERIODOS_SALA.find((p) => p.v === v)?.lb || v);
 
-function FotosGaleria({ fotos, onChange }) {
+function FotosGaleria({ fotos, onChange, unidadeId }) {
+  const [enviando, setEnviando] = useState(0);
+  const [erro, setErro] = useState("");
+  const adicionar = async (e) => {
+    const arquivos = [...(e.target.files || [])];
+    e.target.value = "";
+    if (!arquivos.length) return;
+    setErro("");
+    setEnviando(arquivos.length);
+    let atuais = fotos;
+    for (const arq of arquivos) {
+      try {
+        const url = await enviarFotoSala(unidadeId, arq);
+        atuais = [...atuais, url];
+        onChange(atuais);
+      } catch (err) {
+        setErro(`${arq.name}: ${err.message}`);
+      }
+      setEnviando((n) => n - 1);
+    }
+  };
+  const moverParaCapa = (i) => onChange([fotos[i], ...fotos.filter((_, j) => j !== i)]);
   return (
     <div>
       {fotos.length > 0 && (
@@ -373,13 +395,19 @@ function FotosGaleria({ fotos, onChange }) {
             <div key={i} style={{ position: "relative", borderRadius: 10, overflow: "hidden", aspectRatio: "4/3", background: C.cream2 }}>
               <img src={src} alt={"foto " + (i + 1)} onError={(e) => (e.currentTarget.style.display = "none")} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               <button type="button" onClick={() => onChange(fotos.filter((_, j) => j !== i))} title="Remover" style={{ position: "absolute", top: 4, right: 4, width: 22, height: 22, borderRadius: 7, background: "rgba(0,0,0,.55)", color: "#fff", display: "grid", placeItems: "center", fontSize: 14, lineHeight: 1 }}>×</button>
-              {i === 0 && <span style={{ position: "absolute", bottom: 4, left: 4, background: "rgba(0,0,0,.6)", color: "#fff", fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 6 }}>CAPA</span>}
+              {i === 0
+                ? <span style={{ position: "absolute", bottom: 4, left: 4, background: "rgba(0,0,0,.6)", color: "#fff", fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 6 }}>CAPA</span>
+                : <button type="button" onClick={() => moverParaCapa(i)} title="Usar como capa" style={{ position: "absolute", bottom: 4, left: 4, background: "rgba(0,0,0,.55)", color: "#fff", fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 6 }}>Capa</button>}
             </div>
           ))}
         </div>
       )}
-      <ImageInput value="" onChange={(v) => { if (v) onChange([...fotos, v]); }} height={100} />
-      <div style={{ fontSize: 11, color: C.text4, marginTop: 4 }}>Adicione quantas fotos quiser. A 1ª é a capa (o cliente vê ao reservar).</div>
+      <label className="cw-btn" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, height: 64, border: `1.5px dashed ${C.border}`, borderRadius: 12, color: C.text2, fontSize: 13, fontWeight: 600, cursor: enviando ? "wait" : "pointer", background: C.cream }}>
+        <input type="file" accept="image/*" multiple onChange={adicionar} disabled={enviando > 0} style={{ display: "none" }} />
+        {enviando > 0 ? `Enviando ${enviando} foto(s)…` : "+ Adicionar fotos"}
+      </label>
+      {erro && <div role="alert" style={{ fontSize: 12, color: C.red, marginTop: 4 }}>{erro}</div>}
+      <div style={{ fontSize: 11, color: C.text4, marginTop: 4 }}>Pode escolher várias de uma vez. A 1ª é a capa: aparece no site e ao reservar.</div>
     </div>
   );
 }
@@ -419,7 +447,7 @@ export function SalaForm({ inicial, unidade, onSave }) {
   return (
     <>
       <Field label="Fotos da sala">
-        <FotosGaleria fotos={f.fotos} onChange={(fotos) => setF({ ...f, fotos })} />
+        <FotosGaleria fotos={f.fotos} unidadeId={unidade?.id || inicial.unidadeId} onChange={(fotos) => setF((atual) => ({ ...atual, fotos }))} />
       </Field>
       <Field label="Nome da sala">
         <input value={f.nome} onChange={set("nome")} style={inp} placeholder="Ex: Sala Privativa 3" />

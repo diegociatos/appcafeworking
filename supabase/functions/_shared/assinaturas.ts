@@ -9,6 +9,7 @@ import { asaas, type CredAsaas, credenciaisAsaas, ErroAsaas } from "./asaas.ts";
 import { getNotifProvider, renderTemplate } from "./notify/index.ts";
 import type { Evento } from "./notify/types.ts";
 import { reembolsoAutomatico } from "./ciclo.ts";
+import { liberarSala } from "./disponibilidade.ts";
 
 // deno-lint-ignore no-explicit-any
 export type Linha = Record<string, any>;
@@ -141,6 +142,7 @@ export async function cancelarAgora(
     requer_acerto: r.manual, motivo_acerto: r.manual ? "reembolso_manual" : null,
     ...extra,
   }).eq("id", a.id);
+  await liberarSala(admin, a);
 
   return { ok: true, reembolso, valorManual: r.valorManual };
 }

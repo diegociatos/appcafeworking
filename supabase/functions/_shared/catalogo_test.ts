@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertFalse } from "jsr:@std/assert@1";
-import { ordenarPlanos, planoPublico, TURNOS, turnoValido, vagasDeSala, visivelNoSite } from "./catalogo.ts";
+import { fotosPublicas, marcarOcupadas, ordenarPlanos, planoPublico, TURNOS, turnoValido, vagasDeSala, visivelNoSite } from "./catalogo.ts";
 
 Deno.test("turno: só manhã ou tarde, e só é exigido no plano que pede", () => {
   assertEquals(Object.keys(TURNOS), ["manha", "tarde"]);
@@ -75,4 +75,22 @@ Deno.test("ordem manda; empate vai por preço, sob consulta por último", () => 
   const c = planoPublico({ ...base, id: "c", ordem: 999, preco: 0, sobConsulta: true }, "u", 10);
   const d = planoPublico({ ...base, id: "d", ordem: 999, preco: 50 }, "u", 10);
   assertEquals([c, d, b, a].sort(ordenarPlanos).map((p) => p.id), ["a", "b", "d", "c"]);
+});
+
+Deno.test("marcarOcupadas: alugada, segurada e venda sem sala ocupam; livres primeiro", () => {
+  const salas = [
+    { id: "s4", nome: "Sala 4", contratada: false },
+    { id: "s3", nome: "Sala 3", contratada: false },
+    { id: "s1", nome: "Sala 1", contratada: true },
+    { id: "s7", nome: "Sala 7", contratada: false },
+  ];
+  const r = marcarOcupadas(salas, new Set(["s4"]), 1);
+  assertEquals(r.map((s) => [s.id, s.ocupada]), [["s3", false], ["s1", true], ["s4", true], ["s7", true]]);
+  assertEquals(marcarOcupadas(salas, new Set(), 0).filter((s) => !s.ocupada).length, 3);
+  assertEquals(marcarOcupadas(salas, new Set(), 9).filter((s) => !s.ocupada).length, 0);
+});
+
+Deno.test("fotosPublicas: só https, sem data: URL", () => {
+  assertEquals(fotosPublicas(["https://x.co/a.webp", "data:image/png;base64,AAA", "http://x.co/b.jpg", 3]), ["https://x.co/a.webp"]);
+  assertEquals(fotosPublicas(undefined), []);
 });

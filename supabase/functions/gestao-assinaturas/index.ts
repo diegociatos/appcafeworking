@@ -4,6 +4,7 @@
 // GET  /functions/v1/gestao-assinaturas?unidade_id=...   (JWT de equipe)
 //   → { assinaturas: [...com documentos e aceite] }
 // POST { acao: "avaliar_documentos", assinatura_id, decisao: "aprovado"|"reprovado", parecer }
+// POST { acao: "atribuir_sala", assinatura_id, sala_id }
 // POST { acao: "resolver_acerto", assinatura_id, observacao? }
 //
 // Documentos reprovados (contrato de endereço fiscal, 3.4): cancela na hora e
@@ -15,6 +16,7 @@ import { adminClient } from "../_shared/supabaseAdmin.ts";
 import {
   APP_URL, avisarCliente, avisarEquipe, cancelarAgora, carregarAssinatura, documentosComLink, ehEquipe, usuarioDoReq,
 } from "../_shared/assinaturas.ts";
+import { ocuparSala } from "../_shared/disponibilidade.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -115,16 +117,7 @@ Deno.serve(async (req) => {
       const { error: aErr } = await admin.from("assinaturas").update({ sala_id: sala.id }).eq("id", a.id).is("sala_id", null);
       if (aErr) return json({ error: `Não foi possível atribuir: ${aErr.message}` }, 409, req);
 
-      // a sala vive na tabela e no doc do app: os dois marcam locada
-      const valorMensal = a.recorrencia === "anual" ? Math.round((Number(a.valor) / 12) * 100) / 100 : Number(a.valor);
-      await admin.from("salas").update({ contratada: true, valor_mensal: valorMensal }).eq("id", sala.id);
-      const { data: doc } = await admin.from("app_state").select("doc")
-        .eq("entity", "salas").eq("unidade_id", a.unidade_id).eq("item_id", sala.id).maybeSingle();
-      if (doc?.doc) {
-        await admin.from("app_state").update({
-          doc: { ...doc.doc, contratada: true, contratante: a.cliente_nome, valorMensal },
-        }).eq("entity", "salas").eq("unidade_id", a.unidade_id).eq("item_id", sala.id);
-      }
+      await ocuparSala(admin, { ...a, sala_id: sala.id });
       return json({ ok: true, sala: { id: sala.id, nome: sala.nome } }, 200, req);
     }
 

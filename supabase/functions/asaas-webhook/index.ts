@@ -27,6 +27,7 @@ import { garantirCobranca } from "../_shared/cobrancas.ts";
 import { getNotifProvider, renderTemplate } from "../_shared/notify/index.ts";
 import { proximaCobranca } from "../_shared/ciclo.ts";
 import { avisarEquipe } from "../_shared/assinaturas.ts";
+import { ocuparSala } from "../_shared/disponibilidade.ts";
 import {
   creditosDoPlano, fidelidadeAte, hojeBRT, idCreditoPagamento, referenciaExterna, STATUS_PAGAMENTO_ASAAS,
 } from "../_shared/venda.ts";
@@ -165,7 +166,7 @@ async function ativarCadastro(
     if (ps.asaas_subscription_id) {
       const inicio = hojeBRT();
       const prazo = Number(ps.prazo_minimo_meses || 0);
-      const { data, error } = await admin.from("assinaturas").insert({
+      const linha = {
         unidade_id: ps.unidade_id, cliente_id: clienteId, cliente_nome: ps.nome, cliente_email: ps.email,
         cliente_documento: ps.documento, plano_id: ps.plano_id, plano_nome: ps.plano_nome, categoria: ps.categoria,
         valor: ps.valor, recorrencia: ps.recorrencia === "anual" ? "anual" : "mensal", prazo_minimo_meses: prazo, fidelidade_ate: fidelidadeAte(inicio, prazo),
@@ -175,10 +176,24 @@ async function ativarCadastro(
         proxima_cobranca: proximaCobranca(inicio, ps.recorrencia === "anual" ? "anual" : "mensal"),
         docs_status: ps.categoria === "endereco_fiscal" ? "pendente" : null,
         turno: ps.turno ?? null,
-      }).select("*").single();
+        sala_id: ps.sala_id ?? null,
+      };
+      let { data, error } = await admin.from("assinaturas").insert(linha).select("*").single();
       if (error && error.code !== "23505") throw new Error(`assinaturas: ${error.message}`);
       assinatura = data ?? (await admin.from("assinaturas").select("*")
         .eq("asaas_subscription_id", ps.asaas_subscription_id).maybeSingle()).data;
+      if (!assinatura && linha.sala_id) {
+        // a sala escolhida foi para outra assinatura no meio do caminho: ativa sem sala e a equipe atribui
+        ({ data, error } = await admin.from("assinaturas").insert({ ...linha, sala_id: null }).select("*").single());
+        if (error) throw new Error(`assinaturas: ${error.message}`);
+        assinatura = data;
+        await avisarEquipe(`Sala escolhida já estava ocupada: ${ps.plano_nome}`, [
+          `Cliente: ${ps.nome} (${ps.email})`, `Sala escolhida no site: ${linha.sala_id}`,
+          "O plano foi ativado sem sala. Atribua outra em Assinaturas > Sala a atribuir.",
+        ], APP_URL);
+      } else if (assinatura?.sala_id && data) {
+        await ocuparSala(admin, assinatura);
+      }
     }
 
     await admin.from("pending_signups").update({ status: "ativo", ativado_em: new Date().toISOString() }).eq("id", ps.id);

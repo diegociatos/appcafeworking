@@ -18,7 +18,7 @@ import { handleOptions, json } from "../_shared/cors.ts";
 import { adminClient } from "../_shared/supabaseAdmin.ts";
 import { categoriaValida, DESCONTO_ANUAL_PADRAO, descontoAnualValido } from "../_shared/venda.ts";
 import { ordenarPlanos, planoPublico, visivelNoSite } from "../_shared/catalogo.ts";
-import { vagasSalaPrivativa } from "../_shared/disponibilidade.ts";
+import { salasDoPlano } from "../_shared/disponibilidade.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -58,9 +58,10 @@ Deno.serve(async (req) => {
       .filter((p) => !categoria || p.categoria === categoria)
       .sort(ordenarPlanos);
 
-    // sala privativa: quantas ainda podem ser vendidas (o site mostra "Ocupada" com 0)
+    // sala privativa: cada sala do tamanho, com fotos e se está ocupada
     await Promise.all(planos.filter((p) => p.categoria === "sala_privativa" && p.capacidade).map(async (p) => {
-      p.disponiveis = await vagasSalaPrivativa(admin, p.unidade_id, p.capacidade!, p.id);
+      p.salas = await salasDoPlano(admin, p.unidade_id, p.capacidade!, p.id);
+      p.disponiveis = p.salas.filter((s) => !s.ocupada).length;
     }));
 
     if (unidadeId) return json({ planos }, 200, req);

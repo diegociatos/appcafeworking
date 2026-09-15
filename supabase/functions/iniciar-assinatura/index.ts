@@ -4,7 +4,8 @@
 // POST /functions/v1/iniciar-assinatura   (deploy com --no-verify-jwt)
 // body: { nome, email, documento, telefone?, unidade_id, plano_id,
 //         periodicidade?: "mensal" | "anual", forma?: "PIX" | "BOLETO" | "CREDIT_CARD",
-//         senha?, aceite?: { modelo_id, hash }, origem?: "site" | "app", turnstile? }
+//         senha?, aceite?: { modelo_id, hash }, origem?: "site" | "app", turnstile?,
+//         turno?: "manha" | "tarde", sala_id? (sala privativa escolhida no site) }
 //
 // Regras (Diego, 14/09/2026):
 //   mensal → só cartão pelo site, assinatura MONTHLY, valor do plano
@@ -37,7 +38,7 @@ import { asaas, cancelarNoAsaas, type CredAsaas, credenciaisAsaas, pixDoPagament
 import { verificarTurnstile } from "../_shared/turnstile.ts";
 import { aceiteConfere, contratoVigente, registrarAceite } from "../_shared/contratos.ts";
 import { turnoValido } from "../_shared/catalogo.ts";
-import { vagasSalaPrivativa } from "../_shared/disponibilidade.ts";
+import { salasDoPlano } from "../_shared/disponibilidade.ts";
 import {
   billingTypePara, categoriaValida, DESCONTO_ANUAL_PADRAO, descontoAnualValido, documentoValido, emailValido,
   hojeBRT, normalizarDocumento, payloadAssinaturaAsaas, precoAnual,
@@ -157,10 +158,20 @@ Deno.serve(async (req) => {
       turno = body.turno;
     }
 
-    // sala privativa: só vende se houver sala livre daquele tamanho
+    // sala privativa: a sala escolhida no site precisa estar livre (a do próprio
+    // e-mail em andamento não conta: é a mesma pessoa tentando de novo)
+    let salaId: string | null = null;
     if (categoria === "sala_privativa" && Number(plano.capacidade) > 0) {
-      const vagas = await vagasSalaPrivativa(admin, unidade.id, Number(plano.capacidade), plano.id);
-      if (vagas < 1) {
+      const salas = await salasDoPlano(admin, unidade.id, Number(plano.capacidade), plano.id, email);
+      const livres = salas.filter((s) => !s.ocupada);
+      if (typeof body.sala_id === "string" && body.sala_id) {
+        const sala = salas.find((s) => s.id === body.sala_id);
+        if (!sala) return json({ error: "Sala inválida para este plano.", codigo: "SALA_INVALIDA" }, 400, req);
+        if (sala.ocupada) {
+          return json({ error: `A ${sala.nome} acabou de ser alugada. Escolha outra sala ou agende uma visita.`, codigo: "SEM_DISPONIBILIDADE" }, 409, req);
+        }
+        salaId = sala.id;
+      } else if (!livres.length) {
         return json({ error: "Todas as salas deste tamanho estão ocupadas no momento. Agende uma visita para entrar na fila.", codigo: "SEM_DISPONIBILIDADE" }, 409, req);
       }
     }
@@ -188,7 +199,7 @@ Deno.serve(async (req) => {
     if (anterior) {
       const recente = Date.now() - new Date(anterior.created_at).getTime() < JANELA_RETOMADA_MS;
       const mesmaCompra = anterior.plano_id === plano.id && anterior.unidade_id === unidade.id
-        && Number(anterior.valor) === valor && anterior.recorrencia === periodicidade && (anterior.turno ?? null) === turno;
+        && Number(anterior.valor) === valor && anterior.recorrencia === periodicidade && (anterior.turno ?? null) === turno && (anterior.sala_id ?? null) === salaId;
       if (recente && mesmaCompra && anterior.invoice_url) {
         if (senhaInformada && anterior.user_id) {
           await admin.auth.admin.updateUserById(anterior.user_id, { password: String(body.senha) });
@@ -271,7 +282,7 @@ Deno.serve(async (req) => {
       asaas_customer_id: customerId, asaas_payment_id: pagamento!.id, asaas_subscription_id: subscriptionId,
       invoice_url: pagamento!.invoiceUrl || "", status: "aguardando",
       categoria, recorrencia: periodicidade, prazo_minimo_meses: prazoMinimo,
-      direitos: plano.direitos || {}, origem, status_token: statusToken, senha_definida: senhaInformada, turno,
+      direitos: plano.direitos || {}, origem, status_token: statusToken, senha_definida: senhaInformada, turno, sala_id: salaId,
     });
     if (pErr) {
       await desfazer();

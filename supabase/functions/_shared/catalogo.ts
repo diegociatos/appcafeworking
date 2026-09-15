@@ -16,6 +16,35 @@ export interface PlanoPublico {
   escolhaTurno: boolean;
   /** sala privativa: quantas ainda podem ser vendidas; null = não se aplica */
   disponiveis: number | null;
+  /** sala privativa: as salas daquele tamanho, cada uma com nome, fotos e se está ocupada */
+  salas: SalaPublica[] | null;
+}
+
+export interface SalaPublica {
+  id: string; nome: string; capacidade: number; descricao: string;
+  comodidades: string[]; fotos: string[]; ocupada: boolean;
+}
+
+/** Só endereço https vai para o site: foto antiga gravada como data: URL pesa megabytes. */
+export const fotosPublicas = (fotos: unknown): string[] =>
+  (Array.isArray(fotos) ? fotos : []).filter((f): f is string => typeof f === "string" && /^https:\/\//.test(f)).slice(0, 12);
+
+/**
+ * Marca quais salas de um tamanho aparecem ocupadas no site.
+ * - alugada no app, com assinatura ativa ou segurada por compra em andamento: ocupada;
+ * - vendas sem sala escolhida (antigas) ocupam as últimas livres, para a conta fechar.
+ * Livres primeiro, depois por nome.
+ */
+export function marcarOcupadas<T extends { id: string; nome: string; contratada?: boolean }>(
+  salas: T[], seguradas: Set<string>, vendasSemSala: number,
+): (T & { ocupada: boolean })[] {
+  const ordem = (a: T, b: T) => String(a.nome).localeCompare(String(b.nome), "pt-BR", { numeric: true });
+  const marcadas = salas.slice().sort(ordem).map((s) => ({ ...s, ocupada: s.contratada === true || seguradas.has(s.id) }));
+  let sobra = Math.max(0, vendasSemSala);
+  for (let i = marcadas.length - 1; i >= 0 && sobra > 0; i--) {
+    if (!marcadas[i].ocupada) { marcadas[i].ocupada = true; sobra--; }
+  }
+  return marcadas.sort((a, b) => Number(a.ocupada) - Number(b.ocupada) || ordem(a, b));
 }
 
 /** Turnos do coworking de meio período (Diego, 15/09/2026). */
@@ -65,6 +94,7 @@ export function planoPublico(p: any, unidadeId: string, descontoPct: number): Pl
     ordem: p.ordem !== null && p.ordem !== "" && p.ordem !== undefined && Number.isFinite(ordem) ? ordem : 999,
     escolhaTurno: p.escolhaTurno === true,
     disponiveis: null,
+    salas: null,
   };
 }
 

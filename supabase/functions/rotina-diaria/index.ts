@@ -17,6 +17,7 @@ import { hojeBRT } from "../_shared/venda.ts";
 import { credenciaisAsaas } from "../_shared/asaas.ts";
 import { emJanelaDeAvisoRenovacao, somarDias } from "../_shared/ciclo.ts";
 import { APP_URL, avisarCliente, avisarEquipe, encerrarAssinaturaAsaas, nomeDaUnidade } from "../_shared/assinaturas.ts";
+import { liberarSala } from "../_shared/disponibilidade.ts";
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Método não permitido" }, 405);
@@ -61,6 +62,7 @@ Deno.serve(async (req) => {
           .update({ status: "cancelada", cancelada_em: new Date().toISOString() })
           .eq("id", a.id).eq("status", "cancelando").select("id");
         if (!fechada?.length) continue;
+        await liberarSala(admin, a);
         await avisarCliente(admin, a, "cancelamento_confirmado", {
           tipo: "encerramento", cancelaEm: a.cancela_em, reembolso: "nenhum", requerAcerto: false, categoria: a.categoria,
         });
