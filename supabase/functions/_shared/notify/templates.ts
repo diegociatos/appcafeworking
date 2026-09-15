@@ -121,7 +121,11 @@ const TEMPLATES: Record<Evento, (d: any) => Render> = {
       `Seu plano ${esc(d.plano)} está ativo`,
       `Olá <b>${esc(d.cliente)}</b>,<br><br>Pagamento confirmado. O plano <b>${esc(d.plano)}</b>${d.unidade ? ` na unidade <b>${esc(d.unidade)}</b>` : ""} já está ativo.<br><br>
        ${d.linkSenha ? "O próximo passo é criar sua senha para entrar na área do cliente. O link vale por tempo limitado." : "Entre na área do cliente com seu e-mail e senha."}
-       ${d.categoria === "endereco_fiscal" ? "<br><br>Na área do cliente, envie o cartão CNPJ e o documento dos sócios. Assim que conferirmos, liberamos o kit para registrar o endereço." : ""}`,
+       ${d.abertura ? "<br><br><b>Abertura da empresa:</b> nossa equipe, com a Ciatos Contabilidade, entra em contato em até 1 dia útil para coletar os dados dos sócios e das atividades. As taxas dos órgãos oficiais (Junta Comercial, prefeitura) são pagas à parte." : ""}
+       ${d.certificado ? "<br><br><b>Certificado digital:</b> o e-CNPJ A1 é emitido assim que o CNPJ estiver ativo. Vamos agendar a validação com você." : ""}
+       ${d.categoria === "endereco_fiscal" ? (d.abertura
+         ? "<br><br>Se a empresa já existe, envie na área do cliente o cartão CNPJ e o documento dos sócios. Se ainda vamos abri-la, envie o documento com foto e o comprovante de endereço dos futuros sócios."
+         : "<br><br>Na área do cliente, envie o cartão CNPJ e o documento dos sócios. Assim que conferirmos, liberamos o kit para registrar o endereço.") : ""}`,
       d.linkSenha ? { label: "Criar minha senha", url: esc(d.linkSenha) } : { label: "Entrar na área do cliente", url: APP_URL },
     ),
   }),

@@ -168,6 +168,7 @@ function PlanoForm({ inicial, onSave }) {
               <option value="endereco_fiscal">Endereço fiscal</option>
               <option value="coworking">Coworking</option>
               <option value="sala_privativa">Sala privativa</option>
+              <option value="abertura_empresa">Abertura de empresa</option>
             </select>
           </Field>
           <Field label="Selo do card" style={{ marginBottom: 0 }}>
@@ -203,6 +204,12 @@ function PlanoForm({ inicial, onSave }) {
         </div>
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.text2, marginTop: 10, cursor: "pointer" }}>
           <input type="checkbox" checked={f.direitos.cafeIncluso} onChange={setD("cafeIncluso")} /> Café incluso
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.text2, marginTop: 6, cursor: "pointer" }}>
+          <input type="checkbox" checked={f.direitos.aberturaEmpresa === true} onChange={setD("aberturaEmpresa")} /> Inclui abertura da empresa (a equipe recebe aviso na venda)
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.text2, marginTop: 6, cursor: "pointer" }}>
+          <input type="checkbox" checked={f.direitos.certificadoDigital === true} onChange={setD("certificadoDigital")} /> Inclui certificado digital e-CNPJ A1
         </label>
       </div>
       <Btn style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.5 }} onClick={salvar}>

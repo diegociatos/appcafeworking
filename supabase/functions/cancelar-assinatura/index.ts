@@ -13,7 +13,7 @@
 
 import { handleOptions, json } from "../_shared/cors.ts";
 import { adminClient } from "../_shared/supabaseAdmin.ts";
-import { hojeBRT } from "../_shared/venda.ts";
+import { avisoBonificados, hojeBRT } from "../_shared/venda.ts";
 import { planoDeCancelamento } from "../_shared/ciclo.ts";
 import {
   APP_URL, avisarCliente, avisarEquipe, cancelarAgora, carregarAssinatura, ehEquipe, usuarioDoReq,
@@ -56,6 +56,7 @@ Deno.serve(async (req) => {
         `Cliente: ${a.cliente_nome} (${a.cliente_email})`, `Pedido por: ${quem}`,
         `Devolução: ${r.reembolso === "manual" ? `MANUAL, R$ ${r.valorManual.toFixed(2)}` : r.reembolso}`,
         ...(a.categoria === "endereco_fiscal" ? ["Endereço fiscal: conferir retirada do endereço em 30 dias."] : []),
+        ...avisoBonificados(a),
         ...(motivo ? [`Motivo: ${motivo}`] : []),
       ], APP_URL);
       return json({ ok: true, tipo: "arrependimento", cancela_em: hoje, reembolso: r.reembolso }, 200, req);
@@ -75,6 +76,7 @@ Deno.serve(async (req) => {
     await avisarEquipe(`Cancelamento agendado para ${plano.cancelaEm.split("-").reverse().join("/")}: ${a.plano_nome}`, [
       `Cliente: ${a.cliente_nome} (${a.cliente_email})`, `Pedido por: ${quem}`,
       `Acerto: ${plano.requerAcerto ? `SIM (${plano.motivoAcerto === "anual" ? "devolução proporcional do anual" : "multa de fidelidade"})` : "não"}`,
+      ...avisoBonificados(a),
       ...(motivo ? [`Motivo: ${motivo}`] : []),
     ], APP_URL);
 

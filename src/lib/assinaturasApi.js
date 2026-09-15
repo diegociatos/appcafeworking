@@ -80,6 +80,7 @@ export const CATEGORIAS_CONTRATO = {
   coworking: "Sala compartilhada (coworking)",
   sala_privativa: "Sala privativa",
   sala_hora: "Sala de reunião por hora",
+  abertura_empresa: "Abertura de empresa",
 };
 
 export const STATUS_ASSINATURA = {

@@ -70,3 +70,24 @@ Deno.test("assinatura_ativa não deixa o nome digitado virar HTML", () => {
   assertEquals(m.html.includes("<img src=x"), false);
   assertStringIncludes(m.html, "&lt;img");
 });
+
+Deno.test("assinatura_ativa com abertura e certificado explica os próximos passos", () => {
+  const m = renderTemplate("assinatura_ativa", {
+    cliente: "Ana", email: "a@exemplo.com", plano: "Fiscal Pro + Certificado", unidade: "Luxemburgo",
+    categoria: "endereco_fiscal", linkSenha: "", abertura: true, certificado: true,
+  });
+  assertStringIncludes(m.html, "Abertura da empresa");
+  assertStringIncludes(m.html, "pagas à parte");
+  assertStringIncludes(m.html, "e-CNPJ A1");
+  assertStringIncludes(m.html, "futuros sócios");
+});
+
+Deno.test("assinatura_ativa da abertura avulsa não pede cartão CNPJ", () => {
+  const m = renderTemplate("assinatura_ativa", {
+    cliente: "Ana", email: "a@exemplo.com", plano: "Abertura de empresa", unidade: "Luxemburgo",
+    categoria: "abertura_empresa", linkSenha: "", abertura: true, certificado: false,
+  });
+  assertStringIncludes(m.html, "Abertura da empresa");
+  assertEquals(m.html.includes("cartão CNPJ"), false);
+  assertEquals(m.html.includes("e-CNPJ"), false);
+});

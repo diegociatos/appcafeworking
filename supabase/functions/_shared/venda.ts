@@ -8,7 +8,7 @@
 //   deno test supabase/functions/_shared/venda_test.ts
 // ============================================================================
 
-export const CATEGORIAS = ["endereco_fiscal", "coworking", "sala_privativa", "sala_hora"] as const;
+export const CATEGORIAS = ["endereco_fiscal", "coworking", "sala_privativa", "sala_hora", "abertura_empresa"] as const;
 export type Categoria = typeof CATEGORIAS[number];
 export const categoriaValida = (c: unknown): c is Categoria =>
   typeof c === "string" && (CATEGORIAS as readonly string[]).includes(c);
@@ -271,4 +271,19 @@ export function statusPublicoDoCadastro(status: unknown): "aguardando" | "confir
   if (status === "ativo") return "confirmado";
   if (status === "cancelado") return "cancelado";
   return "aguardando";
+}
+
+// Serviços executados depois da venda (abertura da empresa, certificado digital)
+
+/** Serviços únicos que a equipe executa depois da venda: abertura da empresa e certificado digital. */
+export function servicosDaVenda(categoria: unknown, direitos: unknown): { abertura: boolean; certificado: boolean } {
+  const d = (direitos && typeof direitos === "object" ? direitos : {}) as Record<string, unknown>;
+  return { abertura: categoria === "abertura_empresa" || d.aberturaEmpresa === true, certificado: d.certificadoDigital === true };
+}
+
+/** Linhas do aviso à equipe sobre abertura e certificado bonificados num plano cancelado. */
+export function avisoBonificados(a: { categoria?: unknown; direitos?: unknown }): string[] {
+  const s = servicosDaVenda(a.categoria, a.direitos);
+  if (a.categoria === "abertura_empresa" || (!s.abertura && !s.certificado)) return [];
+  return [`Plano com ${[s.abertura && "abertura da empresa", s.certificado && "certificado digital"].filter(Boolean).join(" e ")} bonificados: se já executados, cobrar a parte proporcional (cláusula 7.6 do contrato).`];
 }

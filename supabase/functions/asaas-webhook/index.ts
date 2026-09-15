@@ -29,7 +29,7 @@ import { proximaCobranca } from "../_shared/ciclo.ts";
 import { avisarEquipe } from "../_shared/assinaturas.ts";
 import { ocuparSala } from "../_shared/disponibilidade.ts";
 import {
-  creditosDoPlano, fidelidadeAte, hojeBRT, idCreditoPagamento, referenciaExterna, STATUS_PAGAMENTO_ASAAS,
+  creditosDoPlano, fidelidadeAte, hojeBRT, idCreditoPagamento, referenciaExterna, servicosDaVenda, STATUS_PAGAMENTO_ASAAS,
 } from "../_shared/venda.ts";
 
 const APP_URL = Deno.env.get("APP_URL") ?? "https://app.cafeworking.com.br";
@@ -54,7 +54,7 @@ async function enviarBoasVindas(admin: SupabaseClient, ps: Linha) {
   const { data: unidade } = await admin.from("unidades").select("nome").eq("id", ps.unidade_id).maybeSingle();
   const msg = renderTemplate("assinatura_ativa", {
     cliente: ps.nome, email: ps.email, plano: ps.plano_nome, unidade: unidade?.nome || "",
-    categoria: ps.categoria, linkSenha,
+    categoria: ps.categoria, linkSenha, ...servicosDaVenda(ps.categoria, ps.direitos),
   });
   const envio = await getNotifProvider("email").enviar({ ...msg, para: ps.email });
   await admin.from("notificacoes").insert({
@@ -197,6 +197,15 @@ async function ativarCadastro(
     }
 
     await admin.from("pending_signups").update({ status: "ativo", ativado_em: new Date().toISOString() }).eq("id", ps.id);
+    const servicos = servicosDaVenda(ps.categoria, ps.direitos);
+    await avisarEquipe(`${servicos.abertura || servicos.certificado ? "INICIAR ATENDIMENTO · " : ""}Nova venda pelo site: ${ps.plano_nome}`, [
+      `Cliente: ${ps.nome} (${ps.email}${ps.telefone ? `, ${ps.telefone}` : ""})`,
+      `CPF/CNPJ: ${ps.documento || "não informado"}`,
+      `Valor: R$ ${Number(ps.valor).toFixed(2)} (${ps.recorrencia || "mensal"})`,
+      ...(ps.turno ? [`Turno: ${ps.turno === "manha" ? "manhã (8h às 12h)" : "tarde (12h às 18h)"}`] : []),
+      ...(servicos.abertura ? ["Abertura de empresa: contatar o cliente em até 1 dia útil e encaminhar à Ciatos Contabilidade. Taxas oficiais por conta do cliente."] : []),
+      ...(servicos.certificado ? ["Certificado digital e-CNPJ A1 (1 ano): emitir depois que o CNPJ existir; agendar a validação com o cliente."] : []),
+    ], APP_URL);
     try {
       await enviarBoasVindas(admin, ps);
     } catch (e) {

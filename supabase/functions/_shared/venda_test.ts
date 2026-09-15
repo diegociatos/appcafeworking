@@ -39,6 +39,7 @@ Deno.test("e-mail e categoria", () => {
   assert(emailValido(" cliente@empresa.com.br "));
   assertFalse(emailValido("cliente@empresa"));
   assert(categoriaValida("endereco_fiscal"));
+  assert(categoriaValida("abertura_empresa"));
   assertFalse(categoriaValida("qualquer"));
 });
 
@@ -151,4 +152,14 @@ Deno.test("assinatura anual usa ciclo YEARLY", () => {
   });
   assertEquals(p.cycle, "YEARLY");
   assertEquals(p.billingType, "PIX");
+});
+
+Deno.test("servicosDaVenda e avisoBonificados", async () => {
+  const { servicosDaVenda, avisoBonificados } = await import("./venda.ts");
+  assertEquals(servicosDaVenda("abertura_empresa", {}), { abertura: true, certificado: false });
+  assertEquals(servicosDaVenda("endereco_fiscal", { aberturaEmpresa: true, certificadoDigital: true }), { abertura: true, certificado: true });
+  assertEquals(servicosDaVenda("coworking", null), { abertura: false, certificado: false });
+  assertEquals(avisoBonificados({ categoria: "endereco_fiscal", direitos: { aberturaEmpresa: true } }).length, 1);
+  assertEquals(avisoBonificados({ categoria: "abertura_empresa", direitos: {} }).length, 0);
+  assertEquals(avisoBonificados({ categoria: "endereco_fiscal", direitos: {} }).length, 0);
 });
