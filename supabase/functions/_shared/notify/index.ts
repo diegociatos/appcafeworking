@@ -25,6 +25,8 @@ export type { Canal, Evento } from "./types.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { renderTemplate } from "./templates.ts";
 import type { Evento } from "./types.ts";
+import { preferenciaPermite } from "./preferencias.ts";
+export { categoriaOpcional, deveEnviar, preferenciaPermite } from "./preferencias.ts";
 
 /**
  * Dispara uma notificação (registra em `notificacoes` + envia pelo provedor).
@@ -34,11 +36,15 @@ import type { Evento } from "./types.ts";
 export async function dispatchNotificacao(
   admin: SupabaseClient,
   opts: { unidade_id: string; evento: Evento; email?: string; cliente?: string; dados?: Record<string, unknown>; canal?: Canal },
-): Promise<{ ok: boolean; erro?: string }> {
+): Promise<{ ok: boolean; erro?: string; ignorado?: boolean }> {
   const canal: Canal = opts.canal ?? "email";
   if (!opts.email) return { ok: false, erro: "destinatário sem e-mail" };
   let rowId: string | null = null;
   try {
+    // Avisos opcionais (lembrete, reserva) respeitam a escolha do cliente.
+    if (!(await preferenciaPermite(admin, opts.email, opts.evento))) {
+      return { ok: false, ignorado: true, erro: "cliente optou por não receber este tipo de e-mail" };
+    }
     const { data: row } = await admin.from("notificacoes").insert({
       unidade_id: opts.unidade_id, cliente_nome: opts.cliente ?? null, destinatario: opts.email,
       canal, evento: opts.evento, template: opts.evento, dados: opts.dados ?? {}, status: "fila",

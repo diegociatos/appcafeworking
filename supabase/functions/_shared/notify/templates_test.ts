@@ -82,6 +82,31 @@ Deno.test("assinatura_ativa com abertura e certificado explica os próximos pass
   assertStringIncludes(m.html, "futuros sócios");
 });
 
+Deno.test("links dos e-mails levam a telas que existem no app", () => {
+  const cob = renderTemplate("boleto_lembrete", { cliente: "Ana", email: "a@x.com", valor: 10, vencimento: "2026-10-01" });
+  assertStringIncludes(cob.html, "/?p=faturas");
+  assertStringIncludes(cob.html, "/?p=notificacoes");
+  for (const velho of ["/faturas\"", "/reservas\"", "/preferencias", "/descadastro", "/documentos\""]) {
+    assertEquals(cob.html.includes(velho), false, velho);
+  }
+  assertStringIncludes(renderTemplate("reserva", { cliente: "Ana", email: "a@x.com", sala: "Reunião" }).html, "/?p=reservas");
+  assertStringIncludes(renderTemplate("correspondencia", { cliente: "Ana", email: "a@x.com" }).html, "/?p=correspondencias");
+  assertStringIncludes(renderTemplate("documentos_aprovados", { cliente: "Ana", email: "a@x.com", plano: "Fiscal" }).html, "/?p=fiscal");
+});
+
+Deno.test("correspondencia escapa remetente digitado pela equipe e não usa emoji", () => {
+  const m = renderTemplate("correspondencia", { cliente: "Ana", email: "a@x.com", remetente: "<script>x</script>", tipo: "Carta" });
+  assertEquals(m.html.includes("<script>"), false);
+  assertStringIncludes(m.html, "&lt;script&gt;");
+  assertEquals(/[\u{1F300}-\u{1FAFF}☀-➿]/u.test(m.html + m.assunto), false);
+});
+
+Deno.test("documentos_aprovados aponta para a aba Endereço fiscal", () => {
+  const m = renderTemplate("documentos_aprovados", { cliente: "Ana", email: "a@x.com", plano: "Fiscal Pro" });
+  assertStringIncludes(m.html, "Endereço fiscal");
+  assertStringIncludes(m.html, "Ver documentos do imóvel");
+});
+
 Deno.test("assinatura_ativa da abertura avulsa não pede cartão CNPJ", () => {
   const m = renderTemplate("assinatura_ativa", {
     cliente: "Ana", email: "a@exemplo.com", plano: "Abertura de empresa", unidade: "Luxemburgo",
