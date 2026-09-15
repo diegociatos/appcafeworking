@@ -17,3 +17,5 @@ supabase/.temp/
 # Referência técnica NFS-e extraída de PDFs/XSD (não versionar)
 .nfse-docs/
 !.env.production
+
+.wrangler/
