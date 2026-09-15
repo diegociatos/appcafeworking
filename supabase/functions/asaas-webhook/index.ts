@@ -174,6 +174,7 @@ async function ativarCadastro(
         status: "ativa", inicio,
         proxima_cobranca: proximaCobranca(inicio, ps.recorrencia === "anual" ? "anual" : "mensal"),
         docs_status: ps.categoria === "endereco_fiscal" ? "pendente" : null,
+        turno: ps.turno ?? null,
       }).select("*").single();
       if (error && error.code !== "23505") throw new Error(`assinaturas: ${error.message}`);
       assinatura = data ?? (await admin.from("assinaturas").select("*")

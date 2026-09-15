@@ -1,5 +1,27 @@
 import { assert, assertEquals, assertFalse } from "jsr:@std/assert@1";
-import { ordenarPlanos, planoPublico, visivelNoSite } from "./catalogo.ts";
+import { ordenarPlanos, planoPublico, TURNOS, turnoValido, vagasDeSala, visivelNoSite } from "./catalogo.ts";
+
+Deno.test("turno: só manhã ou tarde, e só é exigido no plano que pede", () => {
+  assertEquals(Object.keys(TURNOS), ["manha", "tarde"]);
+  assert(turnoValido("manha"));
+  assert(turnoValido("tarde"));
+  assertFalse(turnoValido("noite"));
+  assertFalse(turnoValido(undefined));
+  const p = planoPublico({ id: "t", nome: "Turno", preco: 390, escolhaTurno: true }, "u", 10);
+  assert(p.escolhaTurno);
+  assertFalse(planoPublico({ id: "d", nome: "Diário", preco: 750 }, "u", 10).escolhaTurno);
+});
+
+Deno.test("vagas de sala privativa: livres menos vendidas sem sala e compras em andamento", () => {
+  assertEquals(vagasDeSala(3, 0, 0), 3);
+  assertEquals(vagasDeSala(3, 1, 1), 1);
+  assertEquals(vagasDeSala(2, 2, 1), 0);
+  assertEquals(vagasDeSala(0, 0, 0), 0);
+});
+
+Deno.test("disponíveis começa desconhecido (a função preenche só para sala privativa)", () => {
+  assertEquals(planoPublico({ id: "x", nome: "X", preco: 1 }, "u", 10).disponiveis, null);
+});
 
 const base = {
   id: "pl_1", nome: "Fiscal Pro", preco: 149, recorrencia: "mensal", emiteNF: true, ativo: true,

@@ -11,10 +11,14 @@ const FILTROS = [
   ["todas", "Todas"],
   ["conferir", "Documentos para conferir"],
   ["acerto", "Acerto pendente"],
+  ["sem_sala", "Sala a atribuir"],
   ["cancelando", "Cancelamento agendado"],
   ["ativas", "Ativas"],
   ["canceladas", "Canceladas"],
 ];
+
+const TURNOS = { manha: "Manhã (8h às 12h)", tarde: "Tarde (12h às 18h)" };
+const precisaSala = (a) => a.categoria === "sala_privativa" && !a.sala_id && ["ativa", "inadimplente"].includes(a.status);
 
 const TIPOS_DOC = {
   cartao_cnpj: "Cartão CNPJ", ato_constitutivo: "Ato constitutivo", documento_socio: "Documento de sócio",
@@ -43,6 +47,7 @@ export default function Assinaturas() {
 
 function ListaAssinaturas({ unidadeId }) {
   const [lista, setLista] = useState([]);
+  const [salasLivres, setSalasLivres] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
   const [filtro, setFiltro] = useState("todas");
@@ -52,7 +57,7 @@ function ListaAssinaturas({ unidadeId }) {
     setCarregando(true);
     setErro("");
     assinaturasApi.listarDaUnidade(unidadeId)
-      .then((d) => setLista(d.assinaturas || []))
+      .then((d) => { setLista(d.assinaturas || []); setSalasLivres(d.salas_livres || []); })
       .catch((e) => setErro(e.message))
       .finally(() => setCarregando(false));
   };
@@ -62,20 +67,21 @@ function ListaAssinaturas({ unidadeId }) {
     todas: true,
     conferir: a.docs_status === "enviado",
     acerto: a.requer_acerto && !a.acerto_resolvido_em,
+    sem_sala: precisaSala(a),
     cancelando: a.status === "cancelando",
     ativas: ["ativa", "inadimplente"].includes(a.status),
     canceladas: a.status === "cancelada",
   }[filtro])), [lista, filtro]);
 
   const contagem = (id) => lista.filter((a) => ({
-    conferir: a.docs_status === "enviado", acerto: a.requer_acerto && !a.acerto_resolvido_em, cancelando: a.status === "cancelando",
+    conferir: a.docs_status === "enviado", acerto: a.requer_acerto && !a.acerto_resolvido_em, sem_sala: precisaSala(a), cancelando: a.status === "cancelando",
   }[id])).length;
 
   return (
     <>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14, alignItems: "center" }}>
         {FILTROS.map(([id, rotulo]) => {
-          const n = ["conferir", "acerto", "cancelando"].includes(id) ? contagem(id) : 0;
+          const n = ["conferir", "acerto", "sem_sala", "cancelando"].includes(id) ? contagem(id) : 0;
           return (
             <button key={id} type="button" onClick={() => setFiltro(id)}
               style={{ padding: "7px 12px", borderRadius: 999, fontSize: 13, fontWeight: 600, border: `1px solid ${filtro === id ? C.teal : C.border}`, background: filtro === id ? C.tealPale : C.white, color: filtro === id ? C.teal : C.text2, cursor: "pointer" }}>
@@ -90,14 +96,14 @@ function ListaAssinaturas({ unidadeId }) {
       {erro && <Card style={{ marginBottom: 12 }}><div role="alert" style={{ color: C.red }}>{erro}</div></Card>}
       {!carregando && !filtradas.length && <Card><Empty icon={FileCheck2} title="Nada por aqui" sub="Nenhuma assinatura neste filtro." /></Card>}
       {filtradas.map((a) => (
-        <LinhaAssinatura key={a.id} a={a} aberta={aberta === a.id} onAbrir={() => setAberta(aberta === a.id ? null : a.id)} onMudou={carregar} />
+        <LinhaAssinatura key={a.id} a={a} salasLivres={salasLivres} aberta={aberta === a.id} onAbrir={() => setAberta(aberta === a.id ? null : a.id)} onMudou={carregar} />
       ))}
     </>
   );
 }
 
-function LinhaAssinatura({ a, aberta, onAbrir, onMudou }) {
-  const [modal, setModal] = useState(null); // aprovar | reprovar | cancelar | acerto
+function LinhaAssinatura({ a, salasLivres, aberta, onAbrir, onMudou }) {
+  const [modal, setModal] = useState(null); // aprovar | reprovar | cancelar | acerto | sala
   const st = STATUS_ASSINATURA[a.status] || { rotulo: a.status, cor: "text3" };
   const docs = a.docs_status && STATUS_DOCUMENTOS[a.docs_status];
   const ativa = ["ativa", "inadimplente"].includes(a.status);
@@ -116,6 +122,7 @@ function LinhaAssinatura({ a, aberta, onAbrir, onMudou }) {
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center" }}>
           {acertoPendente && <Badge color={C.red}>Acerto pendente</Badge>}
+          {precisaSala(a) && <Badge color={C.amber}>Sala a atribuir</Badge>}
           {docs && <Badge color={C[docs.cor]}>{docs.rotulo}</Badge>}
           <Badge color={C[st.cor]}>{st.rotulo}</Badge>
           {aberta ? <ChevronUp size={16} color={C.text3} /> : <ChevronDown size={16} color={C.text3} />}
@@ -126,6 +133,8 @@ function LinhaAssinatura({ a, aberta, onAbrir, onMudou }) {
         <div style={{ borderTop: `1px solid ${C.border2}`, marginTop: 12, paddingTop: 12, fontSize: 13.5, color: C.text2 }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 8, marginBottom: 12 }}>
             <div>Documento: {a.cliente_documento || "—"}</div>
+            {a.turno && <div>Turno: {TURNOS[a.turno] || a.turno}</div>}
+            {a.categoria === "sala_privativa" && <div>Sala: {a.sala_nome || "a atribuir"}{a.capacidade ? ` · plano de ${a.capacidade} lugares` : ""}</div>}
             <div>Próxima cobrança: {dataBR(a.proxima_cobranca)}</div>
             <div>Fidelidade até: {dataBR(a.fidelidade_ate)}</div>
             <div>Contrato: {a.aceite ? `v${a.aceite.versao}, aceito ${new Date(a.aceite.aceito_em).toLocaleString("pt-BR")} (IP ${a.aceite.ip || "—"})` : "sem aceite registrado"}</div>
@@ -159,13 +168,15 @@ function LinhaAssinatura({ a, aberta, onAbrir, onMudou }) {
                 <Btn variant="ghost" style={{ color: C.red }} onClick={() => setModal("reprovar")}>Reprovar e devolver</Btn>
               </>
             )}
+            {precisaSala(a) && <Btn variant="teal" onClick={() => setModal("sala")}>Atribuir sala</Btn>}
             {ativa && <Btn variant="ghost" onClick={() => setModal("cancelar")}>Cancelar pelo cliente</Btn>}
             {acertoPendente && <Btn variant="soft" onClick={() => setModal("acerto")}>Marcar acerto resolvido</Btn>}
           </div>
         </div>
       )}
 
-      {modal && <AcaoModal tipo={modal} a={a} onFechar={() => setModal(null)} onFeito={() => { setModal(null); onMudou(); }} />}
+      {modal === "sala" && <AtribuirSalaModal a={a} salasLivres={salasLivres} onFechar={() => setModal(null)} onFeito={() => { setModal(null); onMudou(); }} />}
+      {modal && modal !== "sala" && <AcaoModal tipo={modal} a={a} onFechar={() => setModal(null)} onFeito={() => { setModal(null); onMudou(); }} />}
     </Card>
   );
 }
@@ -212,6 +223,52 @@ function AcaoModal({ tipo, a, onFechar, onFeito }) {
         <Btn variant="ghost" style={{ flex: 1 }} onClick={onFechar} disabled={enviando}>Voltar</Btn>
         <Btn style={{ flex: 1, ...(cfg.perigo ? { background: C.red, boxShadow: "none" } : {}) }} onClick={confirmar} disabled={enviando}>
           {enviando ? <><Loader2 size={15} className="cw-spin" /> Enviando…</> : cfg.botao}
+        </Btn>
+      </div>
+    </Modal>
+  );
+}
+
+function AtribuirSalaModal({ a, salasLivres, onFechar, onFeito }) {
+  // mesmo tamanho do plano primeiro; as demais ficam disponíveis para exceções
+  const ordenadas = [...salasLivres].sort((x, y) => (y.capacidade === a.capacidade) - (x.capacidade === a.capacidade));
+  const [salaId, setSalaId] = useState(ordenadas.find((s) => s.capacidade === a.capacidade)?.id || ordenadas[0]?.id || "");
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState("");
+  const escolhida = salasLivres.find((s) => s.id === salaId);
+
+  const confirmar = async () => {
+    setEnviando(true);
+    setErro("");
+    try {
+      await assinaturasApi.atribuirSala(a.id, salaId);
+      onFeito();
+    } catch (e) {
+      setErro(e.message);
+      setEnviando(false);
+    }
+  };
+
+  return (
+    <Modal title="Atribuir sala" onClose={onFechar} maxWidth={480}>
+      <p style={{ fontSize: 13.5, color: C.text2, lineHeight: 1.6, marginTop: 0 }}>
+        {a.cliente_nome} contratou {a.plano_nome}. A sala escolhida passa a aparecer como alugada no app e deixa de contar como vaga no site.
+      </p>
+      {salasLivres.length ? (
+        <Field label="Sala livre">
+          <select value={salaId} onChange={(e) => setSalaId(e.target.value)} style={inp}>
+            {ordenadas.map((s) => <option key={s.id} value={s.id}>{s.nome} · {s.capacidade || "?"} lugares</option>)}
+          </select>
+        </Field>
+      ) : <div style={{ color: C.red, fontSize: 13.5, marginBottom: 12 }}>Nenhuma sala privativa livre nesta unidade.</div>}
+      {escolhida && a.capacidade && escolhida.capacidade !== a.capacidade && (
+        <div style={{ color: C.red, fontSize: 13, marginBottom: 10 }}>Atenção: a sala tem {escolhida.capacidade} lugares e o plano é de {a.capacidade}.</div>
+      )}
+      {erro && <div role="alert" style={{ color: C.red, fontSize: 13, marginBottom: 10 }}>{erro}</div>}
+      <div style={{ display: "flex", gap: 10 }}>
+        <Btn variant="ghost" style={{ flex: 1 }} onClick={onFechar} disabled={enviando}>Voltar</Btn>
+        <Btn style={{ flex: 1 }} onClick={confirmar} disabled={enviando || !salaId}>
+          {enviando ? <><Loader2 size={15} className="cw-spin" /> Salvando…</> : "Atribuir sala"}
         </Btn>
       </div>
     </Modal>

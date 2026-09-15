@@ -12,6 +12,27 @@ export interface PlanoPublico {
   categoria: string | null; prazoMinimoMeses: number; capacidade: number | null;
   direitos: Record<string, unknown>; venderNoSite: boolean; sobConsulta: boolean;
   destaque: string | null; beneficios: string[]; ordem: number;
+  /** o cliente escolhe manhã ou tarde na contratação (planos Turno e Flex) */
+  escolhaTurno: boolean;
+  /** sala privativa: quantas ainda podem ser vendidas; null = não se aplica */
+  disponiveis: number | null;
+}
+
+/** Turnos do coworking de meio período (Diego, 15/09/2026). */
+export const TURNOS: Record<string, string> = {
+  manha: "Manhã (8h às 12h)",
+  tarde: "Tarde (12h às 18h)",
+};
+
+export const turnoValido = (t: unknown): t is "manha" | "tarde" => typeof t === "string" && t in TURNOS;
+
+/**
+ * Quantas salas privativas de um tamanho ainda podem ser vendidas: salas livres
+ * menos as já vendidas que aguardam entrega (assinatura sem sala atribuída) e
+ * as compras em andamento (aguardando pagamento).
+ */
+export function vagasDeSala(livres: number, vendidasSemSala: number, emAndamento: number): number {
+  return Math.max(0, livres - vendidasSemSala - emAndamento);
 }
 
 // deno-lint-ignore no-explicit-any
@@ -42,6 +63,8 @@ export function planoPublico(p: any, unidadeId: string, descontoPct: number): Pl
       ? p.beneficios.map((b: unknown) => String(b).trim()).filter(Boolean).slice(0, 12)
       : [],
     ordem: p.ordem !== null && p.ordem !== "" && p.ordem !== undefined && Number.isFinite(ordem) ? ordem : 999,
+    escolhaTurno: p.escolhaTurno === true,
+    disponiveis: null,
   };
 }
 

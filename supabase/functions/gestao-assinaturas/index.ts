@@ -34,6 +34,17 @@ Deno.serve(async (req) => {
         .eq("unidade_id", unidadeId).order("created_at", { ascending: false }).limit(300);
       if (error) return json({ error: error.message }, 500, req);
 
+      // salas privativas: livres (para atribuir) e nomes das já atribuídas
+      const [{ data: salas }, { data: planosDocs }] = await Promise.all([
+        admin.from("salas").select("id, nome, capacidade, contratada, active").eq("unidade_id", unidadeId).eq("tipo", "Privativa"),
+        admin.from("app_state").select("item_id, doc").eq("entity", "planos").eq("unidade_id", unidadeId),
+      ]);
+      const capacidadePlano = new Map((planosDocs || []).map((p) => [p.item_id, Number(p.doc?.capacidade) || null]));
+      const nomeSala = new Map((salas || []).map((s) => [s.id, s.nome]));
+      const salasLivres = (salas || []).filter((s) => s.active && !s.contratada)
+        .map((s) => ({ id: s.id, nome: s.nome, capacidade: s.capacidade }))
+        .sort((x, y) => String(x.nome).localeCompare(String(y.nome), "pt-BR"));
+
       const assinaturas = await Promise.all((data || []).map(async (a) => {
         const [documentos, aceite, { data: cobrancas }] = await Promise.all([
           a.docs_status ? documentosComLink(admin, a.id) : Promise.resolve([]),
@@ -43,9 +54,13 @@ Deno.serve(async (req) => {
           admin.from("cobrancas").select("valor, vencimento, status, forma:tipo").eq("assinatura_id", a.id)
             .order("vencimento", { ascending: false }).limit(6),
         ]);
-        return { ...a, documentos, aceite, cobrancas: cobrancas || [] };
+        return {
+          ...a, documentos, aceite, cobrancas: cobrancas || [],
+          capacidade: a.categoria === "sala_privativa" ? capacidadePlano.get(a.plano_id) ?? null : null,
+          sala_nome: a.sala_id ? nomeSala.get(a.sala_id) || a.sala_id : null,
+        };
       }));
-      return json({ assinaturas }, 200, req);
+      return json({ assinaturas, salas_livres: salasLivres }, 200, req);
     }
 
     if (req.method !== "POST") return json({ error: "Método não permitido" }, 405, req);
@@ -82,6 +97,35 @@ Deno.serve(async (req) => {
         return json({ ok: true, docs_status: "reprovado", reembolso: r.reembolso }, 200, req);
       }
       return json({ error: "Decisão inválida." }, 400, req);
+    }
+
+    if (body.acao === "atribuir_sala") {
+      if (a.categoria !== "sala_privativa") return json({ error: "Só assinatura de sala privativa recebe sala." }, 400, req);
+      if (!["ativa", "inadimplente"].includes(a.status)) return json({ error: "A assinatura não está ativa." }, 409, req);
+      if (a.sala_id) return json({ error: "Esta assinatura já tem sala atribuída." }, 409, req);
+      const salaId = typeof body.sala_id === "string" ? body.sala_id : "";
+      const { data: sala } = await admin.from("salas").select("id, unidade_id, nome, tipo, contratada, active")
+        .eq("id", salaId).maybeSingle();
+      if (!sala || sala.unidade_id !== a.unidade_id || sala.tipo !== "Privativa" || !sala.active) {
+        return json({ error: "Sala inválida para esta unidade." }, 400, req);
+      }
+      if (sala.contratada) return json({ error: "Esta sala já está alugada." }, 409, req);
+
+      // reserva a sala para a assinatura (índice único impede a mesma sala em duas)
+      const { error: aErr } = await admin.from("assinaturas").update({ sala_id: sala.id }).eq("id", a.id).is("sala_id", null);
+      if (aErr) return json({ error: `Não foi possível atribuir: ${aErr.message}` }, 409, req);
+
+      // a sala vive na tabela e no doc do app: os dois marcam locada
+      const valorMensal = a.recorrencia === "anual" ? Math.round((Number(a.valor) / 12) * 100) / 100 : Number(a.valor);
+      await admin.from("salas").update({ contratada: true, valor_mensal: valorMensal }).eq("id", sala.id);
+      const { data: doc } = await admin.from("app_state").select("doc")
+        .eq("entity", "salas").eq("unidade_id", a.unidade_id).eq("item_id", sala.id).maybeSingle();
+      if (doc?.doc) {
+        await admin.from("app_state").update({
+          doc: { ...doc.doc, contratada: true, contratante: a.cliente_nome, valorMensal },
+        }).eq("entity", "salas").eq("unidade_id", a.unidade_id).eq("item_id", sala.id);
+      }
+      return json({ ok: true, sala: { id: sala.id, nome: sala.nome } }, 200, req);
     }
 
     if (body.acao === "resolver_acerto") {
