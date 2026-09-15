@@ -1,0 +1,10 @@
+# App CafeWorking no Cloudflare Pages (conectado ao GitHub, branch main).
+#
+# Painel do Pages:
+#   Build command:  npm run build
+#   Output:         dist
+#   Variáveis:      NODE_VERSION = 22, VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
+
+name = "cafeworking-app"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-09-01"
