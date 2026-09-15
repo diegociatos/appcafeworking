@@ -4,6 +4,28 @@
 // ============================================================================
 
 import { supabaseConfigured } from "./supabaseAuth.js";
+import { erroDaResposta, MSG } from "./erros.js";
+
+// "Não foi possível criar a conta: <detalhe do servidor>" → só a primeira parte.
+function erroPublico(res, data, contexto) {
+  const limpo = typeof data?.error === "string" ? data.error.replace(/^(Não foi possível[^:]*):.*$/s, "$1.") : data?.error;
+  // Tela pública não tem sessão: 401 aqui não é "sessão expirada".
+  return erroDaResposta(res.status === 401 ? 400 : res.status, { ...data, error: limpo }, contexto);
+}
+async function postar(caminho, dados, contexto) {
+  let res;
+  try {
+    res = await fetch(`${URL}${caminho}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", apikey: ANON, authorization: `Bearer ${ANON}` },
+      body: JSON.stringify(dados),
+    });
+  } catch {
+    throw new Error(MSG.semConexao);
+  }
+  const data = await res.json().catch(() => ({}));
+  return { res, data, contexto };
+}
 
 const URL = import.meta.env?.VITE_SUPABASE_URL || "";
 const ANON = import.meta.env?.VITE_SUPABASE_ANON_KEY || "";
@@ -24,14 +46,9 @@ export async function fetchUnidadesPublicas() {
 }
 
 export async function cadastrarCliente(dados) {
-  if (!supabaseConfigured) throw new Error("O cadastro funciona no ambiente real (com Supabase).");
-  const res = await fetch(`${URL}/functions/v1/cadastrar-cliente`, {
-    method: "POST",
-    headers: { "content-type": "application/json", apikey: ANON, authorization: `Bearer ${ANON}` },
-    body: JSON.stringify(dados),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error || "Não foi possível concluir o cadastro.");
+  if (!supabaseConfigured) throw new Error(MSG.demo);
+  const { res, data } = await postar("/functions/v1/cadastrar-cliente", dados, "cadastrar-cliente");
+  if (!res.ok) throw erroPublico(res, data, "cadastrar-cliente");
   return data;
 }
 
@@ -52,16 +69,10 @@ export async function fetchPlanosPublicos(unidadeId) {
 // Autocheckout: cria o login (bloqueado) + a cobrança do plano e devolve o link
 // de pagamento. A conta só é liberada quando o pagamento confirma (webhook).
 export async function iniciarAssinatura(dados) {
-  if (!supabaseConfigured) throw new Error("O cadastro funciona no ambiente real (com Supabase).");
-  const res = await fetch(`${URL}/functions/v1/iniciar-assinatura`, {
-    method: "POST",
-    headers: { "content-type": "application/json", apikey: ANON, authorization: `Bearer ${ANON}` },
-    body: JSON.stringify(dados),
-  });
-  const data = await res.json().catch(() => ({}));
+  if (!supabaseConfigured) throw new Error(MSG.demo);
+  const { res, data } = await postar("/functions/v1/iniciar-assinatura", dados, "iniciar-assinatura");
   if (!res.ok) {
-    const erro = new Error(data?.error || "Não foi possível iniciar a assinatura.");
-    erro.codigo = data?.codigo;
+    const erro = erroPublico(res, data, "iniciar-assinatura");
     erro.contrato = data?.contrato;
     throw erro;
   }

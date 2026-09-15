@@ -3,7 +3,7 @@ import { LogIn, Lock, Mail, User, Phone, MapPin, Building2, Loader2, FileText, C
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
 import { Btn } from "../components/ui.jsx";
 import Logo from "../components/Logo.jsx";
-import { signInWithPassword, pedirLinkDeSenha, erroDoLinkDeSenha } from "../lib/supabaseAuth.js";
+import { signInWithPassword, pedirLinkDeSenha, erroDoLinkDeSenha, SENHA_MINIMA } from "../lib/supabaseAuth.js";
 import { fetchUnidadesPublicas, fetchPlanosPublicos, iniciarAssinatura } from "../lib/authPublic.js";
 import { buscarCnpj } from "../lib/lookup.js";
 
@@ -44,12 +44,12 @@ export default function Login() {
             {modo === "login" ? "Seja bem-vindo" : "Crie sua conta"}
           </div>
           <div style={{ fontSize: 13.5, color: C.text3, marginTop: 4 }}>
-            {modo === "login" ? "Gestão completa do seu coworking, em um só lugar." : "Reserve salas, peça na cafeteria e gerencie tudo pelo app."}
+            {modo === "login" ? "Entre para ver seu plano, reservas e faturas." : "Escolha seu plano e acompanhe tudo pela área do cliente."}
           </div>
         </div>
         {modo === "login" ? <LoginCard irParaCadastro={() => setModo("signup")} /> : <SignupCard irParaLogin={() => setModo("login")} />}
         <div style={{ textAlign: "center", fontSize: 11.5, color: C.text4, marginTop: 18 }}>
-          🔒 Conexão segura · CafeWorking
+          Conexão segura · CafeWorking
         </div>
       </div>
     </div>
@@ -83,7 +83,8 @@ function LoginCard({ irParaCadastro }) {
     try {
       await signInWithPassword(email.trim(), senha);
     } catch (err) {
-      setErro(err?.message === "Invalid login credentials" ? "E-mail ou senha incorretos." : (err?.message || "Não foi possível entrar."));
+      // supabaseAuth já traduz (senha errada, acesso aguardando pagamento, excesso de tentativas).
+      setErro(err?.message || "Não foi possível entrar agora. Tente de novo.");
       setCarregando(false);
     }
   };
@@ -92,18 +93,18 @@ function LoginCard({ irParaCadastro }) {
     <form onSubmit={entrar} style={card}>
       <div style={accent} />
       <div style={{ fontFamily: serif, fontSize: 22, color: C.text, marginBottom: 4 }}>Entrar</div>
-      <div style={{ fontSize: 13, color: C.text3, marginBottom: 20 }}>Acesse sua conta.</div>
+      <div style={{ fontSize: 13, color: C.text3, marginBottom: 20 }}>Use o e-mail cadastrado no CafeWorking.</div>
 
-      <label style={rotulo}>E-mail</label>
+      <label style={rotulo} htmlFor="login-email">E-mail</label>
       <div style={{ position: "relative", margin: "6px 0 14px" }}>
-        <Mail size={16} color={C.text4} style={iconWrap} />
-        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="voce@empresa.com.br" style={{ ...inp, paddingLeft: 36 }} autoComplete="username" />
+        <Mail size={16} color={C.text4} style={iconWrap} aria-hidden="true" />
+        <input id="login-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="voce@empresa.com.br" style={{ ...inp, paddingLeft: 36 }} autoComplete="username" />
       </div>
 
-      <label style={rotulo}>Senha</label>
+      <label style={rotulo} htmlFor="login-senha">Senha</label>
       <div style={{ position: "relative", margin: "6px 0 6px" }}>
-        <Lock size={16} color={C.text4} style={iconWrap} />
-        <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} placeholder="••••••••" style={{ ...inp, paddingLeft: 36 }} autoComplete="current-password" />
+        <Lock size={16} color={C.text4} style={iconWrap} aria-hidden="true" />
+        <input id="login-senha" type="password" value={senha} onChange={(e) => setSenha(e.target.value)} placeholder="••••••••" style={{ ...inp, paddingLeft: 36 }} autoComplete="current-password" />
       </div>
 
       <div style={{ textAlign: "right" }}>
@@ -165,12 +166,12 @@ function SignupCard({ irParaLogin }) {
   // Trocou de plano: o contrato exibido era do plano anterior.
   useEffect(() => { setContrato(null); setAceite(false); }, [planoId]);
 
-  const valido = f.nome.trim() && f.email.trim() && f.senha.length >= 6 && unidadeId && planoId && f.documento.trim();
+  const valido = f.nome.trim() && f.email.trim() && f.senha.length >= SENHA_MINIMA && unidadeId && planoId && f.documento.trim();
 
   const cadastrar = async (e) => {
     e?.preventDefault?.();
     if (!valido) {
-      setErro(!unidadeId ? "Escolha a cidade e a unidade." : !planoId ? "Escolha um plano." : "Preencha nome, CPF/CNPJ, e-mail e senha (mín. 6).");
+      setErro(!unidadeId ? "Escolha a cidade e a unidade." : !planoId ? "Escolha um plano." : `Preencha nome, CPF/CNPJ, e-mail e senha (mínimo ${SENHA_MINIMA} caracteres).`);
       return;
     }
     if (contrato && !aceite) {
@@ -226,10 +227,10 @@ function SignupCard({ irParaLogin }) {
           </button>
         )}
         <Btn variant="ghost" style={{ width: "100%", justifyContent: "center", marginTop: 10 }} onClick={irParaLogin}>
-          <CheckCircle2 size={16} /> Já paguei — entrar
+          <CheckCircle2 size={16} /> Já paguei, quero entrar
         </Btn>
-        <div style={{ fontSize: 11, color: C.text4, textAlign: "center", marginTop: 12 }}>
-          A liberação é automática após a confirmação (pode levar alguns instantes no PIX).
+        <div style={{ fontSize: 12, color: C.text3, textAlign: "center", marginTop: 12, lineHeight: 1.5 }}>
+          Seu acesso é liberado assim que o pagamento é confirmado: na hora no cartão, em alguns minutos no PIX e até 3 dias úteis no boleto. Enviamos um e-mail quando estiver pronto.
         </div>
       </div>
     );
@@ -330,7 +331,7 @@ function SignupCard({ irParaLogin }) {
       <label style={{ ...rotulo, display: "block", marginTop: 12 }}>Senha</label>
       <div style={{ position: "relative", margin: "6px 0 4px" }}>
         <Lock size={16} color={C.text4} style={iconWrap} />
-        <input type="password" value={f.senha} onChange={set("senha")} placeholder="mínimo 6 caracteres" style={{ ...inp, paddingLeft: 36 }} autoComplete="new-password" />
+        <input type="password" value={f.senha} onChange={set("senha")} placeholder={`mínimo ${SENHA_MINIMA} caracteres`} style={{ ...inp, paddingLeft: 36 }} autoComplete="new-password" />
       </div>
 
       {contrato && (
