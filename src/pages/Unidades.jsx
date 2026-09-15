@@ -1,8 +1,9 @@
 import { useState } from "react";
 import {
   Plus, MapPin, Edit3, Building2, Trash2, ArrowLeft,
-  Coffee, CalendarDays, DoorOpen, Check, ArrowRight, Package,
+  Coffee, CalendarDays, DoorOpen, Check, ArrowRight, Package, FileText,
 } from "lucide-react";
+import DocumentosUnidade from "./DocumentosUnidade.jsx";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, ImageInput } from "../components/ui.jsx";
 import { C, serif, sans, fmt, fmtShort, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
@@ -198,6 +199,7 @@ function GerenciarUnidade({ unidade, go, onBack }) {
   const tabs = [
     { id: "cafeteria", label: "Cafeteria", icon: Coffee, n: produtos.length },
     { id: "agenda", label: "Agenda", icon: CalendarDays },
+    { id: "kit", label: "Documentos do endereço fiscal", icon: FileText },
   ];
 
   return (
@@ -276,6 +278,7 @@ function GerenciarUnidade({ unidade, go, onBack }) {
 
       {tab === "cafeteria" && <CafeteriaTab unidade={unidade} produtos={produtos} go={go} />}
       {tab === "agenda" && <AgendaTab unidade={unidade} salas={salas} store={store} go={go} />}
+      {tab === "kit" && <DocumentosUnidade unidade={unidade} />}
     </div>
   );
 }

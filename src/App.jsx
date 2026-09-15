@@ -9,7 +9,8 @@ import { useStore, PERFIS } from "./lib/store.jsx";
 import Logo from "./components/Logo.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import Login from "./pages/Login.jsx";
-import { supabaseConfigured, getSession, onAuthChange, signOut, precisaDefinirSenha } from "./lib/supabaseAuth.js";
+import { supabaseConfigured, getSession, onAuthChange, signOut, precisaDefinirSenha, emailDaSessao } from "./lib/supabaseAuth.js";
+import { telaDaUrl, urlDaTela } from "./lib/rotas.js";
 import DefinirSenha from "./pages/DefinirSenha.jsx";
 import { fetchMemberships, fetchTenant, fetchAppState, fetchBoletosDb, fetchNotasDb, fetchConfigFiscalDb, fetchIsPlatformAdmin, fetchReservasDb, fetchCreditosDb } from "./lib/supabaseDb.js";
 
@@ -40,6 +41,14 @@ import Auditoria from "./pages/Auditoria.jsx";
 import KDS from "./pages/KDS.jsx";
 import Assinaturas from "./pages/Assinaturas.jsx";
 import MeuPlano from "./pages/MeuPlano.jsx";
+import InicioCliente from "./pages/cliente/Inicio.jsx";
+import FaturasCliente from "./pages/cliente/Faturas.jsx";
+import ReservarCliente from "./pages/cliente/Reservar.jsx";
+import CorrespondenciasCliente from "./pages/cliente/Correspondencias.jsx";
+import EnderecoFiscalCliente from "./pages/cliente/EnderecoFiscal.jsx";
+import FaleConoscoCliente from "./pages/cliente/FaleConosco.jsx";
+import NotificacoesCliente from "./pages/cliente/Notificacoes.jsx";
+import MinhaContaCliente from "./pages/cliente/MinhaConta.jsx";
 
 const NAV = [
   { id: "dash", label: "Dashboard", icon: LayoutDashboard, group: "principal" },
@@ -85,27 +94,54 @@ const PAGES = {
   financeiro: Financeiro, boletos: Boletos, cobrancas: Cobrancas, notafiscal: NotaFiscal, estoque: Estoque, patrimonio: Patrimonio, eventos: Eventos, chat: Chat,
   area: AreaCliente, equipe: Equipe, catalogo: Catalogo, planos: Planos, salas: Salas, config: Configuracoes, auditoria: Auditoria, kds: KDS,
   assinaturas: Assinaturas, cli_plano: MeuPlano,
-  cli_inicio: AreaCliente, cli_reservar: AreaCliente, cli_cafe: AreaCliente,
-  cli_faturas: AreaCliente, cli_docs: AreaCliente, cli_fiscal: AreaCliente, cli_chat: AreaCliente, cli_notif: AreaCliente,
+  cli_inicio: InicioCliente, cli_reservar: ReservarCliente, cli_faturas: FaturasCliente, cli_docs: CorrespondenciasCliente,
+  cli_fiscal: EnderecoFiscalCliente, cli_contato: FaleConoscoCliente, cli_notif: NotificacoesCliente, cli_conta: MinhaContaCliente,
 };
 
 export default function App() {
-  const { viewAs, franqueadoAtivo, perfil, setPerfil, activeUnit, pedidosDe, unidades, clientes, correspondenciasDe, conversasDe, reservas, meuPerfil, contratosVencendoDe, notificacaoPrefs, aplicarSessaoUsuario, hydrateFromDb, hydrateOperacional, estoqueBaixoDe, syncErrors } = useStore();
+  const { viewAs, franqueadoAtivo, perfil, setPerfil, activeUnit, pedidosDe, clientes, correspondenciasDe, conversasDe, reservas, meuPerfil, contratosVencendoDe, notificacaoPrefs, aplicarSessaoUsuario, hydrateFromDb, hydrateOperacional, estoqueBaixoDe, syncErrors } = useStore();
   const [page, setPage] = useState("dash");
   const [finTab, setFinTab] = useState("visao");
   const [finOpen, setFinOpen] = useState(true); // submenu Financeiro recolhível
   const [mobOpen, setMobOpen] = useState(false);
   const [session, setSession] = useState(getSession());
   useEffect(() => onAuthChange(setSession), []);
+  // Tela pedida pela URL (?p=faturas, link de e-mail). Guardada até o perfil do
+  // login ser conhecido; depois disso a URL acompanha a tela aberta.
+  const telaPedidaRef = useRef(telaDaUrl());
+  const [sessaoAplicada, setSessaoAplicada] = useState(!supabaseConfigured);
 
   const cfg = PERFIS[perfil] || PERFIS.franqueador;
   const ehFranqueador = perfil === "franqueador";
   const allowed = cfg.modules; // null = vê todos os módulos
 
-  // Ao trocar de perfil, abre a página inicial daquele perfil
+  const podeAbrir = (id) => Boolean(id && PAGES[id] && (!allowed || allowed.includes(id) || (id === "config" && (ehFranqueador || perfil === "master"))));
+
+  // Ao trocar de perfil, abre a tela pedida na URL (se o perfil pode) ou a inicial.
+  const pularSyncUrlRef = useRef(false);
+  const historicoIniciadoRef = useRef(false);
   useEffect(() => {
-    setPage(cfg.landing);
-  }, [perfil]); // eslint-disable-line react-hooks/exhaustive-deps
+    const pedida = telaPedidaRef.current;
+    const destino = pedida && podeAbrir(pedida) ? pedida : cfg.landing;
+    if (sessaoAplicada) telaPedidaRef.current = null;
+    pularSyncUrlRef.current = destino !== page; // espera a tela nova renderizar antes de mexer na URL
+    setPage(destino);
+  }, [perfil, sessaoAplicada]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A URL acompanha a tela (link compartilhável; o voltar do navegador funciona).
+  useEffect(() => {
+    if (!sessaoAplicada || (supabaseConfigured && !session)) return;
+    if (pularSyncUrlRef.current) { pularSyncUrlRef.current = false; return; }
+    const destino = urlDaTela(page);
+    const atual = window.location.pathname + window.location.search + window.location.hash;
+    if (destino !== atual) window.history[historicoIniciadoRef.current ? "pushState" : "replaceState"](null, "", destino);
+    historicoIniciadoRef.current = true;
+  }, [page, sessaoAplicada, session]);
+  useEffect(() => {
+    const voltar = () => { const t = telaDaUrl(); if (t && PAGES[t]) setPage(t); };
+    window.addEventListener("popstate", voltar);
+    return () => window.removeEventListener("popstate", voltar);
+  }, []);
 
   // No login real: carrega contas/unidades/equipe do banco e define o perfil/
   // unidade do usuário a partir dos vínculos (unidade_members).
@@ -117,7 +153,7 @@ export default function App() {
     const u = session.user || {};
     const ident = { email: u.email || "", nome: u.user_metadata?.nome || u.user_metadata?.name || "" };
     Promise.all([fetchMemberships(), fetchIsPlatformAdmin()])
-      .then(([membros, isAdmin]) => { if (vivo) aplicarSessaoUsuario(membros, isAdmin, ident); });
+      .then(([membros, isAdmin]) => { if (vivo) { aplicarSessaoUsuario(membros, isAdmin, ident); setSessaoAplicada(true); } });
     // Estado operacional (salas, reservas, financeiro, estoque…) + tabelas próprias.
     Promise.all([fetchAppState(), fetchBoletosDb(), fetchNotasDb(), fetchConfigFiscalDb(), fetchReservasDb(), fetchCreditosDb()])
       .then(([appState, boletos, notas, config, reservas, creditos]) => {
@@ -132,21 +168,21 @@ export default function App() {
   if (supabaseConfigured && session && precisaDefinirSenha()) return <DefinirSenha />;
   if (supabaseConfigured && !session) return <Login />;
 
-  // No perfil cliente, a navegação do portal vai toda para o sidebar
-  const cliRef = clientes[0] || {};
-  const cliUnitId = unidades.find((u) => u.nome === cliRef.unidade)?.id;
-  const corrNovasCli = correspondenciasDe(cliUnitId || "").filter((c) => c.cliente === cliRef.nome && c.status === "notificado").length;
-  const novoDocs = (cliRef.docs || []).filter((d) => d.status === "novo").length + corrNovasCli;
+  // No perfil cliente, a navegação do portal vai toda para o sidebar. O cadastro
+  // do próprio cliente vem da tabela clientes (a RLS só devolve o dele).
+  const meuEmail = emailDaSessao();
+  const meusCadastros = perfil === "cliente" && meuEmail ? clientes.filter((c) => (c.email || "").toLowerCase() === meuEmail) : [];
+  const nomeCliente = meusCadastros[0]?.nome || meuPerfil.nome || "";
   const CLIENT_NAV = [
     { id: "cli_inicio", label: "Início", icon: Home },
     { id: "cli_plano", label: "Meu plano", icon: ScrollText },
     { id: "cli_reservar", label: "Reservar sala", icon: CalendarDays },
-    { id: "cli_cafe", label: "Cafeteria", icon: Coffee },
     { id: "cli_faturas", label: "Faturas", icon: Wallet },
-    { id: "cli_docs", label: "Documentos", icon: FileText, badge: novoDocs || undefined },
-    ...(cliRef.fiscal ? [{ id: "cli_fiscal", label: "Endereço fiscal", icon: Building2 }] : []),
-    { id: "cli_chat", label: "Falar com recepção", icon: MessageSquare },
+    { id: "cli_docs", label: "Correspondências", icon: Mail },
+    ...(meusCadastros.some((c) => c.fiscal) ? [{ id: "cli_fiscal", label: "Endereço fiscal", icon: Building2 }] : []),
+    { id: "cli_contato", label: "Fale com a recepção", icon: MessageSquare },
     { id: "cli_notif", label: "Notificações", icon: Bell },
+    { id: "cli_conta", label: "Minha conta", icon: UserCircle },
   ];
 
   let nav;
@@ -184,7 +220,7 @@ export default function App() {
     master: { nome: franqueadoAtivo?.nome || "Master", papel: "Coworking (master)" },
     recepcao: { nome: "Recepção", papel: "Operador de recepção" },
     financeiro: { nome: "Financeiro", papel: "Contas a receber" },
-    cliente: { nome: "Cliente", papel: "Membro" },
+    cliente: { nome: nomeCliente || "Minha conta", papel: "Minha conta" },
   }[perfil] || { nome: "Administrador", papel: "Plataforma" };
 
   return (
@@ -375,11 +411,17 @@ export default function App() {
             const footPapel = ehCliente ? identidade.papel : (meuPerfil.cargo || identidade.papel);
             const footFoto = ehCliente ? "" : meuPerfil.foto;
             const podeConfig = ehFranqueador || perfil === "master";
+            const abrirPerfil = ehCliente ? () => { setPage("cli_conta"); setMobOpen(false); }
+              : podeConfig ? () => { setPage("config"); setMobOpen(false); } : undefined;
             return (
               <div
-                onClick={podeConfig ? () => { setPage("config"); setMobOpen(false); } : undefined}
-                title={podeConfig ? "Editar meu perfil" : undefined}
-                className={podeConfig ? "cw-nav-btn" : ""}
+                onClick={abrirPerfil}
+                onKeyDown={abrirPerfil ? (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); abrirPerfil(); } } : undefined}
+                role={abrirPerfil ? "button" : undefined}
+                tabIndex={abrirPerfil ? 0 : undefined}
+                aria-label={ehCliente ? "Abrir minha conta" : podeConfig ? "Editar meu perfil" : undefined}
+                title={ehCliente ? "Minha conta" : podeConfig ? "Editar meu perfil" : undefined}
+                className={abrirPerfil ? "cw-nav-btn" : ""}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -387,7 +429,7 @@ export default function App() {
                   padding: "8px 11px",
                   marginTop: 2,
                   borderRadius: 12,
-                  cursor: podeConfig ? "pointer" : "default",
+                  cursor: abrirPerfil ? "pointer" : "default",
                 }}
               >
                 {footFoto ? (
@@ -415,12 +457,13 @@ export default function App() {
                 )}
                 <div style={{ fontSize: 13, minWidth: 0, flex: 1 }}>
                   <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{footNome}</div>
-                  <div style={{ color: C.text3, fontSize: 11 }}>{footPapel}</div>
+                  <div style={{ color: C.text3, fontSize: 12 }}>{footPapel}</div>
                 </div>
                 {supabaseConfigured && session && (
                   <button
                     onClick={(e) => { e.stopPropagation(); signOut(); }}
                     title="Sair"
+                    aria-label="Sair"
                     className="cw-btn"
                     style={{ color: C.text3, padding: 6, flexShrink: 0 }}
                   >
@@ -471,12 +514,13 @@ export default function App() {
           >
             <Menu size={22} />
           </button>
-          <GlobalSearch setPage={setPage} />
+          {/* Busca e sino são da equipe; o cliente navega pelo menu e vê os avisos no Início */}
+          {perfil !== "cliente" && <GlobalSearch setPage={setPage} />}
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
             {/* "Ver como" é ferramenta de demonstração — escondida no login real */}
             {!autenticadoReal && <PerfilSwitcher />}
             {perfil !== "cliente" && perfil !== "franqueador" && <UnitSwitcher />}
-            <button style={{ position: "relative", color: C.text2 }} aria-label="Notificações">
+            {perfil !== "cliente" && <button style={{ position: "relative", color: C.text2 }} aria-label="Notificações">
               <Bell size={21} />
               <span
                 className="cw-pulse"
@@ -491,7 +535,7 @@ export default function App() {
                   border: "2px solid #fff",
                 }}
               />
-            </button>
+            </button>}
           </div>
         </header>
         {!ehFranqueador && !autenticadoReal && (
@@ -535,11 +579,11 @@ export default function App() {
           style={{ padding: 28, flex: 1, maxWidth: 1320, width: "100%" }}
         >
           <ErrorBoundary key={pageId} onHome={() => setPage(cfg.landing)}>
-            <Page go={setPage} section={pageId} finTab={finTab} setFinTab={setFinTab} />
+            <Page go={setPage} section={pageId} finTab={finTab} setFinTab={setFinTab} nome={nomeCliente || meuPerfil.nome} />
           </ErrorBoundary>
         </main>
       </div>
-      {syncErrors?.length > 0 && (
+      {syncErrors?.length > 0 && perfil !== "cliente" && (
         <div role="status" aria-live="polite" style={{ position: "fixed", bottom: 16, left: 16, zIndex: 200, display: "flex", alignItems: "center", gap: 8, background: "#fff", border: `1px solid ${C.amber}55`, borderRadius: 10, boxShadow: shadow.md, padding: "8px 12px", fontSize: 12, color: C.text2 }}>
           <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.amber, flexShrink: 0 }} />
           {syncErrors.length} alteração(ões) não sincronizada(s) — tentando novamente…

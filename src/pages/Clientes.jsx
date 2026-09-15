@@ -8,6 +8,7 @@ import { Card, Badge, Btn, PageHead, Empty, Modal, Field, ConfirmDialog } from "
 import { C, serif, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 import { buscarCnpj, buscarCep } from "../lib/lookup.js";
+import { textoDesde } from "../lib/unidadeNome.js";
 
 export default function Clientes() {
   const { clientes, addCliente, updateCliente, removeCliente, unidades, planosDe } = useStore();
@@ -85,7 +86,7 @@ export default function Clientes() {
               <div style={{ flex: 1, minWidth: 160 }}>
                 <div style={{ fontSize: 16, fontWeight: 600, color: C.text }}>{c.nome}</div>
                 <div style={{ fontSize: 12, color: C.text3 }}>
-                  CNPJ {c.cnpj} · desde {c.desde}
+                  CNPJ {c.cnpj} · desde {textoDesde(c.desde)}
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -224,7 +225,7 @@ function NovoClienteForm({ inicial = {}, unidades, planosDe, onSalvar }) {
       <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.text2, margin: "4px 0 14px", cursor: "pointer" }}>
         <input type="checkbox" checked={f.fiscal} onChange={(e) => setF({ ...f, fiscal: e.target.checked })} /> Usa endereço fiscal (recebe correspondências)
       </label>
-      <Btn style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.5 }} onClick={() => valido && onSalvar({ ...f, desde: inicial.desde || String(new Date().getFullYear()) })}>
+      <Btn style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.5 }} onClick={() => valido && onSalvar({ ...f, desde: inicial.desde || new Date().toISOString().slice(0, 10) })}>
         <Plus size={16} /> {inicial.id ? "Salvar cliente" : "Cadastrar cliente"}
       </Btn>
     </>

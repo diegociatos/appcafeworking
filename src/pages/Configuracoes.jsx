@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Globe, Lock, Palette, Save, Upload, Zap, UserCircle,
   Landmark, CreditCard as CardIcon,
@@ -8,6 +8,7 @@ import { Card, Badge, Btn, PageHead, Field, ImageInput, Empty } from "../compone
 import { C, serif, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 import Logo from "../components/Logo.jsx";
+import { notificacoesApi } from "../lib/notificacoesApi.js";
 
 // Apenas integrações ativas (que funcionam de verdade).
 const INTEGRACOES = [
@@ -406,14 +407,40 @@ function Notificacoes() {
 const EVENTO_LABEL = {
   boleto_nova: "Boleto · nova cobrança",
   boleto_pago: "Boleto · pagamento confirmado",
+  boleto_lembrete: "Lembrete de vencimento",
+  cobranca_nova: "Nova cobrança",
+  nfse_emitida: "Nota fiscal emitida",
   correspondencia: "Correspondência recebida",
   cafe_pedido: "Cafeteria · pedido recebido",
   cafe_pronto: "Cafeteria · pedido pronto",
+  reserva: "Reserva confirmada",
+  assinatura_ativa: "Plano ativado",
+  renovacao_anual: "Aviso de renovação",
+  cancelamento_confirmado: "Cancelamento",
+  documentos_aprovados: "Documentos aprovados",
+  documentos_reprovados: "Documentos reprovados",
+};
+const STATUS_EMAIL = {
+  enviado: ["Enviado", C.green], fila: ["Enviando", C.amber], erro: ["Não enviado", C.red],
+  cancelado: ["Cliente optou por não receber", C.text3], ignorado: ["Cliente optou por não receber", C.text3],
+  sem_email: ["Sem e-mail no cadastro", C.red], demonstracao: ["Demonstração", C.text3],
 };
 
+// Histórico real (tabela notificacoes, RLS da equipe) somado aos avisos que
+// acabaram de ser disparados nesta sessão.
 function HistoricoEmails() {
   const { activeUnit, notificacoesEmailDe } = useStore();
-  const itens = notificacoesEmailDe(activeUnit);
+  const locais = notificacoesEmailDe(activeUnit);
+  const [doBanco, setDoBanco] = useState([]);
+  useEffect(() => {
+    let vivo = true;
+    notificacoesApi.listar(activeUnit).then((l) => { if (vivo) setDoBanco(l); });
+    return () => { vivo = false; };
+  }, [activeUnit, locais.length]);
+  const itens = [
+    ...locais.filter((n) => n.status !== "enviado" && n.status !== "erro" && n.status !== "ignorado"),
+    ...doBanco.map((n) => ({ id: n.id, assunto: n.assunto || EVENTO_LABEL[n.evento] || n.evento, evento: n.evento, cliente: n.cliente_nome, destinatario: n.destinatario, status: n.status, erro: n.erro, createdAt: n.created_at })),
+  ];
   return (
     <Card style={{ padding: 0, overflow: "hidden" }}>
       <div style={{ padding: "14px 20px", borderBottom: `1px solid ${C.border2}` }}>
@@ -421,30 +448,33 @@ function HistoricoEmails() {
           <Mail size={16} color={C.cafe} /> E-mails enviados ao cliente
           {itens.length > 0 && <Badge color={C.cafe}>{itens.length}</Badge>}
         </div>
-        <div style={{ fontSize: 11.5, color: C.text4, marginTop: 4 }}>
-          Disparados por boleto, correspondência e cafeteria. Em produção saem pela Edge Function (Resend); aqui é o registro de demonstração.
+        <div style={{ fontSize: 12, color: C.text3, marginTop: 4 }}>
+          Cobranças, correspondências, reservas e avisos do plano, com a situação real do envio.
         </div>
       </div>
       {itens.length === 0 ? (
-        <Empty icon={Mail} title="Nenhum e-mail ainda" sub="Emita um boleto, notifique uma correspondência ou registre um pedido para ver o disparo aqui." />
+        <Empty icon={Mail} title="Nenhum e-mail ainda" sub="Os avisos enviados aos clientes desta unidade aparecem aqui." />
       ) : (
-        itens.map((n, i) => (
-          <div key={n.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 20px", borderBottom: i < itens.length - 1 ? `1px solid ${C.border2}` : "none" }}>
-            <div style={{ width: 34, height: 34, borderRadius: 9, background: C.greenPale, display: "grid", placeItems: "center", flexShrink: 0 }}>
-              <Mail size={16} color={C.green} />
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.assunto}</div>
-              <div style={{ fontSize: 11.5, color: C.text3 }}>
-                {EVENTO_LABEL[n.evento] || n.evento} · para {n.cliente} &lt;{n.destinatario}&gt;
+        itens.map((n, i) => {
+          const [rot, cor] = STATUS_EMAIL[n.status] || [n.status, C.text3];
+          return (
+            <div key={n.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 20px", borderBottom: i < itens.length - 1 ? `1px solid ${C.border2}` : "none" }}>
+              <div style={{ width: 34, height: 34, borderRadius: 9, background: `${cor}1a`, display: "grid", placeItems: "center", flexShrink: 0 }}>
+                <Mail size={16} color={cor} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.assunto}</div>
+                <div style={{ fontSize: 12, color: C.text3 }}>
+                  {EVENTO_LABEL[n.evento] || n.evento} · para {n.cliente || "cliente"}{n.destinatario ? ` <${n.destinatario}>` : ""}
+                </div>
+              </div>
+              <div style={{ textAlign: "right", flexShrink: 0 }}>
+                <Badge color={cor}>{rot}</Badge>
+                <div style={{ fontSize: 11, color: C.text4, marginTop: 3 }}>{n.createdAt ? new Date(n.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}</div>
               </div>
             </div>
-            <div style={{ textAlign: "right", flexShrink: 0 }}>
-              <Badge color={C.green} bg={C.greenPale}>Enviado</Badge>
-              <div style={{ fontSize: 10.5, color: C.text4, marginTop: 3 }}>{(n.createdAt || "").slice(11, 16)}</div>
-            </div>
-          </div>
-        ))
+          );
+        })
       )}
     </Card>
   );

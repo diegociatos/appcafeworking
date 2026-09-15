@@ -2,34 +2,33 @@
 // assinaturasApi — plano contratado (cliente) e gestão das assinaturas (equipe).
 // Tudo passa pelas Edge Functions com o JWT do usuário; o servidor confere dono
 // e papel. Contratos: leitura por RLS e publicação pela função do banco.
+// Erros chegam à tela sempre em português simples (lib/erros.js).
 // ============================================================================
 
 import { supabaseConfigured, getAccessToken } from "./supabaseAuth.js";
+import { erroDaResposta, erroDeRede, MSG } from "./erros.js";
+import { limparCacheCliente } from "./clienteApi.js";
 
 const URL = import.meta.env?.VITE_SUPABASE_URL || "";
 const ANON = import.meta.env?.VITE_SUPABASE_ANON_KEY || "";
 
 async function cabecalhos() {
-  if (!supabaseConfigured) throw new Error("Disponível só no ambiente real (com Supabase).");
+  if (!supabaseConfigured) throw new Error(MSG.demo);
   const token = await getAccessToken();
-  if (!token) throw new Error("Sessão expirada. Entre de novo.");
+  if (!token) throw new Error(MSG.sessao);
   return { "content-type": "application/json", apikey: ANON, authorization: `Bearer ${token}` };
 }
 
 async function chamar(caminho, { method = "GET", body } = {}) {
+  const headers = await cabecalhos();
   let res;
   try {
-    res = await fetch(`${URL}${caminho}`, { method, headers: await cabecalhos(), body: body ? JSON.stringify(body) : undefined });
+    res = await fetch(`${URL}${caminho}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
   } catch (e) {
-    if (e?.message?.startsWith("Disponível") || e?.message?.startsWith("Sessão")) throw e;
-    throw new Error("Sem conexão com o servidor. Tente de novo.");
+    throw erroDeRede(e, caminho);
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const erro = new Error(data?.error || data?.message || `Falha (${res.status})`);
-    erro.codigo = data?.codigo;
-    throw erro;
-  }
+  if (!res.ok) throw erroDaResposta(res.status, data, caminho);
   return data;
 }
 
@@ -43,16 +42,100 @@ export function lerArquivoBase64(arquivo) {
   });
 }
 
+export const TAMANHO_MAX_DOCUMENTO = 8 * 1024 * 1024;
+const LADO_MAX_FOTO = 2400;
+
+/**
+ * Foto de celular: converte para JPEG (HEIC/WebP não são aceitos) e reduz quando
+ * passa do limite. PDF, JPG e PNG dentro do limite seguem como estão.
+ */
+export async function prepararArquivo(arquivo) {
+  const ehImagem = (arquivo.type || "").startsWith("image/");
+  const aceito = ["application/pdf", "image/jpeg", "image/png"].includes(arquivo.type);
+  if (aceito && arquivo.size <= TAMANHO_MAX_DOCUMENTO) return arquivo;
+  if (!ehImagem) {
+    throw new Error(arquivo.size > TAMANHO_MAX_DOCUMENTO ? "Arquivo acima de 8 MB. Envie um PDF menor." : MSG.tipoArquivo);
+  }
+  const url = window.URL.createObjectURL(arquivo);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error("Não conseguimos ler esta foto. Tente tirar de novo ou envie em PDF."));
+      i.src = url;
+    });
+    const escala = Math.min(1, LADO_MAX_FOTO / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(img.naturalWidth * escala);
+    canvas.height = Math.round(img.naturalHeight * escala);
+    canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+    if (!blob) throw new Error("Não conseguimos preparar a foto. Envie em PDF.");
+    if (blob.size > TAMANHO_MAX_DOCUMENTO) throw new Error("A foto ficou acima de 8 MB. Envie em PDF.");
+    const nome = (arquivo.name || "foto").replace(/\.[^.]+$/, "") + ".jpg";
+    return new File([blob], nome, { type: "image/jpeg" });
+  } finally {
+    window.URL.revokeObjectURL(url);
+  }
+}
+
+/** PUT do arquivo no link assinado, informando o progresso (0 a 100). */
+function enviarComProgresso(uploadUrl, arquivo, onProgresso) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", uploadUrl);
+    xhr.setRequestHeader("apikey", ANON);
+    xhr.setRequestHeader("content-type", arquivo.type);
+    xhr.setRequestHeader("x-upsert", "false");
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgresso?.(Math.round((e.loaded / e.total) * 100)); };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else {
+        console.warn("[upload] storage", xhr.status, xhr.responseText);
+        reject(new Error(xhr.status === 413 ? "Arquivo acima de 8 MB." : xhr.status === 415 || xhr.status === 400 ? MSG.tipoArquivo : "Não foi possível enviar o arquivo. Tente de novo."));
+      }
+    };
+    xhr.onerror = () => reject(new Error(MSG.semConexao));
+    xhr.send(arquivo);
+  });
+}
+
 export const assinaturasApi = {
   configured: supabaseConfigured,
 
   // cliente
   minhaAssinatura: () => chamar("/functions/v1/minha-assinatura"),
-  cancelar: (assinatura_id, motivo) => chamar("/functions/v1/cancelar-assinatura", { method: "POST", body: { assinatura_id, motivo } }),
-  enviarDocumento: async (assinatura_id, tipo, arquivo) => chamar("/functions/v1/documentos-assinatura", {
-    method: "POST",
-    body: { assinatura_id, tipo, nome: arquivo.name, mime: arquivo.type, base64: await lerArquivoBase64(arquivo) },
-  }),
+  cancelar: async (assinatura_id, motivo) => {
+    const r = await chamar("/functions/v1/cancelar-assinatura", { method: "POST", body: { assinatura_id, motivo } });
+    limparCacheCliente();
+    return r;
+  },
+  /**
+   * Envia um documento direto ao Storage (link assinado de uso único), com
+   * progresso. Se o servidor ainda não tiver o envio direto, cai no envio antigo.
+   */
+  enviarDocumento: async (assinatura_id, tipo, original, onProgresso) => {
+    const arquivo = await prepararArquivo(original);
+    const base = { assinatura_id, tipo, nome: arquivo.name, mime: arquivo.type };
+    let preparo = null;
+    try {
+      preparo = await chamar("/functions/v1/documentos-assinatura", { method: "POST", body: { acao: "preparar", ...base, bytes: arquivo.size } });
+    } catch (e) {
+      if (e.status && e.status !== 400) throw e;
+      if (e.status === 400 && e.message !== "Arquivo inválido.") throw e; // recusa real (tipo, tamanho)
+    }
+    if (!preparo?.upload_url) {
+      onProgresso?.(30);
+      const r = await chamar("/functions/v1/documentos-assinatura", { method: "POST", body: { ...base, base64: await lerArquivoBase64(arquivo) } });
+      onProgresso?.(100);
+      limparCacheCliente("assinatura");
+      return r;
+    }
+    await enviarComProgresso(preparo.upload_url, arquivo, onProgresso);
+    const r = await chamar("/functions/v1/documentos-assinatura", { method: "POST", body: { acao: "confirmar", ...base, id: preparo.id } });
+    limparCacheCliente("assinatura");
+    return r;
+  },
 
   // equipe
   listarDaUnidade: (unidade_id) => chamar(`/functions/v1/gestao-assinaturas?unidade_id=${encodeURIComponent(unidade_id)}`),

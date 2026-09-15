@@ -24,6 +24,7 @@ import {
 import { getCurrentCompetencia, parseDateToCompetencia } from "./dateUtils.js";
 import { legacyReservaToDateRange, dateRangeToLegacy, temConflito, TZ } from "./reservas.js";
 import { reservasApi } from "./reservasApi.js";
+import { notificacoesApi } from "./notificacoesApi.js";
 import {
   PERFIS, SECOES, gerarDadosBoleto,
   seedUnidades, seedFranqueados, seedUsuarios, seedContas, seedLancamentos,
@@ -95,6 +96,7 @@ export function StoreProvider({ children }) {
   // (imediato). Falha de rede → retry com backoff (3x); persistindo a falha,
   // marca em `syncErrors` para a UI avisar. Demo (REAL=false) = no-op.
   const syncedRef = useRef({});          // entity -> Map(id -> { unidadeId, json })
+  const perfilRef = useRef("franqueador"); // perfil atual, lido pelo sync (atualizado a cada render)
   const syncTimersRef = useRef(new Map()); // "entity:id" -> timeoutId (debounce)
   const [syncErrors, setSyncErrors] = useState([]); // [{ entity, id, unidadeId, erro }]
   const docsGlobaisHidratadosRef = useRef(!REAL); // docs globais (categorias, etapas/origens do CRM) só sincronizam após hidratar (evita sobrescrever com o seed)
@@ -110,6 +112,8 @@ export function StoreProvider({ children }) {
   // Executa a escrita com retry/backoff (até 3 tentativas). putAppState/
   // delAppState lançam em falha → entramos no catch.
   const _comBackoff = (fn, entity, unidadeId, id, tentativa = 0) => {
+    // Cliente não grava app_state (RLS recusa): nada de fila nem aviso de "não sincronizado".
+    if (perfilRef.current === "cliente") return;
     Promise.resolve()
       .then(fn)
       .then(() => _clearSyncErr(entity, id))
@@ -119,6 +123,7 @@ export function StoreProvider({ children }) {
       });
   };
   const _agendarPut = (entity, unidadeId, id, item) => {
+    if (perfilRef.current === "cliente") return;
     const k = _syncKey(entity, id);
     const ant = syncTimersRef.current.get(k);
     if (ant) clearTimeout(ant.t);
@@ -221,6 +226,7 @@ export function StoreProvider({ children }) {
 
   const [viewAs, setViewAs] = useState(null); // id do franqueado, ou null = franqueador
   const [perfil, setPerfilState] = useState("franqueador"); // perfil de acesso previewado
+  perfilRef.current = perfil;
   const [meuPerfil, setMeuPerfil] = useState({
     nome: "Diego Garcia",
     cargo: "Administrador",
@@ -233,46 +239,50 @@ export function StoreProvider({ children }) {
   const [notificacaoPrefs, setNotificacaoPrefs] = useState({});
   const updateNotificacaoPrefs = (prefs) => setNotificacaoPrefs(prefs);
 
-  // Opt-in do cliente por categoria. Transacionais (cobranca/correspondencia)
-  // sempre vão; opcionais (cafeteria/reservas/novidades) respeitam a escolha.
-  const [clienteNotifPrefs, setClienteNotifPrefs] = useState({
-    cobranca: true, correspondencia: true, cafeteria: true, reservas: true, novidades: false,
-  });
-  const updateClienteNotifPrefs = (patch) => setClienteNotifPrefs((p) => ({ ...p, ...patch }));
-  const _categoriaEvento = (evento) =>
-    evento.indexOf("boleto") === 0 ? "cobranca"
-      : evento.indexOf("cafe") === 0 ? "cafeteria"
-      : evento === "reserva" ? "reservas"
-      : evento === "correspondencia" ? "correspondencia" : "novidades";
-
-  // Notificações ao cliente (e-mail) — DEMONSTRAÇÃO: registra o que SERIA
-  // enviado. Em produção, cada gatilho chama a Edge Function `enviar-email`
-  // (Resend); aqui só gravamos no "outbox" para mostrar o histórico.
+  // Avisos por e-mail ao cliente. Em produção saem de verdade pela Edge Function
+  // enviar-email (Resend), que confere se quem pede é da equipe da unidade,
+  // respeita a preferência do cliente e grava o status real em `notificacoes`.
+  // O registro local serve só para a tela mostrar o resultado na hora. Sem
+  // e-mail cadastrado, nada é enviado e o registro diz isso. Na demonstração
+  // (sem Supabase) nada sai e o registro fica como "demonstração".
   const [notificacoesEmail, setNotificacoesEmail] = useState([]);
   const _brl = (n) => "R$ " + Number(n || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
-  const _emailDe = (nome) =>
-    (nome || "cliente").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
-      .replace(/[^a-z0-9]+/g, ".").replace(/^\.|\.$/g, "") + "@cliente.com.br";
   const _assuntoEmail = (evento, d = {}) => ({
     boleto_nova: `Nova cobrança · ${_brl(d.valor)}`,
     boleto_pago: `Pagamento confirmado · ${_brl(d.valor)}`,
     correspondencia: "Você recebeu uma correspondência",
     cafe_pedido: `Pedido recebido · ${_brl(d.total)}`,
-    cafe_pronto: "Seu pedido está pronto ☕",
-  }[evento] || "Notificação CafeWorking");
-  const enfileirarEmail = (unidadeId, { cliente, email, evento, dados = {} }) => {
-    // Respeita o opt-in do cliente para categorias opcionais.
-    const cat = _categoriaEvento(evento);
-    const opcional = cat === "cafeteria" || cat === "reservas" || cat === "novidades";
-    if (opcional && clienteNotifPrefs[cat] === false) return null;
+    cafe_pronto: "Seu pedido está pronto",
+    reserva: "Reserva confirmada",
+  }[evento] || "Aviso do CafeWorking");
+  const _registrarAviso = (reg) => setNotificacoesEmail((ns) => [reg, ...ns.filter((n) => n.id !== reg.id)].slice(0, 60));
+  /** Dispara o e-mail ao cliente. Devolve Promise<{ status: enviado|erro|ignorado|sem_email|demonstracao, erro? }>. */
+  const enfileirarEmail = (unidadeId, { cliente, clienteId, email, evento, dados = {} }) => {
+    if (perfilRef.current === "cliente") return Promise.resolve({ status: "ignorado" });
+    const cad = (clienteId && clientes.find((c) => c.id === clienteId))
+      || clientes.filter((c) => c.nome === cliente && (c.unidadeId === unidadeId || !c.unidadeId))[0];
+    const destinatario = String(email || cad?.email || "").trim();
     const reg = {
       id: "ntf" + Date.now() + Math.floor(Math.random() * 1000),
-      unidadeId, cliente: cliente || "Cliente", destinatario: email || _emailDe(cliente),
+      unidadeId, cliente: cliente || cad?.nome || "Cliente", destinatario,
       canal: "email", evento, assunto: _assuntoEmail(evento, dados), dados,
-      status: "enviado", createdAt: new Date().toISOString(),
+      status: "fila", createdAt: new Date().toISOString(),
     };
-    setNotificacoesEmail((ns) => [reg, ...ns].slice(0, 60));
-    return reg;
+    if (!destinatario) {
+      _registrarAviso({ ...reg, status: "sem_email", erro: "Cliente sem e-mail no cadastro" });
+      return Promise.resolve({ status: "sem_email", erro: "Cliente sem e-mail no cadastro." });
+    }
+    if (!REAL) {
+      _registrarAviso({ ...reg, status: "demonstracao" });
+      return Promise.resolve({ status: "demonstracao" });
+    }
+    _registrarAviso(reg);
+    return notificacoesApi.enviar({ unidade_id: unidadeId, evento, email: destinatario, cliente: reg.cliente, dados })
+      .then((r) => {
+        const status = r.ignorado ? "ignorado" : r.enviado ? "enviado" : "erro";
+        _registrarAviso({ ...reg, status, erro: r.erro || null });
+        return { status, erro: r.erro };
+      });
   };
   const notificacoesEmailDe = (unidadeId) => notificacoesEmail.filter((n) => n.unidadeId === unidadeId);
 
@@ -425,7 +435,7 @@ export function StoreProvider({ children }) {
         createdAt: new Date().toISOString(),
       }, ...ls]);
     }
-    if (unidadeId) enfileirarEmail(unidadeId, { cliente: r.cliente, evento: "reserva", dados: { sala: sala?.nome } });
+    // A confirmação por e-mail sai do servidor (criar-reserva), com a preferência do cliente.
     if (valorFinal > 0 && unidadeId) {
       const sub = sala?.tipo === "Privativa" ? "Aluguel de Salas Privativas" : "Aluguel de Sala de Reunião";
       addLancamento(unidadeId, { tipo: "entrada", descricao: `Reserva ${sala?.nome || ""} · ${r.cliente}`, categoria: "Receita Operacional Bruta", subcategoria: sub, valor: valorFinal, contaId: contas.find((c) => c.unidadeId === unidadeId)?.id, data: "—", status: "previsto" });
@@ -499,13 +509,23 @@ export function StoreProvider({ children }) {
   // Correspondências (endereço fiscal) -------------------------------------
   const addCorrespondencia = (unidadeId, c) =>
     setCorrespondencias((cs) => [{ id: "co" + Date.now(), unidadeId, status: "aguardando", ...c }, ...cs]);
-  const updateCorrespondencia = (id, patch) => {
+  const updateCorrespondencia = (id, patch) =>
     setCorrespondencias((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } : c)));
-    // Ao avisar o cliente (status "notificado"), dispara o e-mail.
-    if (patch.status === "notificado") {
-      const co = correspondencias.find((c) => c.id === id);
-      if (co) enfileirarEmail(co.unidadeId, { cliente: co.cliente, evento: "correspondencia", dados: { remetente: co.remetente, tipo: co.tipo } });
+  /**
+   * "Notificar cliente": manda o e-mail de correspondência de verdade e só marca
+   * como notificada quando o envio deu certo. Devolve o resultado para a tela.
+   */
+  const notificarCorrespondencia = async (id) => {
+    const co = correspondencias.find((c) => c.id === id);
+    if (!co) return { status: "erro", erro: "Correspondência não encontrada." };
+    const r = await enfileirarEmail(co.unidadeId, {
+      cliente: co.cliente, clienteId: co.clienteId, email: co.clienteEmail, evento: "correspondencia",
+      dados: { remetente: co.remetente, tipo: co.tipo },
+    });
+    if (r.status === "enviado" || r.status === "demonstracao") {
+      updateCorrespondencia(id, { status: "notificado", urgente: false, notificadoEm: new Date().toISOString() });
     }
+    return r;
   };
   const removeCorrespondencia = (id) => setCorrespondencias((cs) => cs.filter((c) => c.id !== id));
   const correspondenciasDe = (unidadeId) => correspondencias.filter((c) => c.unidadeId === unidadeId);
@@ -633,7 +653,7 @@ export function StoreProvider({ children }) {
     const unidadeId = c.unidadeId || unidades.find((u) => u.nome === c.unidade)?.id || activeUnit;
     const novo = {
       id: "c" + Date.now(), status: "ativo", docs: [],
-      desde: c.desde || String(new Date().getFullYear()),
+      desde: c.desde || new Date().toISOString().slice(0, 10),
       ...c, unidadeId,
     };
     setClientes((cs) => [novo, ...cs]);
@@ -1218,7 +1238,6 @@ export function StoreProvider({ children }) {
       meuPerfil, updateMeuPerfil,
       notificacaoPrefs, updateNotificacaoPrefs,
       notificacoesEmail, notificacoesEmailDe, enfileirarEmail,
-      clienteNotifPrefs, updateClienteNotifPrefs,
       addFranqueado, updateFranqueado, removeFranqueado,
       addUsuario, adicionarUsuario, updateUsuario, removeUsuario, usuariosDe,
       clientes, clientesDe, addCliente, updateCliente, removeCliente,
@@ -1227,7 +1246,7 @@ export function StoreProvider({ children }) {
       addProduto, updateProduto, removeProduto,
       addReserva, criarReserva, removeReserva, marcarReservasVistas,
       pedidos, addPedido, updatePedido, removePedido, pedidosDe,
-      correspondencias, addCorrespondencia, updateCorrespondencia, removeCorrespondencia, correspondenciasDe,
+      correspondencias, addCorrespondencia, updateCorrespondencia, notificarCorrespondencia, removeCorrespondencia, correspondenciasDe,
       conversas, conversasDe, enviarMensagemCliente, responderConversa, marcarConversaLida,
       salasDe, produtosDe, unidadesDe,
       contas, lancamentos, catalogo, categorias,
@@ -1253,7 +1272,7 @@ export function StoreProvider({ children }) {
     // memorizamos o value apenas pelos ESTADOS. Incluir as funções nas deps
     // anularia o useMemo (novo objeto a cada render) — comportamento indesejado.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, configFiscal, notasFiscais, planos, recibos, creditLedger, configVenda, syncErrors, reservas, leads, crmEtapas, crmOrigens, cobrancaTemplate, eventos, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail, clienteNotifPrefs]
+    [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, configFiscal, notasFiscais, planos, recibos, creditLedger, configVenda, syncErrors, reservas, leads, crmEtapas, crmOrigens, cobrancaTemplate, eventos, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail]
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

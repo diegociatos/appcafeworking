@@ -37,7 +37,9 @@ export const PERFIS = {
   cliente: {
     label: "Cliente",
     cor: "#6E4E3B",
-    modules: ["cli_inicio", "cli_plano", "cli_reservar", "cli_cafe", "cli_faturas", "cli_docs", "cli_fiscal", "cli_chat", "cli_notif"],
+    // Cafeteria e chat saíram do cliente: dependiam de app_state (o cliente não
+    // grava lá) e descartavam o pedido/mensagem. Contato real em cli_contato.
+    modules: ["cli_inicio", "cli_plano", "cli_reservar", "cli_faturas", "cli_docs", "cli_fiscal", "cli_contato", "cli_notif", "cli_conta"],
     landing: "cli_inicio",
   },
 };

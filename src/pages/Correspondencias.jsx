@@ -24,10 +24,26 @@ function baixarAnexo(anexo) {
   a.click();
   a.remove();
 }
+const recebidaEm = (c) => (c.recebidoEm
+  ? new Date(c.recebidoEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
+  : c.recebido || "");
+const AVISO = {
+  enviado: [C.green, "E-mail enviado ao cliente."],
+  demonstracao: [C.text3, "Demonstração: nenhum e-mail foi enviado."],
+  ignorado: [C.amber, "O cliente escolheu não receber este tipo de aviso."],
+  sem_email: [C.red, "Cliente sem e-mail no cadastro. Atualize em Clientes e notifique de novo."],
+  erro: [C.red, "O e-mail não saiu. Tente de novo em instantes."],
+};
 const ehImagem = (anexo) => anexo && ((anexo.tipo || "").startsWith("image") || /^data:image|\.(png|jpe?g|webp|gif)$/i.test(anexo.url || ""));
 
 export default function Correspondencias() {
-  const { activeUnit, unidadeAtiva, correspondenciasDe, addCorrespondencia, updateCorrespondencia, removeCorrespondencia } = useStore();
+  const { activeUnit, unidadeAtiva, correspondenciasDe, addCorrespondencia, updateCorrespondencia, notificarCorrespondencia, removeCorrespondencia } = useStore();
+  const [avisos, setAvisos] = useState({}); // id → { status, erro, enviando }
+  const notificar = async (id) => {
+    setAvisos((a) => ({ ...a, [id]: { enviando: true } }));
+    const r = await notificarCorrespondencia(id);
+    setAvisos((a) => ({ ...a, [id]: r }));
+  };
   const [filtro, setFiltro] = useState("todas");
   const [modal, setModal] = useState(false);
   const [anexoAberto, setAnexoAberto] = useState(null);
@@ -91,15 +107,15 @@ export default function Correspondencias() {
                 <div style={{ fontFamily: serif, fontSize: 18, color: C.text, lineHeight: 1.2 }}>{c.cliente}</div>
                 <div style={{ fontSize: 13, color: C.text3, marginTop: 4 }}><b style={{ color: C.text2 }}>{c.remetente}</b> · {c.tipo}</div>
                 {c.descricao && <div style={{ fontSize: 12.5, color: C.text2, marginTop: 6, background: C.cream, borderRadius: 8, padding: "6px 9px" }}>{c.descricao}</div>}
-                <div style={{ fontSize: 12, color: C.text4, marginTop: 6 }}>Recebida {c.recebido}</div>
+                <div style={{ fontSize: 12, color: C.text3, marginTop: 6 }}>Recebida {recebidaEm(c)}</div>
 
                 <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
                   <Btn variant="ghost" style={{ flex: 1, justifyContent: "center", padding: "9px 10px", fontSize: 12 }} onClick={() => setAnexoAberto(c)} disabled={!c.anexo}>
                     <Paperclip size={14} /> Ver anexo
                   </Btn>
                   {(c.status === "aguardando" || c.status === "digitalizada") && (
-                    <Btn variant="teal" style={{ flex: 1, justifyContent: "center", padding: "9px 10px", fontSize: 12 }} onClick={() => updateCorrespondencia(c.id, { status: "notificado", urgente: false })}>
-                      <MessageCircle size={14} /> Notificar cliente
+                    <Btn variant="teal" style={{ flex: 1, justifyContent: "center", padding: "9px 10px", fontSize: 12 }} disabled={avisos[c.id]?.enviando} onClick={() => notificar(c.id)}>
+                      <MessageCircle size={14} /> {avisos[c.id]?.enviando ? "Enviando e-mail…" : "Notificar cliente"}
                     </Btn>
                   )}
                   {c.status === "notificado" && (
@@ -108,6 +124,11 @@ export default function Correspondencias() {
                     </Btn>
                   )}
                 </div>
+                {avisos[c.id]?.status && (
+                  <div role="status" style={{ fontSize: 12, marginTop: 10, color: (AVISO[avisos[c.id].status] || AVISO.erro)[0] }}>
+                    {avisos[c.id].status === "erro" && avisos[c.id].erro ? avisos[c.id].erro : (AVISO[avisos[c.id].status] || AVISO.erro)[1]}
+                  </div>
+                )}
                 <div style={{ marginTop: 12 }}><Badge color={s.c} bg={s.bg}>{s.l}</Badge></div>
               </Card>
             );
@@ -151,9 +172,10 @@ export default function Correspondencias() {
 function RegistrarForm({ unidadeNome, onSave }) {
   const { clientesDe } = useStore();
   const clientesUnidade = clientesDe(unidadeNome);
-  const [f, setF] = useState({ cliente: clientesUnidade[0]?.nome || "", remetente: "", tipo: "Notificação", descricao: "", urgente: false, anexo: null });
+  const [f, setF] = useState({ clienteId: clientesUnidade[0]?.id || "", remetente: "", tipo: "Notificação", descricao: "", urgente: false, anexo: null });
+  const escolhido = clientesUnidade.find((c) => c.id === f.clienteId);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
-  const valido = f.cliente && f.remetente.trim();
+  const valido = escolhido && f.remetente.trim();
 
   return (
     <>
@@ -167,12 +189,12 @@ function RegistrarForm({ unidadeNome, onSave }) {
             Nenhum cliente cadastrado nesta unidade. Cadastre o cliente em "Clientes" para vincular a correspondência.
           </div>
         ) : (
-          <select value={f.cliente} onChange={set("cliente")} style={inp}>
-            {clientesUnidade.map((c) => <option key={c.id} value={c.nome}>{c.nome}{c.fiscal ? " · endereço fiscal" : ""}</option>)}
+          <select value={f.clienteId} onChange={set("clienteId")} style={inp}>
+            {clientesUnidade.map((c) => <option key={c.id} value={c.id}>{c.nome}{c.fiscal ? " · endereço fiscal" : ""}{c.email ? "" : " · sem e-mail"}</option>)}
           </select>
         )}
         <div style={{ fontSize: 11, color: C.text4, marginTop: 5 }}>
-          A correspondência aparece automaticamente na Área do Cliente selecionado.
+          A correspondência aparece na área do cliente. O e-mail sai quando você clicar em "Notificar cliente".
         </div>
       </Field>
 
@@ -195,7 +217,10 @@ function RegistrarForm({ unidadeNome, onSave }) {
         <input type="checkbox" checked={f.urgente} onChange={(e) => setF({ ...f, urgente: e.target.checked })} />
         Marcar como urgente
       </label>
-      <Btn style={{ width: "100%", justifyContent: "center" }} onClick={() => valido && onSave({ ...f, recebido: "Agora" })}>
+      <Btn style={{ width: "100%", justifyContent: "center" }} onClick={() => valido && onSave({
+        ...f, cliente: escolhido.nome, clienteId: escolhido.id, clienteEmail: (escolhido.email || "").trim().toLowerCase() || null,
+        recebidoEm: new Date().toISOString(),
+      })}>
         Registrar recebimento
       </Btn>
     </>
