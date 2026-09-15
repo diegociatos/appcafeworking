@@ -58,3 +58,7 @@ where entity = 'planos' and unidade_id = 'un_cafeworkingluxembu_e78be3'
 order by item_id;
 
 commit;
+
+-- Fiscal Premium fora do site: a vitrine fica com 3 planos (Diego, 16/09/2026)
+update app_state set doc = doc || '{"venderNoSite": false}'::jsonb
+where entity='planos' and unidade_id='un_cafeworkingluxembu_e78be3' and item_id='pl_site_fiscal_premium';
