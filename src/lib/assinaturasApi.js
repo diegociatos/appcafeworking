@@ -59,6 +59,9 @@ export const assinaturasApi = {
   avaliarDocumentos: (assinatura_id, decisao, parecer) => chamar("/functions/v1/gestao-assinaturas", {
     method: "POST", body: { acao: "avaliar_documentos", assinatura_id, decisao, parecer },
   }),
+  atribuirSala: (assinatura_id, sala_id) => chamar("/functions/v1/gestao-assinaturas", {
+    method: "POST", body: { acao: "atribuir_sala", assinatura_id, sala_id },
+  }),
   resolverAcerto: (assinatura_id, observacao) => chamar("/functions/v1/gestao-assinaturas", {
     method: "POST", body: { acao: "resolver_acerto", assinatura_id, observacao },
   }),

@@ -36,6 +36,8 @@ import { ipDaReq } from "../_shared/audit.ts";
 import { asaas, cancelarNoAsaas, type CredAsaas, credenciaisAsaas, pixDoPagamento } from "../_shared/asaas.ts";
 import { verificarTurnstile } from "../_shared/turnstile.ts";
 import { aceiteConfere, contratoVigente, registrarAceite } from "../_shared/contratos.ts";
+import { turnoValido } from "../_shared/catalogo.ts";
+import { vagasSalaPrivativa } from "../_shared/disponibilidade.ts";
 import {
   billingTypePara, categoriaValida, DESCONTO_ANUAL_PADRAO, descontoAnualValido, documentoValido, emailValido,
   hojeBRT, normalizarDocumento, payloadAssinaturaAsaas, precoAnual,
@@ -148,6 +150,21 @@ Deno.serve(async (req) => {
     const prazoMinimo = periodicidade === "anual" ? 12 : Math.max(0, Math.floor(Number(plano.prazoMinimoMeses || 0)));
     const categoria = categoriaValida(plano.categoria) ? plano.categoria : null;
 
+    // coworking de meio período: manhã ou tarde
+    let turno: "manha" | "tarde" | null = null;
+    if (plano.escolhaTurno === true) {
+      if (!turnoValido(body.turno)) return json({ error: "Escolha o turno: manhã (8h às 12h) ou tarde (12h às 18h).", codigo: "TURNO_OBRIGATORIO" }, 400, req);
+      turno = body.turno;
+    }
+
+    // sala privativa: só vende se houver sala livre daquele tamanho
+    if (categoria === "sala_privativa" && Number(plano.capacidade) > 0) {
+      const vagas = await vagasSalaPrivativa(admin, unidade.id, Number(plano.capacidade), plano.id);
+      if (vagas < 1) {
+        return json({ error: "Todas as salas deste tamanho estão ocupadas no momento. Agende uma visita para entrar na fila.", codigo: "SEM_DISPONIBILIDADE" }, 409, req);
+      }
+    }
+
     const contrato = categoria ? await contratoVigente(admin, unidade.id, categoria) : null;
     if (origem === "site" && !contrato) {
       return json({ error: "Contratação online indisponível para este plano no momento.", codigo: "SEM_CONTRATO" }, 412, req);
@@ -171,7 +188,7 @@ Deno.serve(async (req) => {
     if (anterior) {
       const recente = Date.now() - new Date(anterior.created_at).getTime() < JANELA_RETOMADA_MS;
       const mesmaCompra = anterior.plano_id === plano.id && anterior.unidade_id === unidade.id
-        && Number(anterior.valor) === valor && anterior.recorrencia === periodicidade;
+        && Number(anterior.valor) === valor && anterior.recorrencia === periodicidade && (anterior.turno ?? null) === turno;
       if (recente && mesmaCompra && anterior.invoice_url) {
         if (senhaInformada && anterior.user_id) {
           await admin.auth.admin.updateUserById(anterior.user_id, { password: String(body.senha) });
@@ -254,7 +271,7 @@ Deno.serve(async (req) => {
       asaas_customer_id: customerId, asaas_payment_id: pagamento!.id, asaas_subscription_id: subscriptionId,
       invoice_url: pagamento!.invoiceUrl || "", status: "aguardando",
       categoria, recorrencia: periodicidade, prazo_minimo_meses: prazoMinimo,
-      direitos: plano.direitos || {}, origem, status_token: statusToken, senha_definida: senhaInformada,
+      direitos: plano.direitos || {}, origem, status_token: statusToken, senha_definida: senhaInformada, turno,
     });
     if (pErr) {
       await desfazer();
