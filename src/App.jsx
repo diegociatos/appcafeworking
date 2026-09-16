@@ -160,7 +160,8 @@ export default function App() {
         if (vivo) hydrateOperacional({ appState, boletos, notas, config, reservas, creditos });
       });
     return () => { vivo = false; };
-  }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Recarrega ao trocar de usuário, não a cada renovação do token (que troca o objeto session).
+  }, [session ? `${emailDaSessao()}|${precisaDefinirSenha()}` : null]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const autenticadoReal = supabaseConfigured && !!session;
 

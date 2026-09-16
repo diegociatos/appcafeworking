@@ -218,14 +218,23 @@ export async function signInWithPassword(email, password) {
   return data;
 }
 
-async function refresh() {
-  if (!session?.refresh_token) return;
-  try {
-    const data = await authFetch("token?grant_type=refresh_token", { refresh_token: session.refresh_token });
-    saveSession(normalize(data));
-  } catch {
-    saveSession(null); // refresh inválido → derruba a sessão
-  }
+// Várias chamadas simultâneas com o token vencido compartilham UMA renovação;
+// antes cada uma renovava por conta própria e o app recarregava tudo a cada vez.
+let renovando = null;
+function refresh() {
+  if (!session?.refresh_token) return Promise.resolve();
+  if (renovando) return renovando;
+  renovando = (async () => {
+    try {
+      const data = await authFetch("token?grant_type=refresh_token", { refresh_token: session.refresh_token });
+      saveSession(normalize(data));
+    } catch {
+      saveSession(null); // refresh inválido → derruba a sessão
+    } finally {
+      renovando = null;
+    }
+  })();
+  return renovando;
 }
 
 /** Token válido (renova se estiver perto de expirar). */
