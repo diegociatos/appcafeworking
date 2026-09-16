@@ -1,9 +1,9 @@
 // ============================================================================
 // Rotas por URL — o app não tem roteador; a tela vive no parâmetro ?p=.
 //
-//   Cliente: ?p=inicio | plano | reservas | faturas | correspondencias |
-//            fiscal | contato | notificacoes | conta
-//   Equipe:  ?p=<id da página> (ex.: ?p=assinaturas)
+//   Cliente: ?p=inicio | plano | abertura | reservas | faturas |
+//            correspondencias | fiscal | contato | notificacoes | conta
+//   Equipe:  ?p=<id da página> (ex.: ?p=assinaturas, ?p=aberturas)
 //
 // Endereços antigos dos e-mails já enviados (/faturas, /reservas, /documentos,
 // /preferencias, /descadastro) também abrem a tela certa. A tela pedida é
@@ -13,6 +13,7 @@
 export const TELAS_CLIENTE = {
   inicio: "cli_inicio",
   plano: "cli_plano",
+  abertura: "cli_abertura",
   reservas: "cli_reservar",
   faturas: "cli_faturas",
   correspondencias: "cli_docs",
@@ -32,6 +33,8 @@ const ALIASES = {
   "minha-conta": "conta",
   "meu-plano": "plano",
   "endereco-fiscal": "fiscal",
+  "abertura-empresa": "abertura",
+  "abertura-de-empresa": "abertura",
 };
 
 const PAGINA_PARA_SLUG = Object.fromEntries(Object.entries(TELAS_CLIENTE).map(([slug, id]) => [id, slug]));

@@ -1,7 +1,9 @@
 // Início do cliente: plano (site ou legado), próxima fatura real, próximas
-// reservas, correspondências novas e o andamento do endereço fiscal. Cada cartão
+// reservas, correspondências novas, abertura da empresa esperando o cliente e o
+// andamento do endereço fiscal. Cada cartão
 // carrega sozinho; se um falhar, os outros continuam.
 import { Briefcase, CalendarDays, Wallet, Mail, Building2, ArrowRight, CheckCircle2, AlertTriangle, ExternalLink, ScrollText } from "lucide-react";
+import { aberturasApi } from "../../lib/aberturasApi.js";
 import { Card, Badge, Btn, PageHead } from "../../components/ui.jsx";
 import { C, serif, fmt } from "../../lib/theme.js";
 import { clienteApi } from "../../lib/clienteApi.js";
@@ -36,6 +38,7 @@ export default function Inicio({ go, nome }) {
   const agenda = useDados((f) => clienteApi.agendaReservas("", f));
   const corresp = useDados((f) => clienteApi.correspondencias(f));
   const kit = useDados((f) => clienteApi.kitEndereco(f));
+  const abertura = useDados((f) => aberturasApi.minhas(f));
 
   const primeiroNome = String(plano.dados?.perfil?.nome || nome || "").trim().split(/\s+/)[0];
   const assinaturas = (plano.dados?.assinaturas || []).filter((a) => a.status !== "cancelada");
@@ -48,6 +51,9 @@ export default function Inicio({ go, nome }) {
     .slice(0, 3);
   const novas = (corresp.dados?.correspondencias || []).filter((c) => c.status === "notificado" || c.status === "digitalizada").length;
   const fiscal = kit.dados?.unidades?.[0];
+  const aberturas = abertura.dados?.aberturas || [];
+  const aberturaPendente = aberturas.find((a) => a.status === "pendente_cliente");
+  const aberturaParaPreencher = aberturas.find((a) => a.status === "aguardando_cliente");
 
   return (
     <div>
@@ -62,6 +68,24 @@ export default function Inicio({ go, nome }) {
             <span style={{ fontSize: 13, color: C.text3 }}>Ver correspondências</span>
           </span>
           <ArrowRight size={18} color={C.amber} aria-hidden="true" />
+        </button>
+      )}
+
+      {(aberturaPendente || aberturaParaPreencher) && (
+        <button type="button" onClick={() => go("cli_abertura")} className="cw-btn"
+          style={{ width: "100%", textAlign: "left", marginBottom: 16, background: aberturaPendente ? C.redPale : C.tealPale, border: `1px solid ${aberturaPendente ? C.red : C.teal}44`, borderRadius: 18, padding: "14px 18px", display: "flex", alignItems: "center", gap: 12 }}>
+          <span aria-hidden="true" style={{ width: 40, height: 40, borderRadius: 10, background: aberturaPendente ? C.red : C.teal, display: "grid", placeItems: "center", flexShrink: 0 }}>
+            {aberturaPendente ? <AlertTriangle size={20} color="#fff" /> : <Briefcase size={20} color="#fff" />}
+          </span>
+          <span style={{ flex: 1 }}>
+            <span style={{ display: "block", fontSize: 15, fontWeight: 600, color: C.text }}>
+              {aberturaPendente ? "A contabilidade pediu um ajuste na abertura da sua empresa" : "Preencha os dados para abrir sua empresa"}
+            </span>
+            <span style={{ fontSize: 13, color: C.text3 }}>
+              {aberturaPendente ? "Veja o que corrigir e envie de novo" : "Dados da empresa, dos sócios e documentos. O rascunho fica salvo."}
+            </span>
+          </span>
+          <ArrowRight size={18} color={aberturaPendente ? C.red : C.teal} aria-hidden="true" />
         </button>
       )}
 

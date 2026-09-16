@@ -80,7 +80,7 @@ export async function prepararArquivo(arquivo) {
 }
 
 /** PUT do arquivo no link assinado, informando o progresso (0 a 100). */
-function enviarComProgresso(uploadUrl, arquivo, onProgresso) {
+export function enviarComProgresso(uploadUrl, arquivo, onProgresso) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", uploadUrl);

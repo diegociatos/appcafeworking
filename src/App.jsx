@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   LayoutDashboard, KanbanSquare, Building2, CalendarDays, Mail, Coffee,
   Users, Wallet, Mic2, MessageSquare, UserCircle, Settings,
-  Search, Bell, Menu, X, ChevronDown, Check, Store, Eye, LogOut, ShieldCheck, Package, Home, FileText, Barcode, Boxes, Landmark, Tags, DoorOpen, ScrollText, ChefHat,
+  Search, Bell, Menu, X, ChevronDown, Check, Store, Eye, LogOut, ShieldCheck, Package, Home, FileText, Barcode, Boxes, Landmark, Tags, DoorOpen, ScrollText, ChefHat, Briefcase,
 } from "lucide-react";
 import { C, sans, serif, fmt, shadow } from "./lib/theme.js";
 import { useStore, PERFIS } from "./lib/store.jsx";
@@ -49,6 +49,9 @@ import EnderecoFiscalCliente from "./pages/cliente/EnderecoFiscal.jsx";
 import FaleConoscoCliente from "./pages/cliente/FaleConosco.jsx";
 import NotificacoesCliente from "./pages/cliente/Notificacoes.jsx";
 import MinhaContaCliente from "./pages/cliente/MinhaConta.jsx";
+import AberturaEmpresaCliente from "./pages/cliente/AberturaEmpresa.jsx";
+import Aberturas from "./pages/Aberturas.jsx";
+import { aberturasApi } from "./lib/aberturasApi.js";
 
 const NAV = [
   { id: "dash", label: "Dashboard", icon: LayoutDashboard, group: "principal" },
@@ -56,6 +59,7 @@ const NAV = [
   { id: "crm", label: "CRM · Leads", icon: KanbanSquare, group: "comercial" },
   { id: "planos", label: "Planos e serviços", icon: Tags, group: "comercial" },
   { id: "assinaturas", label: "Assinaturas e contratos", icon: ScrollText, group: "comercial" },
+  { id: "aberturas", label: "Abertura de empresas", icon: Briefcase, group: "relacionamento" },
   { id: "unidades", label: "Unidades", icon: Building2, group: "gestao" },
   { id: "equipe", label: "Equipe", icon: ShieldCheck, group: "gestao" },
   { id: "auditoria", label: "Auditoria", icon: ScrollText, group: "gestao" },
@@ -93,7 +97,7 @@ const PAGES = {
   reservas: Reservas, corresp: Correspondencias, pdv: PDV, clientes: Clientes,
   financeiro: Financeiro, boletos: Boletos, cobrancas: Cobrancas, notafiscal: NotaFiscal, estoque: Estoque, patrimonio: Patrimonio, eventos: Eventos, chat: Chat,
   area: AreaCliente, equipe: Equipe, catalogo: Catalogo, planos: Planos, salas: Salas, config: Configuracoes, auditoria: Auditoria, kds: KDS,
-  assinaturas: Assinaturas, cli_plano: MeuPlano,
+  assinaturas: Assinaturas, aberturas: Aberturas, cli_plano: MeuPlano, cli_abertura: AberturaEmpresaCliente,
   cli_inicio: InicioCliente, cli_reservar: ReservarCliente, cli_faturas: FaturasCliente, cli_docs: CorrespondenciasCliente,
   cli_fiscal: EnderecoFiscalCliente, cli_contato: FaleConoscoCliente, cli_notif: NotificacoesCliente, cli_conta: MinhaContaCliente,
 };
@@ -163,6 +167,15 @@ export default function App() {
     // Recarrega ao trocar de usuário, não a cada renovação do token (que troca o objeto session).
   }, [session ? `${emailDaSessao()}|${precisaDefinirSenha()}` : null]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // O item "Abertura da empresa" só aparece para o cliente que tem processo.
+  const [temAbertura, setTemAbertura] = useState(false);
+  useEffect(() => {
+    if (perfil !== "cliente" || !supabaseConfigured || !session || precisaDefinirSenha()) { setTemAbertura(false); return; }
+    let vivo = true;
+    aberturasApi.minhas().then((r) => { if (vivo) setTemAbertura((r?.aberturas || []).length > 0); }).catch(() => {});
+    return () => { vivo = false; };
+  }, [perfil, session ? emailDaSessao() : null, page === "cli_abertura"]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const autenticadoReal = supabaseConfigured && !!session;
 
   // Com Supabase configurado, exige login. Sem configurar (demo), libera direto.
@@ -177,6 +190,7 @@ export default function App() {
   const CLIENT_NAV = [
     { id: "cli_inicio", label: "Início", icon: Home },
     { id: "cli_plano", label: "Meu plano", icon: ScrollText },
+    ...(temAbertura || page === "cli_abertura" ? [{ id: "cli_abertura", label: "Abertura da empresa", icon: Briefcase }] : []),
     { id: "cli_reservar", label: "Reservar sala", icon: CalendarDays },
     { id: "cli_faturas", label: "Faturas", icon: Wallet },
     { id: "cli_docs", label: "Correspondências", icon: Mail },
@@ -221,6 +235,7 @@ export default function App() {
     master: { nome: franqueadoAtivo?.nome || "Master", papel: "Coworking (master)" },
     recepcao: { nome: "Recepção", papel: "Operador de recepção" },
     financeiro: { nome: "Financeiro", papel: "Contas a receber" },
+    contabilidade: { nome: "Contabilidade", papel: "Contabilidade parceira" },
     cliente: { nome: nomeCliente || "Minha conta", papel: "Minha conta" },
   }[perfil] || { nome: "Administrador", papel: "Plataforma" };
 
@@ -515,13 +530,14 @@ export default function App() {
           >
             <Menu size={22} />
           </button>
-          {/* Busca e sino são da equipe; o cliente navega pelo menu e vê os avisos no Início */}
-          {perfil !== "cliente" && <GlobalSearch setPage={setPage} />}
+          {/* Busca e sino são da equipe; o cliente navega pelo menu e vê os avisos no Início.
+              A contabilidade parceira só tem a tela de aberturas (o servidor filtra as unidades). */}
+          {perfil !== "cliente" && perfil !== "contabilidade" && <GlobalSearch setPage={setPage} />}
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
             {/* "Ver como" é ferramenta de demonstração — escondida no login real */}
             {!autenticadoReal && <PerfilSwitcher />}
-            {perfil !== "cliente" && perfil !== "franqueador" && <UnitSwitcher />}
-            {perfil !== "cliente" && <button style={{ position: "relative", color: C.text2 }} aria-label="Notificações">
+            {perfil !== "cliente" && perfil !== "franqueador" && perfil !== "contabilidade" && <UnitSwitcher />}
+            {perfil !== "cliente" && perfil !== "contabilidade" && <button style={{ position: "relative", color: C.text2 }} aria-label="Notificações">
               <Bell size={21} />
               <span
                 className="cw-pulse"
