@@ -125,7 +125,11 @@ export default function App() {
   const pularSyncUrlRef = useRef(false);
   const historicoIniciadoRef = useRef(false);
   useEffect(() => {
-    const pedida = telaPedidaRef.current;
+    // ?p=reservas e ?p=correspondencias servem ao cliente e à equipe: quem não é
+    // cliente abre a tela da equipe com o mesmo nome.
+    const TELA_EQUIPE_DO_CLIENTE = { cli_reservar: "reservas", cli_docs: "corresp" };
+    const bruta = telaPedidaRef.current;
+    const pedida = bruta && !podeAbrir(bruta) && podeAbrir(TELA_EQUIPE_DO_CLIENTE[bruta]) ? TELA_EQUIPE_DO_CLIENTE[bruta] : bruta;
     const destino = pedida && podeAbrir(pedida) ? pedida : cfg.landing;
     if (sessaoAplicada) telaPedidaRef.current = null;
     pularSyncUrlRef.current = destino !== page; // espera a tela nova renderizar antes de mexer na URL
