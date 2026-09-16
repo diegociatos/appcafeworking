@@ -1042,15 +1042,30 @@ export function StoreProvider({ children }) {
   const encerrarContrato = (id) => setContratos((cs) => cs.map((c) => (c.id === id ? { ...c, status: "encerrado" } : c)));
 
   // Modo "ver como franqueado" + perfis de acesso --------------------------
+  // A conta aberta pelo admin ("Entrar") sobrevive ao recarregar a página nesta aba.
+  const CHAVE_CONTA_ABERTA = "cw_conta_aberta";
+  const lembrarContaAberta = (valor) => {
+    try { valor ? sessionStorage.setItem(CHAVE_CONTA_ABERTA, JSON.stringify(valor)) : sessionStorage.removeItem(CHAVE_CONTA_ABERTA); } catch { /* sem storage */ }
+  };
+  useEffect(() => {
+    try {
+      const aberta = JSON.parse(sessionStorage.getItem(CHAVE_CONTA_ABERTA) || "null");
+      if (aberta && viewAs === aberta.franqueadoId && activeUnit && aberta.unidadeId !== activeUnit) {
+        sessionStorage.setItem(CHAVE_CONTA_ABERTA, JSON.stringify({ ...aberta, unidadeId: activeUnit }));
+      }
+    } catch { /* sem storage */ }
+  }, [viewAs, activeUnit]);
   const enterViewAs = (franqueadoId) => {
     const us = unidades.filter((u) => u.franqueadoId === franqueadoId);
     setViewAs(franqueadoId);
     setPerfilState("master");
     if (us[0]) setActiveUnit(us[0].id);
+    lembrarContaAberta({ franqueadoId, unidadeId: us[0]?.id || null });
   };
   const exitViewAs = () => {
     setViewAs(null);
     setPerfilState("franqueador");
+    lembrarContaAberta(null);
   };
 
   // Pré-visualizar o app como um perfil de usuário
@@ -1094,7 +1109,18 @@ export function StoreProvider({ children }) {
   };
   const aplicarSessaoUsuario = (membros, isPlatformAdmin, ident = null) => {
     // Admin da plataforma (vendedor do app) → painel da plataforma + Contas.
-    if (isPlatformAdmin) { setPerfilState("franqueador"); setViewAs(null); _aplicarIdentidade(ident, "franqueador"); return; }
+    if (isPlatformAdmin) {
+      let aberta = null;
+      try { aberta = JSON.parse(sessionStorage.getItem(CHAVE_CONTA_ABERTA) || "null"); } catch { /* sem storage */ }
+      if (aberta?.franqueadoId) {
+        setPerfilState("master"); setViewAs(aberta.franqueadoId);
+        if (aberta.unidadeId) setActiveUnit(aberta.unidadeId);
+      } else {
+        setPerfilState("franqueador"); setViewAs(null);
+      }
+      _aplicarIdentidade(ident, "franqueador");
+      return;
+    }
     if (!membros || !membros.length) { setPerfilState("franqueador"); setViewAs(null); _aplicarIdentidade(ident, "franqueador"); return; }
     const m = membros[0];
     const perfilKey = ROLE_PERFIL[m.role] || "master";

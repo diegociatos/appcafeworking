@@ -73,7 +73,9 @@ export default function MeuPlano({ go }) {
                 <Badge color={l.situacao === "ativo" ? C.green : C.text3}>{l.situacao === "ativo" ? "Ativo" : "Inativo"}</Badge>
               </div>
               <div style={{ marginTop: 16 }}>
-                <AvisoCliente>Seu plano foi contratado antes da contratação online. Para mudar ou cancelar, fale com a recepção.</AvisoCliente>
+                <AvisoCliente>{/^visitante$/i.test(String(l.plano || "").trim())
+                  ? "Você ainda não tem um plano contratado. Veja os planos no site ou fale com a recepção para escolher o ideal."
+                  : "Seu plano foi contratado antes da contratação online. Para mudar ou cancelar, fale com a recepção."}</AvisoCliente>
               </div>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                 <Btn variant="ghost" onClick={() => go?.("cli_faturas")}>Ver faturas</Btn>

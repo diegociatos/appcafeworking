@@ -202,7 +202,7 @@ export default function Reservar({ nome }) {
                           {s.tipo}{s.capacidade ? <> · <Users size={12} aria-hidden="true" /> {s.capacidade} lugares</> : null}{s.bases ? ` · ${s.bases} bases` : ""}
                         </span>
                         <span style={{ display: "block", fontSize: 13, color: C.cafe, fontWeight: 600, marginTop: 4 }}>
-                          {s.valor_hora > 0 ? `${fmt(s.valor_hora)} por hora` : "Usa as horas do plano"}
+                          {s.valor_hora > 0 ? `${fmt(s.valor_hora)} por hora` : saldoSala > 0 ? "Usa as horas do plano" : "Disponível para quem tem plano com horas"}
                           {saldoSala > 0 ? ` · você tem ${saldoSala} h` : ""}
                         </span>
                       </span>

@@ -48,6 +48,18 @@ export default function Aberturas() {
       .finally(() => setCarregando(false));
   }, [contabilidade, activeUnit]);
   useEffect(() => { carregar(); }, [carregar]);
+  // Novidades do cliente aparecem sozinhas: a cada minuto com a aba visível e ao voltar para a aba.
+  useEffect(() => {
+    const silencioso = () => {
+      if (document.visibilityState !== "visible") return;
+      aberturasApi.listar({ unidadeId: contabilidade ? "" : activeUnit })
+        .then((r) => setLista(r.aberturas || []))
+        .catch(() => { /* mantém a lista atual */ });
+    };
+    const timer = setInterval(silencioso, 60_000);
+    window.addEventListener("focus", silencioso);
+    return () => { clearInterval(timer); window.removeEventListener("focus", silencioso); };
+  }, [contabilidade, activeUnit]);
 
   const contagem = useMemo(() => {
     const c = { todas: (lista || []).length };
@@ -164,6 +176,12 @@ function Detalhe({ id, onVoltar }) {
     return aberturasApi.detalhe(id).then(setDet).catch((e) => setErro(mensagemDe(e)));
   }, [id]);
   useEffect(() => { carregar(); }, [carregar]);
+  // Ao voltar para a aba, traz o que o cliente enviou nesse meio tempo.
+  useEffect(() => {
+    const aoVoltar = () => { aberturasApi.detalhe(id).then(setDet).catch(() => { /* mantém a tela */ }); };
+    window.addEventListener("focus", aoVoltar);
+    return () => window.removeEventListener("focus", aoVoltar);
+  }, [id]);
 
   if (!det) {
     return (

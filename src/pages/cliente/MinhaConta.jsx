@@ -64,7 +64,7 @@ export default function MinhaConta({ nome }) {
             <dl style={{ margin: 0 }}>
               <Dado rotulo="Nome ou empresa" valor={perfil.nome || nome} />
               <Dado rotulo="E-mail de acesso" valor={perfil.email || emailDaSessao()} />
-              <Dado rotulo="Telefone" valor={perfil.telefone} />
+              <Dado rotulo="Telefone" valor={String(perfil.telefone || "").replace(/\D/g, "").replace(/^(\d{2})(\d{4,5})(\d{4})$/, "($1) $2-$3") || perfil.telefone} />
               <Dado rotulo="CPF ou CNPJ" valor={perfil.documento} />
               {perfil.desde && <Dado rotulo="Cliente desde" valor={textoDesde(perfil.desde)} />}
             </dl>

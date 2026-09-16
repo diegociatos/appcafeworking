@@ -99,6 +99,11 @@ function Processo({ id, onMudou }) {
 // Formulário
 // ---------------------------------------------------------------------------
 
+// O servidor guarda valores como número; na tela eles voltam no formato digitado (10.000,00).
+const valorNaTela = (v) => (typeof v === "number" && Number.isFinite(v)
+  ? v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  : v ?? "");
+
 function completar(dados) {
   const d = dados && typeof dados === "object" ? dados : {};
   const e = d.empresa || {};
@@ -106,7 +111,7 @@ function completar(dados) {
   return {
     empresa: {
       tipo: e.tipo || "", nomes: [0, 1, 2].map((i) => e.nomes?.[i] || ""), nome_fantasia: e.nome_fantasia || "",
-      atividades: e.atividades || "", capital_social: e.capital_social ?? "", atuacao: e.atuacao || [], faturamento_mensal: e.faturamento_mensal ?? "",
+      atividades: e.atividades || "", capital_social: valorNaTela(e.capital_social), atuacao: e.atuacao || [], faturamento_mensal: valorNaTela(e.faturamento_mensal),
     },
     socios: socios.map((s) => ({ ...socioVazio(), ...s, endereco: { ...socioVazio().endereco, ...(s.endereco || {}) } })),
     local: {
@@ -554,7 +559,7 @@ function EtapaLocal({ det, l, set, docProps }) {
         <Titulo sub="Sua empresa vai usar o endereço fiscal do CafeWorking. Você não precisa enviar nada do imóvel.">Local da empresa</Titulo>
         <div style={{ background: C.tealPale, borderRadius: 14, padding: 16 }}>
           <div style={{ fontFamily: serif, fontSize: 19 }}>CafeWorking {det.unidade?.nome}</div>
-          {det.unidade?.endereco && <div style={{ fontSize: 14, color: C.text2, marginTop: 2 }}>{det.unidade.endereco}{det.unidade.cidade ? ` · ${det.unidade.cidade}` : ""}</div>}
+          {det.unidade?.endereco && <div style={{ fontSize: 14, color: C.text2, marginTop: 2 }}>{det.unidade.endereco}{det.unidade.cidade && !det.unidade.endereco.includes(det.unidade.cidade) ? ` · ${det.unidade.cidade}` : ""}</div>}
           {iptu?.numero && <div style={{ marginTop: 8 }}><NumeroCopiavel rotulo="Índice cadastral do IPTU" numero={iptu.numero} /></div>}
           <div style={{ marginTop: 10 }}>
             {det.kit?.length ? <KitLista kit={det.kit} /> : <div style={{ fontSize: 13, color: C.text3 }}>A equipe inclui o IPTU da unidade para a contabilidade.</div>}

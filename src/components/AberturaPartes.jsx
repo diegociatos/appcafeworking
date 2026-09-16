@@ -241,7 +241,7 @@ export function ResumoDados({ dados, docs = [], usaEnderecoUnidade, unidade, kit
               <Linha key={k.id} rotulo="Índice cadastral">{k.numero ? <Copiavel valor={k.numero} /> : "não cadastrado no kit"}</Linha>
             ))}
             {kit.length > 0 && <div style={{ marginTop: 6 }}><KitLista kit={kit} /></div>}
-            {!kit.some((k) => k.tipo === "iptu") && <div style={{ fontSize: 13, color: C.amber }}>O IPTU da unidade ainda não está no kit de documentos.</div>}
+            {copiar && !kit.some((k) => k.tipo === "iptu") && <div style={{ fontSize: 13, color: C.amber }}>O IPTU da unidade ainda não está no kit de documentos.</div>}
           </>
         ) : (
           <>
