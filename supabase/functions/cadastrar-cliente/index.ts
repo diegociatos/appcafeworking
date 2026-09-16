@@ -13,6 +13,7 @@
 
 import { handleOptions, json } from "../_shared/cors.ts";
 import { adminClient } from "../_shared/supabaseAdmin.ts";
+import { APP_URL, avisarEquipe } from "../_shared/assinaturas.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -61,6 +62,14 @@ Deno.serve(async (req) => {
       user_id: userId, unidade_id: unidade.id, franqueado_id: unidade.franqueado_id, role: "cliente",
     });
     if (mErr) { await rollback(); await admin.from("clientes").delete().eq("id", clienteId); return json({ error: `Falha ao liberar o acesso: ${mErr.message}` }, 500); }
+
+    await avisarEquipe(`Novo cliente cadastrado no app: ${body.nome}`, [
+      `Unidade: ${unidade.nome}`,
+      `E-mail: ${email}`,
+      `Telefone: ${body.telefone || "não informado"}`,
+      `CPF/CNPJ: ${body.documento || "não informado"}`,
+      "Cadastro sem compra (plano Visitante).",
+    ], `${APP_URL}/?p=clientes`);
 
     return json({ ok: true, email, unidade: { id: unidade.id, nome: unidade.nome } }, 201);
   } catch (e) {
