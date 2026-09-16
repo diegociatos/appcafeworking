@@ -92,3 +92,50 @@ export function resumoFaturas(lista: Fatura[]) {
     proxima: ordenarFaturas(abertas)[0] ?? null,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Notas fiscais do cliente
+// ---------------------------------------------------------------------------
+
+export interface NotaCliente {
+  id: string;
+  unidade_id: string | null;
+  numero: string;
+  emitida_em: string | null;
+  valor: number;
+  descricao: string;
+  pdf_url: string | null;
+  tem_xml: boolean;
+}
+
+/**
+ * CPF/CNPJ como pode ter sido digitado: como está no cadastro, só dígitos e com
+ * máscara. A nota guarda o documento do jeito que a equipe digitou.
+ */
+export function variantesDocumento(doc: unknown): string[] {
+  const bruto = String(doc ?? "").trim();
+  const d = bruto.replace(/\D/g, "");
+  const lista = [bruto, d];
+  if (d.length === 11) lista.push(`${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`);
+  if (d.length === 14) lista.push(`${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`);
+  return [...new Set(lista.filter((v) => v.length >= 11))];
+}
+
+const linkHttp = (v: unknown) => (typeof v === "string" && /^https:\/\//i.test(v.trim()) ? v.trim() : null);
+
+/** Nota fiscal → item da área do cliente. Só autorizada (nunca simulada, cancelada, com erro). */
+export function notaDoCliente(n: Linha): NotaCliente | null {
+  if (!n || n.status !== "autorizada") return null;
+  return {
+    id: String(n.id), unidade_id: n.unidade_id ?? null,
+    numero: texto(n.numero) || texto(n.rps_numero) || "—",
+    emitida_em: dia(n.created_at), valor: Number(n.valor || 0),
+    descricao: texto(n.descricao) || "Nota fiscal de serviço",
+    pdf_url: linkHttp(n.pdf_url), tem_xml: !!texto(n.xml_url),
+  };
+}
+
+/** Mais recentes primeiro. */
+export function ordenarNotas(lista: NotaCliente[]): NotaCliente[] {
+  return [...lista].sort((a, b) => (b.emitida_em || "").localeCompare(a.emitida_em || ""));
+}

@@ -1,5 +1,7 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { faturaDeBoleto, faturaDeCobranca, faturaDePedido, ordenarFaturas, resumoFaturas } from "./faturas.ts";
+import {
+  faturaDeBoleto, faturaDeCobranca, faturaDePedido, notaDoCliente, ordenarFaturas, ordenarNotas, resumoFaturas, variantesDocumento,
+} from "./faturas.ts";
 
 const HOJE = "2026-09-15";
 
@@ -37,4 +39,25 @@ Deno.test("ordem e resumo: vencida, aberta, depois pagas recentes", () => {
   assertEquals(ordenarFaturas(lista).map((f) => f.id), ["cob_v", "cob_a", "cob_p"]);
   const r = resumoFaturas(lista);
   assertEquals([r.em_aberto, r.vencidas, r.valor_em_aberto, r.proxima?.id], [2, 1, 50, "cob_v"]);
+});
+
+Deno.test("notas do cliente: só autorizada, nunca simulada", () => {
+  assertEquals(notaDoCliente({ id: "s", status: "simulada", valor: 10 }), null);
+  assertEquals(notaDoCliente({ id: "c", status: "cancelada", valor: 10 }), null);
+  assertEquals(notaDoCliente({ id: "e", status: "erro", valor: 10 }), null);
+  assertEquals(notaDoCliente({ id: "p", status: "processando", valor: 10 }), null);
+  const n = notaDoCliente({ id: "a", status: "autorizada", numero: "123", valor: "119.00", created_at: "2026-09-16T12:00:00Z", pdf_url: "https://nfse.gov.br/danfse/1", xml_url: "https://x/assinada" })!;
+  assertEquals([n.numero, n.valor, n.emitida_em, n.pdf_url, n.tem_xml], ["123", 119, "2026-09-16", "https://nfse.gov.br/danfse/1", true]);
+  assertEquals(notaDoCliente({ id: "b", status: "autorizada", valor: 1, pdf_url: "javascript:alert(1)" })!.pdf_url, null);
+  const ord = ordenarNotas([
+    notaDoCliente({ id: "1", status: "autorizada", valor: 1, created_at: "2026-08-01" })!,
+    notaDoCliente({ id: "2", status: "autorizada", valor: 1, created_at: "2026-09-01" })!,
+  ]);
+  assertEquals(ord.map((x) => x.id), ["2", "1"]);
+});
+
+Deno.test("documento do cliente: bruto, só dígitos e com máscara", () => {
+  assertEquals(variantesDocumento("11122233344"), ["11122233344", "111.222.333-44"]);
+  assertEquals(variantesDocumento("12.345.678/0001-90"), ["12.345.678/0001-90", "12345678000190"]);
+  assertEquals(variantesDocumento(""), []);
 });

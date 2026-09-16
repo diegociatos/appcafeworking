@@ -1,8 +1,9 @@
-// Faturas do cliente: cobranças reais (assinatura, reservas, avulsas) e boletos.
+// Faturas do cliente: cobranças reais (assinatura, reservas, avulsas) e boletos,
+// e as notas fiscais autorizadas (nunca as simuladas de teste).
 // O cliente nunca marca como pago — "Pagar" abre a fatura real do Asaas; a baixa
 // chega sozinha quando o pagamento é confirmado.
 import { useState } from "react";
-import { Wallet, ExternalLink, Copy, FileText, CheckCircle2 } from "lucide-react";
+import { Wallet, ExternalLink, Copy, FileText, CheckCircle2, FileCode2 } from "lucide-react";
 import { Card, Badge, PageHead, Empty } from "../../components/ui.jsx";
 import { C, serif, fmt } from "../../lib/theme.js";
 import { clienteApi } from "../../lib/clienteApi.js";
@@ -36,6 +37,8 @@ export default function Faturas() {
 
   const faturas = dados?.faturas || [];
   const resumo = dados?.resumo;
+  // Versão antiga da função não manda `notas`: a seção só aparece quando vier.
+  const notas = Array.isArray(dados?.notas) ? dados.notas : null;
 
   return (
     <div>
@@ -123,6 +126,50 @@ export default function Faturas() {
             </ul>
           )}
         </Card>
+      )}
+
+      {dados && notas && (
+        <section aria-labelledby="titulo-notas" style={{ marginBottom: 16 }}>
+          <h2 id="titulo-notas" style={{ fontFamily: serif, fontSize: 19, fontWeight: 400, color: C.text, margin: "4px 0 10px" }}>Notas fiscais</h2>
+          <Card style={{ padding: 0, overflow: "hidden" }}>
+            {notas.length === 0 ? (
+              <div style={{ padding: "16px 18px", fontSize: 13, color: C.text3 }}>Nenhuma nota fiscal emitida para você ainda. Quando a nota do seu pagamento sair, ela aparece aqui.</div>
+            ) : (
+              <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                {notas.map((n, i) => (
+                  <li key={n.id} style={{ padding: "14px 18px", borderTop: i ? `1px solid ${C.border2}` : "none" }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+                      <div aria-hidden="true" style={{ width: 40, height: 40, borderRadius: 10, background: C.tealPale, display: "grid", placeItems: "center", flexShrink: 0 }}>
+                        <FileText size={18} color={C.teal} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 180 }}>
+                        <div style={{ fontSize: 15, fontWeight: 600, color: C.text }}>NFS-e nº {n.numero}</div>
+                        <div style={{ fontSize: 13, color: C.text3 }}>
+                          {n.descricao}{n.emitida_em ? ` · emitida em ${dataBR(n.emitida_em)}` : ""}{n.unidade ? ` · ${n.unidade}` : ""}
+                        </div>
+                      </div>
+                      <div style={{ fontFamily: serif, fontSize: 19, color: C.cafe }}>{fmt(n.valor)}</div>
+                    </div>
+                    {(n.pdf_url || n.xml_url) && (
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10, paddingLeft: 52 }}>
+                        {n.pdf_url && (
+                          <a href={n.pdf_url} target="_blank" rel="noreferrer" className="cw-btn" style={linkBtn(C.text2, C.white, C.border)}>
+                            <FileText size={14} aria-hidden="true" /> Nota (PDF)
+                          </a>
+                        )}
+                        {n.xml_url && (
+                          <a href={n.xml_url} target="_blank" rel="noreferrer" className="cw-btn" style={linkBtn(C.text2, C.white, C.border)}>
+                            <FileCode2 size={14} aria-hidden="true" /> XML
+                          </a>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        </section>
       )}
 
       {dados && <CartaoRecepcao compacto titulo="Dúvidas sobre uma cobrança?" texto="A recepção confere pagamentos, segunda via e notas fiscais." mensagemWhatsapp="Olá! Tenho uma dúvida sobre uma fatura do CafeWorking." />}
