@@ -522,12 +522,37 @@ function ContaForm({ onSalvar, unidadeId }) {
     clientSecret: "",
     certPem: "",
     keyPem: "",
+    certNome: "", keyNome: "",
+    formatoCert: "separado", // separado (.crt + .key) | pfx (.pfx/.p12 com senha)
+    pfxBase64: "", pfxNome: "", pfxSenha: "",
+    colar: false,
   });
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState(null);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const mtls = f.banco !== "btg"; // Inter/Itaú/Bradesco exigem certificado mTLS
-  const valido = f.apelido.trim() && f.clientId.trim() && f.clientSecret.trim();
+  const certOk = !mtls || (f.formatoCert === "pfx" ? Boolean(f.pfxBase64) : Boolean(f.certPem.trim() && f.keyPem.trim()));
+  const valido = f.apelido.trim() && f.clientId.trim() && f.clientSecret.trim() && certOk;
+
+  // Lê o arquivo anexado. .crt/.cer/.pem/.key viram texto PEM (DER binário é convertido); .pfx vira base64.
+  const lerArquivo = async (arquivo, tipo) => {
+    setErro(null);
+    if (!arquivo) return;
+    if (arquivo.size > 200_000) { setErro("Arquivo grande demais para um certificado (máx. 200 KB)."); return; }
+    const bytes = new Uint8Array(await arquivo.arrayBuffer());
+    const base64 = () => { let s = ""; bytes.forEach((b) => { s += String.fromCharCode(b); }); return btoa(s); };
+    if (tipo === "pfx") { setF((p) => ({ ...p, pfxBase64: base64(), pfxNome: arquivo.name })); return; }
+    const texto = new TextDecoder().decode(bytes);
+    if (tipo === "cert") {
+      const pem = texto.includes("BEGIN CERTIFICATE")
+        ? texto.trim()
+        : `-----BEGIN CERTIFICATE-----\n${base64().match(/.{1,64}/g).join("\n")}\n-----END CERTIFICATE-----`;
+      setF((p) => ({ ...p, certPem: pem, certNome: arquivo.name }));
+    } else {
+      if (!/BEGIN (RSA |EC |ENCRYPTED )?PRIVATE KEY/.test(texto)) { setErro("Esse arquivo não parece uma chave privada (.key ou .pem)."); return; }
+      setF((p) => ({ ...p, keyPem: texto.trim(), keyNome: arquivo.name }));
+    }
+  };
 
   const salvar = () => {
     setErro(null);
@@ -542,7 +567,9 @@ function ContaForm({ onSalvar, unidadeId }) {
     setBusy(true);
     integracaoApi.salvarBanco(unidadeId, f.banco, {
       client_id: f.clientId.trim(), client_secret: f.clientSecret.trim(),
-      cert_pem: f.certPem.trim() || undefined, key_pem: f.keyPem.trim() || undefined,
+      ...(mtls && f.formatoCert === "pfx"
+        ? { pfx_base64: f.pfxBase64, pfx_senha: f.pfxSenha }
+        : { cert_pem: f.certPem.trim() || undefined, key_pem: f.keyPem.trim() || undefined }),
     })
       .then(() => onSalvar(dados))
       .catch((e) => setErro(e.message))
@@ -601,11 +628,38 @@ function ContaForm({ onSalvar, unidadeId }) {
       </div>
       {mtls && (
         <>
-          <Field label="Certificado mTLS (PEM) — Inter/Itaú/Bradesco">
-            <textarea value={f.certPem} onChange={set("certPem")} rows={2} style={{ ...inp, resize: "vertical", fontFamily: "monospace", fontSize: 11 }} placeholder="-----BEGIN CERTIFICATE-----" />
-          </Field>
-          <Field label="Chave privada (PEM)">
-            <textarea value={f.keyPem} onChange={set("keyPem")} rows={2} style={{ ...inp, resize: "vertical", fontFamily: "monospace", fontSize: 11 }} placeholder="-----BEGIN PRIVATE KEY-----" />
+          <Field label="Certificado do banco (obrigatório para Inter, Itaú e Bradesco)">
+            <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+              {[["separado", "Arquivos .crt e .key"], ["pfx", "Arquivo .pfx / .p12"]].map(([v, lb]) => (
+                <button key={v} type="button" onClick={() => setF({ ...f, formatoCert: v })}
+                  style={{ flex: 1, padding: "9px 0", borderRadius: 10, fontFamily: sans, fontSize: 13, fontWeight: 600, border: `1.5px solid ${f.formatoCert === v ? C.teal : C.border}`, background: f.formatoCert === v ? C.tealPale : C.white, color: f.formatoCert === v ? C.teal : C.text2 }}>
+                  {lb}
+                </button>
+              ))}
+            </div>
+            {f.formatoCert === "pfx" ? (
+              <div style={{ display: "grid", gap: 10 }}>
+                <AnexoCertificado rotulo="Anexar o arquivo .pfx / .p12" accept=".pfx,.p12,application/x-pkcs12" nome={f.pfxNome} onArquivo={(a) => lerArquivo(a, "pfx")} />
+                <input type="password" value={f.pfxSenha} onChange={set("pfxSenha")} style={inp} placeholder="Senha do certificado" autoComplete="new-password" />
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 10 }}>
+                <AnexoCertificado rotulo="Anexar certificado (.crt, .cer ou .pem)" accept=".crt,.cer,.pem,application/x-x509-ca-cert" nome={f.certNome} onArquivo={(a) => lerArquivo(a, "cert")} />
+                <AnexoCertificado rotulo="Anexar chave privada (.key ou .pem)" accept=".key,.pem" nome={f.keyNome} onArquivo={(a) => lerArquivo(a, "key")} />
+                <button type="button" onClick={() => setF({ ...f, colar: !f.colar })} style={{ fontSize: 12.5, color: C.teal, fontWeight: 600, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer" }}>
+                  {f.colar ? "Esconder campos de texto" : "Prefere colar o conteúdo do certificado?"}
+                </button>
+                {f.colar && (
+                  <>
+                    <textarea value={f.certPem} onChange={(e) => setF({ ...f, certPem: e.target.value, certNome: "" })} rows={2} style={{ ...inp, resize: "vertical", fontFamily: "monospace", fontSize: 11 }} placeholder="-----BEGIN CERTIFICATE-----" />
+                    <textarea value={f.keyPem} onChange={(e) => setF({ ...f, keyPem: e.target.value, keyNome: "" })} rows={2} style={{ ...inp, resize: "vertical", fontFamily: "monospace", fontSize: 11 }} placeholder="-----BEGIN PRIVATE KEY-----" />
+                  </>
+                )}
+              </div>
+            )}
+            <div style={{ fontSize: 12, color: C.text3, marginTop: 8 }}>
+              O Inter entrega o certificado de integração num .zip com os arquivos .crt e .key. Anexe os dois.
+            </div>
           </Field>
         </>
       )}
@@ -618,5 +672,16 @@ function ContaForm({ onSalvar, unidadeId }) {
         <Building2 size={16} /> {busy ? "Salvando…" : "Cadastrar conta"}
       </Btn>
     </>
+  );
+}
+
+// Botão de anexo do certificado: mostra o nome do arquivo escolhido.
+function AnexoCertificado({ rotulo, accept, nome, onArquivo }) {
+  return (
+    <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, border: `1.5px dashed ${nome ? C.teal : C.border}`, background: nome ? C.tealPale : C.white, cursor: "pointer", fontSize: 13, color: nome ? C.teal : C.text2 }}>
+      {nome ? <CheckCircle2 size={16} /> : <Plus size={16} />}
+      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nome ? `${nome} · trocar` : rotulo}</span>
+      <input type="file" accept={accept} style={{ display: "none" }} onChange={(e) => { onArquivo(e.target.files?.[0]); e.target.value = ""; }} />
+    </label>
   );
 }

@@ -18,6 +18,7 @@
 import { handleOptions, json } from "../_shared/cors.ts";
 import { userClient, adminClient } from "../_shared/supabaseAdmin.ts";
 import { podeMexerNoDinheiro, recusaSemFinanceiro } from "../_shared/permissoes.ts";
+import { abrirPfx } from "../_shared/certificadoPfx.ts";
 
 const BANCOS = ["inter", "itau", "btg", "bradesco"];
 
@@ -51,6 +52,27 @@ Deno.serve(async (req) => {
       if (!BANCOS.includes(body.banco)) return json({ error: "Banco inválido." }, 400);
       if (!body.secret.client_id || !body.secret.client_secret) return json({ error: "Informe client_id e client_secret." }, 400);
       ref = `${body.banco}_${body.unidade_id}`;
+      // Certificado anexado como .pfx/.p12: converte para PEM aqui e não guarda o arquivo nem a senha.
+      if (body.secret.pfx_base64) {
+        try {
+          const aberto = abrirPfx(body.secret.pfx_base64, body.secret.pfx_senha ?? "");
+          body.secret.cert_pem = aberto.certPem;
+          body.secret.key_pem = aberto.keyPem;
+          body.secret.cert_titular = aberto.titular || undefined;
+          body.secret.cert_validade = aberto.validade || undefined;
+        } catch (e) {
+          return json({ error: `Não foi possível abrir o certificado (senha incorreta ou arquivo inválido): ${(e as Error).message}` }, 422);
+        } finally {
+          delete body.secret.pfx_base64;
+          delete body.secret.pfx_senha;
+        }
+      }
+      if (body.secret.cert_pem && !String(body.secret.cert_pem).includes("BEGIN CERTIFICATE")) {
+        return json({ error: "O arquivo do certificado não parece um certificado válido (.crt, .cer ou .pem)." }, 400);
+      }
+      if (body.secret.key_pem && !/BEGIN (RSA |EC |ENCRYPTED )?PRIVATE KEY/.test(String(body.secret.key_pem))) {
+        return json({ error: "O arquivo da chave privada não parece válido (.key ou .pem)." }, 400);
+      }
     } else {
       return json({ error: "Tipo de integração não suportado." }, 400);
     }
