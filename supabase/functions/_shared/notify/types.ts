@@ -39,6 +39,7 @@ export type Evento =
   | "abertura_preencher"
   | "abertura_pendencia"
   | "abertura_concluida"
+  | "convite_acesso"
   | "aviso_equipe";
 
 export class NotifyError extends Error {

@@ -239,6 +239,25 @@ const TEMPLATES: Record<Evento, (d: any) => Render> = {
       { label: "Ver minha empresa", url: linkApp("abertura") },
     ),
   }),
+  // Cliente cadastrado pela equipe (sem compra pelo site) ganha acesso ao app.
+  convite_acesso: (d) => ({
+    assunto: "Seu acesso ao app do CafeWorking",
+    texto: `Olá ${d.cliente}, agora você acompanha o CafeWorking${d.unidade ? ` ${d.unidade}` : ""} pelo app: plano, faturas, reservas de sala e correspondências. ${d.linkSenha ? `Crie sua senha: ${d.linkSenha}` : `Entre em ${linkApp()}`} (o login é o e-mail ${d.email}).`,
+    html: layout(
+      "Seu acesso ao app está pronto",
+      `Olá <b>${esc(d.cliente)}</b>,<br><br>Você já é cliente do CafeWorking${d.unidade ? ` <b>${esc(d.unidade)}</b>` : ""}, e agora pode acompanhar tudo pelo app, do celular ou do computador, quando quiser:
+       <ul style="margin:10px 0;padding-left:20px">
+         <li><b>Seu plano</b>: o que está contratado e o que ele inclui;</li>
+         <li><b>Faturas</b>: cobranças, pagamentos e notas fiscais;</li>
+         <li><b>Reservas</b>: agende a sala de reunião e veja as horas do seu plano;</li>
+         <li><b>Correspondências</b>: o que chegou para você, com aviso por e-mail e o arquivo digitalizado quando houver.</li>
+       </ul>
+       ${d.linkSenha ? "Para entrar, crie sua senha no botão abaixo. Por segurança, o link vale por tempo limitado." : "Entre com seu e-mail e senha."}
+       O seu login é o e-mail <b>${esc(d.email)}</b>. Se o link vencer, é só clicar em <b>Esqueci minha senha</b> na tela de entrada.<br><br>
+       Qualquer dúvida, a recepção continua à disposição.`,
+      d.linkSenha ? { label: "Criar minha senha", url: d.linkSenha } : { label: "Entrar no app", url: linkApp() },
+    ),
+  }),
   aviso_equipe: (d) => ({
     assunto: `[CafeWorking] ${d.assunto}`,
     texto: [d.assunto, ...((d.linhas as string[]) || [])].join("\n"),
