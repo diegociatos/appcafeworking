@@ -412,6 +412,7 @@ export function StoreProvider({ children }) {
       unidade_id: unidadeId, sala_id: r.sala, cliente_id: r.clienteId ?? null,
       cliente_nome: r.cliente, cliente_email: r.email ?? null,
       start_at: startAt, end_at: endAt, base: r.base ?? null, origem: r.origem || "recepcao", valor,
+      avulso: r.avulso === true, observacao: r.observacao || null, telefone: r.telefone || null,
     });
     if (!resp.ok) return resp;
     // O servidor pode ter consumido crédito do plano e recalculado o valor para
@@ -1235,6 +1236,7 @@ export function StoreProvider({ children }) {
         startAt: r.start_at, endAt: r.end_at, ...dateRangeToLegacy(r.start_at, r.end_at),
         status: r.status, origem: r.origem, valor: Number(r.valor || 0),
         paymentStatus: r.payment_status, vista: r.origem !== "app",
+        observacao: r.observacao || "", telefone: r.cliente_telefone || "",
       }));
       const ids = new Set(mapped.map((m) => m.id));
       setReservas((prev) => [...prev.filter((r) => !ids.has(r.id)), ...mapped]);

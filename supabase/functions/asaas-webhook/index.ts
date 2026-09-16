@@ -102,6 +102,38 @@ async function clienteDaUnidade(admin: SupabaseClient, ps: Linha): Promise<strin
 }
 
 /**
+ * Quem reservou e pagou pelo link/site vira cliente da unidade (sem login), para
+ * a recepção ter o contato. Cliente novo gera aviso à equipe. Nunca lança.
+ */
+async function cadastrarClienteDaReserva(admin: SupabaseClient, r: Linha) {
+  try {
+    const email = String(r.cliente_email || "").trim().toLowerCase();
+    if (!email) return;
+    const { data: existente } = await admin
+      .from("clientes").select("id").eq("unidade_id", r.unidade_id).ilike("email", email).limit(1).maybeSingle();
+    if (existente?.id) return;
+    const clienteId = "c_" + crypto.randomUUID().replace(/-/g, "").slice(0, 10);
+    const { error } = await admin.from("clientes").insert({
+      id: clienteId, unidade_id: r.unidade_id, nome: r.cliente_nome || email, documento: r.cliente_documento || null,
+      plano: "Avulso · sala por hora", fiscal: false, status: "ativo", desde: hojeBRT(),
+      contato: r.cliente_nome || email, email, telefone: r.cliente_telefone || null,
+    });
+    if (error) throw new Error(error.message);
+    const { data: sala } = await admin.from("salas").select("nome").eq("id", r.sala_id).maybeSingle();
+    await avisarEquipe(`Novo cliente: reserva paga de ${r.cliente_nome || email}`, [
+      `Sala: ${sala?.nome || r.sala_id}`,
+      `Quando: ${new Date(r.start_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" })}`,
+      `E-mail: ${email}`,
+      `Telefone: ${r.cliente_telefone || "não informado"}`,
+      `CPF/CNPJ: ${r.cliente_documento || "não informado"}`,
+      "Reserva paga pelo link de reserva. O cadastro foi criado em Clientes.",
+    ], `${APP_URL}/?p=clientes`);
+  } catch (e) {
+    console.error(`[reserva ${r.id}] cadastro do cliente:`, (e as Error).message);
+  }
+}
+
+/**
  * Créditos do plano por pagamento confirmado. Id determinístico = não duplica.
  * O plano anual é um pagamento por 12 meses: libera os créditos dos 12 meses.
  */
@@ -254,7 +286,7 @@ async function confirmarReservaPorEmail(admin: SupabaseClient, r: Linha) {
 
 async function tratarReserva(admin: SupabaseClient, reservaId: string, pay: Linha, status: string): Promise<string> {
   const { data: r } = await admin
-    .from("reservas").select("id, unidade_id, sala_id, cliente_nome, cliente_email, cliente_documento, status, start_at, end_at")
+    .from("reservas").select("id, unidade_id, sala_id, cliente_nome, cliente_email, cliente_documento, cliente_telefone, status, start_at, end_at")
     .eq("id", reservaId).maybeSingle();
   if (!r) return "reserva_inexistente";
 
@@ -273,7 +305,10 @@ async function tratarReserva(admin: SupabaseClient, reservaId: string, pay: Linh
         `Reserva ${r.id}, pagamento ${pay.id}, situação ${resultado}.`, `Cliente: ${r.cliente_nome} (${r.cliente_email})`,
       ]);
     }
-    if (resultado === "confirmada") await confirmarReservaPorEmail(admin, r);
+    if (resultado === "confirmada") {
+      await confirmarReservaPorEmail(admin, r);
+      await cadastrarClienteDaReserva(admin, r);
+    }
     return `reserva_${resultado}`;
   }
 

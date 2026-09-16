@@ -66,6 +66,11 @@ Deno.serve(async (req) => {
     if (!sala || sala.unidade_id !== b.unidade_id) return json({ error: mensagemReserva("SALA_INEXISTENTE") }, 400, req);
 
     const alvoEmail = String(b.cliente_email || "").trim().toLowerCase();
+    // Reserva manual para quem não é cliente é exceção: exige o motivo.
+    const observacao = String(b.observacao || "").trim().slice(0, 500);
+    if (!comoCliente && b.avulso === true && observacao.length < 5) {
+      return json({ error: "Informe o motivo de reservar sem o cliente passar pelo link." }, 400, req);
+    }
     const tipoCred = tipoCredito(sala.tipo);
     const valorHora = Number(sala.valor_hora || 0);
     let valorPedido: number | null = b.valor ?? null;
@@ -121,6 +126,15 @@ Deno.serve(async (req) => {
       return json({ error: mensagemReserva(msg, "Não foi possível reservar agora. Tente de novo.") }, msg.includes("CONFLITO") ? 409 : conhecido ? 400 : 500, req);
     }
 
+    if (data?.id && !comoCliente && (observacao || b.telefone)) {
+      const extra: Record<string, string> = {};
+      if (observacao) extra.observacao = b.avulso === true ? `Exceção: ${observacao}` : observacao;
+      if (b.telefone) extra.cliente_telefone = String(b.telefone).slice(0, 40);
+      const { error: eObs } = await admin.from("reservas").update(extra).eq("id", data.id);
+      if (eObs) console.error("[criar-reserva] observacao", eObs.message);
+      else Object.assign(data as Record<string, unknown>, extra);
+    }
+
     // --- Consumo de crédito do plano + excedente (fail-safe) ----------------
     // Nunca derruba a reserva: qualquer erro aqui apenas mantém o valor cheio.
     let credito: Record<string, unknown> | null = null;
@@ -159,6 +173,7 @@ Deno.serve(async (req) => {
       detalhe: {
         sala_id: b.sala_id, base: b.base ?? null, start_at: b.start_at, end_at: b.end_at,
         cliente_nome: clienteNome, cliente_email: alvoEmail || null,
+        ...(b.avulso === true ? { excecao_sem_cadastro: true, motivo: observacao } : {}),
         origem: comoCliente ? "app" : (b.origem ?? "recepcao"), valor: (data as { valor?: number })?.valor ?? valorPedido,
         credito,
       },

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, CheckCircle2, CalendarOff, AlertCircle, Trash2, Smartphone, DollarSign, Percent, CalendarClock, TrendingUp, LayoutGrid, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, CheckCircle2, CalendarOff, AlertCircle, Trash2, Smartphone, DollarSign, Percent, CalendarClock, TrendingUp, LayoutGrid, ChevronLeft, ChevronRight, Link2, Copy, MessageCircle } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
 import { HORARIOS, DIAS } from "../lib/data.js";
@@ -33,6 +33,7 @@ export default function Reservas() {
   const { activeUnit, unidadeAtiva, salasDe, clientesDe, reservas, criarReserva, removeReserva, marcarReservasVistas, addLancamento } = useStore();
   const [diaSel, setDiaSel] = useState(0);
   const [modal, setModal] = useState(null);
+  const [linkModal, setLinkModal] = useState(null); // {} = aberto
   const [detalhe, setDetalhe] = useState(null);
   const [semanaRef, setSemanaRef] = useState(() => new Date()); // data âncora (semana/mês/ano exibido)
   const [visao, setVisao] = useState("semana"); // semana | mes | ano
@@ -93,9 +94,14 @@ export default function Reservas() {
         title="Agenda de Salas"
         sub={`Agenda da unidade ${unidadeAtiva?.nome || ""} · disponibilidade por sala e horário.`}
         action={
-          <Btn variant="teal" onClick={() => setModal({})}>
-            <Plus size={16} /> Nova reserva
-          </Btn>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Btn variant="teal" onClick={() => setLinkModal({})}>
+              <Link2 size={16} /> Link para o cliente reservar
+            </Btn>
+            <Btn variant="ghost" onClick={() => setModal({})}>
+              <Plus size={16} /> Nova reserva
+            </Btn>
+          </div>
         }
       />
       {visao === "semana" && salasReservaveis.length > 0 && (
@@ -315,6 +321,7 @@ export default function Reservas() {
           salaInicial={modal.sala}
           inicioInicial={modal.inicio}
           reservas={reservas}
+          onPedirLink={(dados) => { setModal(null); setLinkModal(dados || {}); }}
           onClose={() => setModal(null)}
           onSave={async (nr) => {
             const res = await criarReserva({ ...nr, cor: C.teal2 });
@@ -322,6 +329,15 @@ export default function Reservas() {
             setDiaSel(nr.dia);
             setModal(null);
           }}
+        />
+      )}
+
+      {linkModal && (
+        <LinkReservaModal
+          unidade={unidadeAtiva}
+          salas={salasReservaveis.filter((s) => s.reservaOnline === true && Number(s.valorHora) > 0)}
+          inicial={linkModal}
+          onClose={() => setLinkModal(null)}
         />
       )}
 
@@ -455,7 +471,9 @@ function ReservaDetalhe({ reserva, sala, dias, onComplemento, onCancelar }) {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
           <div style={{ fontFamily: serif, fontSize: 18 }}>{reserva.cliente}</div>
           {reserva.origem === "app" && <Badge color={C.teal}><Smartphone size={11} /> Reservou pelo app</Badge>}
+          {reserva.origem === "site" && <Badge color={C.teal}><Link2 size={11} /> Pagou pelo link</Badge>}
         </div>
+        {reserva.observacao && <div style={{ fontSize: 13, color: C.amber, marginTop: 6 }}>{reserva.observacao}</div>}
         <div style={{ fontSize: 13, color: C.text3, marginTop: 4 }}>
           {sala?.nome}{reserva.base ? ` · Base ${reserva.base}` : ""} · {dataLabel} · {HORARIOS[reserva.inicio]}–{horaFim(reserva.inicio, reserva.dur)} ({reserva.dur}h)
         </div>
@@ -488,12 +506,12 @@ function ReservaDetalhe({ reserva, sala, dias, onComplemento, onCancelar }) {
   );
 }
 
-function NovaReservaModal({ salas, clientes, dias, datasSemana = [], semanaInicio, diaInicial, salaInicial, inicioInicial, reservas, onClose, onSave }) {
+function NovaReservaModal({ salas, clientes, dias, datasSemana = [], semanaInicio, diaInicial, salaInicial, inicioInicial, reservas, onClose, onSave, onPedirLink }) {
   const [f, setF] = useState({
     sala: (salaInicial && salas.some((s) => s.id === salaInicial) ? salaInicial : salas[0]?.id) || "",
     modo: clientes.length ? "cadastrado" : "avulso",
     clienteId: clientes[0]?.id || "",
-    nome: "", telefone: "", email: "",
+    nome: "", telefone: "", email: "", motivo: "",
     dia: diaInicial || 0, inicio: inicioInicial ?? 2, dur: 1, base: null,
   });
   const salaSel = salas.find((s) => s.id === f.sala);
@@ -508,7 +526,8 @@ function NovaReservaModal({ salas, clientes, dias, datasSemana = [], semanaInici
   const bases = compart ? Array.from({ length: salaSel.bases }, (_, i) => i + 1) : [];
   const livres = bases.filter((n) => !baseOcupada(n)).length;
   const baseConflito = compart && (!f.base || baseOcupada(f.base));
-  const podeSalvar = clienteNome && f.sala && !conflito && !baseConflito;
+  const motivoOk = f.modo !== "avulso" || f.motivo.trim().length >= 5;
+  const podeSalvar = clienteNome && f.sala && !conflito && !baseConflito && motivoOk;
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const setTempo = (patch) => setF((p) => ({ ...p, ...patch, base: null }));
 
@@ -563,6 +582,14 @@ function NovaReservaModal({ salas, clientes, dias, datasSemana = [], semanaInici
         )
       ) : (
         <>
+          <div style={{ background: C.tealPale, border: `1px solid ${C.tealLine}`, borderRadius: 12, padding: "12px 14px", marginBottom: 14, fontSize: 13.5, color: C.text2, lineHeight: 1.5 }}>
+            <b style={{ color: C.text }}>Prefira mandar o link.</b> O cliente escolhe o horário, informa os dados e paga por PIX ou cartão; a reserva confirma sozinha e o cadastro fica pronto.
+            <div style={{ marginTop: 10 }}>
+              <Btn variant="teal" onClick={() => onPedirLink?.({ sala: f.sala, telefone: f.telefone })}>
+                <Link2 size={15} /> Mandar o link ao cliente
+              </Btn>
+            </div>
+          </div>
           <Field label="Nome do cliente / empresa">
             <input value={f.nome} onChange={set("nome")} style={inp} placeholder="Nome de quem vai usar a sala" />
           </Field>
@@ -574,6 +601,9 @@ function NovaReservaModal({ salas, clientes, dias, datasSemana = [], semanaInici
               <input type="email" value={f.email} onChange={set("email")} style={inp} placeholder="email@exemplo.com" />
             </Field>
           </div>
+          <Field label="Por que reservar direto, sem o link? (obrigatório)">
+            <input value={f.motivo} onChange={set("motivo")} maxLength={300} style={inp} placeholder="Ex.: cliente está na recepção e pagou em dinheiro" />
+          </Field>
         </>
       )}
 
@@ -632,10 +662,107 @@ function NovaReservaModal({ salas, clientes, dias, datasSemana = [], semanaInici
         variant="teal"
         disabled={!podeSalvar}
         style={{ width: "100%", justifyContent: "center", opacity: podeSalvar ? 1 : 0.5 }}
-        onClick={() => podeSalvar && onSave({ sala: f.sala, dia: f.dia, inicio: f.inicio, dur: f.dur, base: f.base, cliente: clienteNome, avulso: f.modo === "avulso", telefone: f.telefone, email: f.email, startAt: startDate.toISOString(), endAt: endDate.toISOString() })}
+        onClick={() => podeSalvar && onSave({ sala: f.sala, dia: f.dia, inicio: f.inicio, dur: f.dur, base: f.base, cliente: clienteNome, avulso: f.modo === "avulso", observacao: f.modo === "avulso" ? f.motivo.trim() : "", telefone: f.telefone, email: f.email, startAt: startDate.toISOString(), endAt: endDate.toISOString() })}
       >
         <CheckCircle2 size={17} /> Confirmar reserva
       </Btn>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Link de reserva para o cliente (caminho padrão da recepção)
+// O cliente abre, escolhe o horário, informa os dados e paga por PIX ou cartão
+// na página de reserva do site; a reserva confirma sozinha com o pagamento e o
+// cadastro dele é criado em Clientes.
+// ---------------------------------------------------------------------------
+const SITE_RESERVA = "https://cafeworking.com.br/reservar-sala";
+const dataISO = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+export function linkDeReserva({ unidadeId, salaNome, data }) {
+  const q = new URLSearchParams();
+  if (unidadeId) q.set("unidade", unidadeId);
+  if (salaNome) q.set("sala", salaNome);
+  if (data) q.set("data", data);
+  const s = q.toString();
+  return s ? `${SITE_RESERVA}?${s}` : SITE_RESERVA;
+}
+
+function LinkReservaModal({ unidade, salas, inicial = {}, onClose }) {
+  const [salaId, setSalaId] = useState(salas.some((s) => s.id === inicial.sala) ? inicial.sala : "");
+  const [data, setData] = useState("");
+  const [telefone, setTelefone] = useState(inicial.telefone || "");
+  const [copiado, setCopiado] = useState(false);
+  const sala = salas.find((s) => s.id === salaId);
+  const link = linkDeReserva({ unidadeId: unidade?.id, salaNome: sala?.nome, data });
+  const mensagem = `Olá! Para reservar ${sala ? `a sala ${sala.nome}` : "sua sala"} no CafeWorking é só abrir o link, escolher o horário, preencher seus dados e pagar por PIX ou cartão. A reserva confirma na hora do pagamento.\n\n${link}`;
+  const fone = telefone.replace(/\D/g, "");
+  const foneWa = fone.length >= 10 ? (fone.startsWith("55") ? fone : `55${fone}`) : "";
+  const whatsapp = `https://wa.me/${foneWa}?text=${encodeURIComponent(mensagem)}`;
+
+  const copiar = async (texto) => {
+    try {
+      await navigator.clipboard.writeText(texto);
+    } catch {
+      const t = document.createElement("textarea");
+      t.value = texto; document.body.appendChild(t); t.select();
+      try { document.execCommand("copy"); } catch { /* sem cópia */ }
+      t.remove();
+    }
+    setCopiado(true);
+    setTimeout(() => setCopiado(false), 2500);
+  };
+
+  return (
+    <Modal onClose={onClose} title="Link para o cliente reservar">
+      <div style={{ fontSize: 13.5, color: C.text2, lineHeight: 1.5, marginBottom: 14 }}>
+        Mande este link para quem quer reservar sem ir à recepção. O cliente escolhe o horário, informa os dados e paga por PIX ou cartão.
+        A reserva aparece na agenda assim que o pagamento entra, e o cadastro dele é criado em Clientes.
+      </div>
+
+      {!salas.length && (
+        <div style={{ display: "flex", gap: 8, background: C.amberPale || C.cream2, color: C.amber, borderRadius: 10, padding: "10px 12px", fontSize: 13, marginBottom: 12 }}>
+          <AlertCircle size={16} /> Nenhuma sala desta unidade está liberada para reserva online. Marque "Reservável por hora no site" e o valor por hora na sala.
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <Field label="Sala">
+          <select value={salaId} onChange={(e) => setSalaId(e.target.value)} style={inp}>
+            <option value="">O cliente escolhe</option>
+            {salas.map((s) => <option key={s.id} value={s.id}>{s.nome} · {fmt(s.valorHora)}/h</option>)}
+          </select>
+        </Field>
+        <Field label="Dia (opcional)">
+          <input type="date" value={data} min={dataISO(new Date())} onChange={(e) => setData(e.target.value)} style={inp} />
+        </Field>
+      </div>
+
+      <Field label="Link">
+        <div style={{ display: "flex", gap: 8 }}>
+          <input readOnly value={link} onFocus={(e) => e.target.select()} style={{ ...inp, flex: 1, fontSize: 13 }} aria-label="Link de reserva" />
+          <Btn variant="ghost" onClick={() => copiar(link)}>
+            {copiado ? <><CheckCircle2 size={15} /> Copiado</> : <><Copy size={15} /> Copiar</>}
+          </Btn>
+        </div>
+      </Field>
+
+      <Field label="WhatsApp do cliente (opcional)">
+        <input value={telefone} onChange={(e) => setTelefone(e.target.value)} style={inp} placeholder="(31) 99999-9999" inputMode="tel" />
+      </Field>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <a href={whatsapp} target="_blank" rel="noreferrer" className="cw-btn"
+          style={{ flex: 1, display: "inline-flex", justifyContent: "center", alignItems: "center", gap: 8, padding: "11px 16px", borderRadius: 12, background: C.teal, color: "#fff", fontWeight: 600, fontSize: 14, textDecoration: "none" }}>
+          <MessageCircle size={16} /> {foneWa ? "Enviar no WhatsApp" : "Abrir no WhatsApp"}
+        </a>
+        <Btn variant="ghost" onClick={() => copiar(mensagem)}>
+          <Copy size={15} /> Copiar mensagem
+        </Btn>
+      </div>
+      <div style={{ fontSize: 12.5, color: C.text3, marginTop: 10 }}>
+        Sem o número, o WhatsApp abre para você escolher a conversa.
+      </div>
     </Modal>
   );
 }
