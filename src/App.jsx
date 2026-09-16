@@ -12,7 +12,7 @@ import Login from "./pages/Login.jsx";
 import { supabaseConfigured, getSession, onAuthChange, signOut, precisaDefinirSenha, emailDaSessao } from "./lib/supabaseAuth.js";
 import { telaDaUrl, urlDaTela } from "./lib/rotas.js";
 import DefinirSenha from "./pages/DefinirSenha.jsx";
-import { fetchMemberships, fetchTenant, fetchAppState, fetchBoletosDb, fetchNotasDb, fetchConfigFiscalDb, fetchIsPlatformAdmin, fetchReservasDb, fetchCreditosDb } from "./lib/supabaseDb.js";
+import { fetchMemberships, fetchTenant, fetchAppState, fetchBoletosDb, fetchNotasDb, fetchConfigFiscalDb, fetchIsPlatformAdmin, fetchReservasDb, fetchCreditosDb, fetchCobrancasDb } from "./lib/supabaseDb.js";
 
 import Dashboard from "./pages/Dashboard.jsx";
 import CRM from "./pages/CRM.jsx";
@@ -163,9 +163,10 @@ export default function App() {
     Promise.all([fetchMemberships(), fetchIsPlatformAdmin()])
       .then(([membros, isAdmin]) => { if (vivo) { aplicarSessaoUsuario(membros, isAdmin, ident); setSessaoAplicada(true); } });
     // Estado operacional (salas, reservas, financeiro, estoque…) + tabelas próprias.
-    Promise.all([fetchAppState(), fetchBoletosDb(), fetchNotasDb(), fetchConfigFiscalDb(), fetchReservasDb(), fetchCreditosDb()])
-      .then(([appState, boletos, notas, config, reservas, creditos]) => {
-        if (vivo) hydrateOperacional({ appState, boletos, notas, config, reservas, creditos });
+    // Cobranças do Asaas: a RLS só devolve para master/financeiro/admin (e ao cliente, as dele); vazio não quebra.
+    Promise.all([fetchAppState(), fetchBoletosDb(), fetchNotasDb(), fetchConfigFiscalDb(), fetchReservasDb(), fetchCreditosDb(), fetchCobrancasDb()])
+      .then(([appState, boletos, notas, config, reservas, creditos, cobrancas]) => {
+        if (vivo) hydrateOperacional({ appState, boletos, notas, config, reservas, creditos, cobrancas });
       });
     return () => { vivo = false; };
     // Recarrega ao trocar de usuário, não a cada renovação do token (que troca o objeto session).

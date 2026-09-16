@@ -25,6 +25,7 @@ import { getCurrentCompetencia, parseDateToCompetencia, anoDoLancamento } from "
 import { legacyReservaToDateRange, dateRangeToLegacy, temConflito, TZ } from "./reservas.js";
 import { reservasApi } from "./reservasApi.js";
 import { notificacoesApi } from "./notificacoesApi.js";
+import { mapCobrancaDb } from "./recebimentosOnline.js";
 import {
   PERFIS, SECOES, gerarDadosBoleto,
   seedUnidades, seedFranqueados, seedUsuarios, seedContas, seedLancamentos,
@@ -80,6 +81,8 @@ export function StoreProvider({ children }) {
   const [patrimonio, setPatrimonio] = useState(seedOr(seedPatrimonio));
   const [configFiscal, setConfigFiscal] = useState(seedOr(seedConfigFiscal));
   const [notasFiscais, setNotasFiscais] = useState(seedOr(seedNotasFiscais));
+  // Cobranças do Asaas (tabela cobrancas, só leitura aqui). Demo: vazio.
+  const [cobrancas, setCobrancas] = useState([]);
   const [planos, setPlanos] = useState(seedOr(seedPlanos));
   const [recibos, setRecibos] = useState(seedOr([]));
   const [creditLedger, setCreditLedger] = useState(seedOr([]));
@@ -778,6 +781,7 @@ export function StoreProvider({ children }) {
     if (nfseApi.configured) upsertConfigFiscal({ unidadeId, ...patch }).catch(() => {});
   };
   const notasFiscaisDe = (unidadeId) => notasFiscais.filter((n) => n.unidadeId === unidadeId);
+  const cobrancasDe = (unidadeId) => cobrancas.filter((c) => c.unidadeId === unidadeId);
 
   const _mapApiNota = (n) => ({
     id: n.id, unidadeId: n.unidade_id, numero: n.numero,
@@ -1215,7 +1219,7 @@ export function StoreProvider({ children }) {
 
   // Hidrata as entidades operacionais (app_state) + as de tabela própria
   // (boletos, notas, config fiscal). Chamado pelo App.jsx após o login.
-  const hydrateOperacional = ({ appState, boletos: bs, notas, config, reservas: reservasDb, creditos } = {}) => {
+  const hydrateOperacional = ({ appState, boletos: bs, notas, config, reservas: reservasDb, creditos, cobrancas: cobrancasDb } = {}) => {
     if (appState?.length) {
       const byEntity = {};
       for (const r of appState) (byEntity[r.entity] ||= []).push(r.doc);
@@ -1272,6 +1276,7 @@ export function StoreProvider({ children }) {
     if (bs?.length) setBoletos(bs.map((b) => _mapApiBoleto(b, b.unidade_id)));
     if (notas?.length) setNotasFiscais(notas.map(_mapApiNota));
     if (config?.length) setConfigFiscal(config.map(_mapConfigFiscal));
+    if (Array.isArray(cobrancasDb)) setCobrancas(cobrancasDb.map(mapCobrancaDb));
     // Reservas relacionais (tabela) — fonte das reservas novas. Mescla com as do
     // app_state por id (a relacional prevalece).
     if (reservasDb?.length) {
@@ -1335,6 +1340,7 @@ export function StoreProvider({ children }) {
       estoque, estoqueDe, estoqueBaixoDe, addItemEstoque, updateItemEstoque, removeItemEstoque, ajustarEstoque, comprarEstoque, venderEstoque, registrarSaidaEstoque,
       patrimonio, patrimonioDe, addAtivo, updateAtivo, removeAtivo,
       configFiscal, configFiscalDe, updateConfigFiscal, salvarConfigFiscal, notasFiscais, notasFiscaisDe, emitirNFSe, cancelarNF, salvarCertificadoFiscal,
+      cobrancas, cobrancasDe,
       planos, planosDe, addPlano, updatePlano, removePlano,
       recibos, recibosDe, emitirRecibo, removeRecibo,
       creditLedger, CREDITO_TIPOS, ledgerDe, saldoCreditos, saldosCliente, concederCreditosPlano, consumirCredito, ajustarCredito,
@@ -1345,7 +1351,7 @@ export function StoreProvider({ children }) {
     // memorizamos o value apenas pelos ESTADOS. Incluir as funções nas deps
     // anularia o useMemo (novo objeto a cada render) — comportamento indesejado.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, configFiscal, notasFiscais, planos, recibos, creditLedger, configVenda, syncErrors, reservas, leads, crmEtapas, crmOrigens, cobrancaTemplate, eventos, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail]
+    [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, configFiscal, notasFiscais, cobrancas, planos, recibos, creditLedger, configVenda, syncErrors, reservas, leads, crmEtapas, crmOrigens, cobrancaTemplate, eventos, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail]
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

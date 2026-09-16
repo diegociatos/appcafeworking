@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   Wallet, TrendingUp, Landmark, BarChart3, FileText, Tags,
   Plus, Edit3, Trash2, Check, X, ArrowUpRight, ArrowDownRight, Receipt, Paperclip, Download, Barcode, Copy, QrCode,
-  FileSignature, RefreshCw, AlertTriangle, Upload, CheckCircle2, AlertCircle, MessageSquare, Phone,
+  FileSignature, RefreshCw, AlertTriangle, Upload, CheckCircle2, AlertCircle, MessageSquare, Phone, CreditCard,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, FileInput } from "../components/ui.jsx";
 import { C, serif, sans, fmt, fmtShort, inp } from "../lib/theme.js";
@@ -11,6 +11,7 @@ import {
   getCurrentCompetencia, parseDateBR, anoDoLancamento, chaveCompetencia, chaveDoLancamento, noPeriodo, anosDisponiveis, competenciaComAno,
 } from "../lib/dateUtils.js";
 import { gerarModeloFluxo, lerPlanilhaFluxo, validarLinhas, exportarExtratoExcel, exportarProvisaoExcel } from "../lib/fluxoImport.js";
+import { resumoOnline, cobrancasJaLancadas, competenciaDaCobranca, situacaoCobranca, hojeBRT } from "../lib/recebimentosOnline.js";
 
 const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 // Competência atual a partir da data real (sem datas fixas).
@@ -59,6 +60,7 @@ export const FIN_GRUPOS = [
     { id: "dre", label: "DRE", icon: FileText },
     { id: "provisao", label: "Provisão", icon: TrendingUp },
     { id: "recebimentos", label: "Recebimentos por Cliente", icon: Receipt },
+    { id: "online", label: "Recebimentos online (Asaas)", icon: CreditCard },
   ] },
   { titulo: "Cadastros", itens: [
     { id: "bancos", label: "Bancos", icon: Landmark },
@@ -148,6 +150,7 @@ export default function Financeiro({ finTab }) {
         {tab === "contratos" && <Contratos store={store} activeUnit={activeUnit} />}
         {tab === "extrato" && <Extrato contas={contas} lancamentos={lancamentos} onAbrir={setDetalheLanc} onRemoverImportados={(contaId) => store.removerImportados(activeUnit, contaId)} />}
         {tab === "dre" && <DRE lancamentos={lancamentos} categorias={categorias} />}
+        {tab === "online" && <RecebimentosOnline cobrancas={store.cobrancasDe(activeUnit)} lancamentos={lancamentos} />}
         {tab === "recebimentos" && <RecebimentosCliente clientes={clientesUnidade} lancamentos={lancamentos} updateLancamento={store.updateLancamento} />}
         {tab === "inadimplencia" && <Inadimplencia clientes={clientesUnidade} lancamentos={lancamentos} contas={contas} categorias={categorias} store={store} activeUnit={activeUnit} />}
         {tab === "provisao" && <Provisao store={store} activeUnit={activeUnit} lancamentos={lancamentos} categorias={categorias} unidadeNome={unidadeAtiva?.nome} onNovaDespesa={() => setContaPRModal({ tipo: "saida" })} />}
@@ -1791,6 +1794,89 @@ function RecebimentosCliente({ clientes = [], lancamentos = [], updateLancamento
             </div>
           </div>
         </Card>
+      )}
+    </>
+  );
+}
+
+// ===== RECEBIMENTOS ONLINE (ASAAS) =========================================
+// Cobranças pagas/abertas no Asaas (tabela cobrancas). É uma visão à parte: NÃO
+// entra nos totais dos lançamentos (Fluxo, DRE), para não somar duas vezes o que
+// já foi lançado pela tela Cobranças.
+function RecebimentosOnline({ cobrancas = [], lancamentos = [] }) {
+  const hoje = hojeBRT();
+  const anos = [...new Set([ANO_ATUAL, ...cobrancas.map((c) => competenciaDaCobranca(c, situacaoCobranca(c, hoje))?.ano).filter(Boolean)])].sort((a, b) => b - a);
+  const [ano, setAno] = useState(ANO_ATUAL);
+  const r = resumoOnline(cobrancas, ano, hoje);
+  const jaLancadas = cobrancasJaLancadas(lancamentos);
+  const recebidasNoAno = cobrancas.filter((c) => c.status === "pago" && competenciaDaCobranca(c, "recebido")?.ano === ano);
+  const qtdJaLancadas = recebidasNoAno.filter((c) => jaLancadas.has(String(c.id))).length;
+  const Cel = ({ children, style }) => <div style={{ fontSize: 13, ...style }}>{children}</div>;
+  const val = (v, cor) => <Cel style={{ textAlign: "right", color: v ? cor : C.text4, fontVariantNumeric: "tabular-nums" }}>{v ? fmt(v) : "—"}</Cel>;
+  const gcol = "90px 1fr 1fr 1fr";
+  const pcol = "1fr 110px 110px 110px 60px";
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
+        <div>
+          <div style={{ fontFamily: serif, fontSize: 20 }}>Recebimentos online (Asaas)</div>
+          <div style={{ fontSize: 12.5, color: C.text3, maxWidth: 680 }}>Cobranças do Asaas: assinaturas, vendas e reservas pelo site e cobranças criadas no app. Recebido conta no mês do pagamento; em aberto e vencido, no mês do vencimento. Esta visão não soma nos lançamentos do Fluxo de caixa e do DRE.</div>
+        </div>
+        <SeletorAno valor={ano} onChange={setAno} anos={anos} />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12, marginBottom: 14 }}>
+        <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Recebido em {ano}</div><div style={{ fontFamily: serif, fontSize: 24, color: C.green }}>{fmt(r.recebido)}</div><div style={{ fontSize: 11, color: C.text4 }}>{r.qtdRecebidas} pagamento(s)</div></Card>
+        <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Em aberto</div><div style={{ fontFamily: serif, fontSize: 24, color: C.amber }}>{fmt(r.aberto)}</div></Card>
+        <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Vencido</div><div style={{ fontFamily: serif, fontSize: 24, color: r.vencido ? C.red : C.text3 }}>{fmt(r.vencido)}</div></Card>
+      </div>
+      {qtdJaLancadas > 0 && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", background: C.cream, borderRadius: 10, padding: "9px 12px", fontSize: 12.5, color: C.text2, marginBottom: 14 }}>
+          <AlertCircle size={15} color={C.text3} /> {qtdJaLancadas} dos pagamentos de {ano} também têm lançamento pago no Fluxo de caixa (criados pela tela Cobranças). O Dashboard conta cada um uma vez só.
+        </div>
+      )}
+
+      {cobrancas.length === 0 ? (
+        <Card><Empty icon={CreditCard} title="Nenhuma cobrança do Asaas" sub="Quando houver cobranças (assinaturas, vendas pelo site ou criadas em Cobranças), elas aparecem aqui." /></Card>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(340px,1fr))", gap: 16 }}>
+          <Card style={{ padding: 0, overflow: "hidden" }}>
+            <div style={{ padding: "12px 18px", borderBottom: `1px solid ${C.border2}`, fontWeight: 700, fontSize: 13.5 }}>Mês a mês · {ano}</div>
+            <div style={{ overflowX: "auto" }}><div style={{ minWidth: 420 }}>
+              <div style={{ display: "grid", gridTemplateColumns: gcol, gap: 8, padding: "10px 18px", background: C.cream, fontSize: 11, fontWeight: 700, color: C.text3 }}>
+                <div>MÊS</div><div style={{ textAlign: "right" }}>RECEBIDO</div><div style={{ textAlign: "right" }}>EM ABERTO</div><div style={{ textAlign: "right" }}>VENCIDO</div>
+              </div>
+              {r.porMes.map((m, i) => (
+                <div key={i} style={{ display: "grid", gridTemplateColumns: gcol, gap: 8, padding: "9px 18px", borderTop: `1px solid ${C.border2}`, opacity: m.qtd ? 1 : 0.5 }}>
+                  <Cel style={{ fontWeight: 600 }}>{MESES[i]}/{ano}</Cel>
+                  {val(m.recebido, C.green)}{val(m.aberto, C.amber)}{val(m.vencido, C.red)}
+                </div>
+              ))}
+              <div style={{ display: "grid", gridTemplateColumns: gcol, gap: 8, padding: "12px 18px", background: C.cream, fontWeight: 700 }}>
+                <Cel style={{ fontFamily: serif }}>ANO</Cel>
+                {val(r.recebido, C.green)}{val(r.aberto, C.amber)}{val(r.vencido, C.red)}
+              </div>
+            </div></div>
+          </Card>
+
+          <Card style={{ padding: 0, overflow: "hidden" }}>
+            <div style={{ padding: "12px 18px", borderBottom: `1px solid ${C.border2}`, fontWeight: 700, fontSize: 13.5 }}>Por plano / serviço · {ano}</div>
+            <div style={{ overflowX: "auto" }}><div style={{ minWidth: 460 }}>
+              <div style={{ display: "grid", gridTemplateColumns: pcol, gap: 8, padding: "10px 18px", background: C.cream, fontSize: 11, fontWeight: 700, color: C.text3 }}>
+                <div>PLANO</div><div style={{ textAlign: "right" }}>RECEBIDO</div><div style={{ textAlign: "right" }}>EM ABERTO</div><div style={{ textAlign: "right" }}>VENCIDO</div><div style={{ textAlign: "right" }}>QTD</div>
+              </div>
+              {r.porPlano.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: C.text4 }}>Nenhuma cobrança em {ano}.</div>}
+              {r.porPlano.map((p) => (
+                <div key={p.plano} style={{ display: "grid", gridTemplateColumns: pcol, gap: 8, padding: "9px 18px", borderTop: `1px solid ${C.border2}`, alignItems: "center" }}>
+                  <Cel style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.plano}</Cel>
+                  {val(p.recebido, C.green)}{val(p.aberto, C.amber)}{val(p.vencido, C.red)}
+                  <Cel style={{ textAlign: "right", color: C.text3 }}>{p.qtd}</Cel>
+                </div>
+              ))}
+            </div></div>
+          </Card>
+        </div>
       )}
     </>
   );

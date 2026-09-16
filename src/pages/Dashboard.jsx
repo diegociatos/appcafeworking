@@ -7,6 +7,7 @@ import { Card, Badge, Btn, PageHead } from "../components/ui.jsx";
 import { C, serif, fmt, fmtShort } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 import { getCurrentCompetencia, MESES_BR as MESES, noPeriodo } from "../lib/dateUtils.js";
+import { cobrancasJaLancadas, receitaOnlineNoMes } from "../lib/recebimentosOnline.js";
 import { Store } from "lucide-react";
 
 const ICONS = { fatura: Receipt, corresp: Mail, sala: DoorOpen, lead: Target, estoque: AlertCircle };
@@ -29,12 +30,19 @@ export default function Dashboard({ go }) {
   const leads = daUnidade(store.leads);
   const salas = store.salasDe ? store.salasDe(ativo) : [];
   const contratos = store.contratosDe ? store.contratosDe(ativo).filter((c) => c.status === "ativo") : [];
+  // Cobranças pagas no Asaas (vazio para quem a RLS não deixa ler).
+  const cobrancasUnidade = store.cobrancasDe ? store.cobrancasDe(ativo) : [];
+  const jaLancadas = cobrancasJaLancadas(lancs);
 
   // Fluxo real de 12 meses do ano atual (entradas pagas) — substitui o gráfico procedural.
+  // Receita = lançamentos pagos + pagamentos do Asaas que ainda não viraram
+  // lançamento pago (cobrança lançada e já baixada não conta duas vezes).
+  const asaasNoMes = (ano, mes) => receitaOnlineNoMes(cobrancasUnidade, lancs, ano, mes, jaLancadas).valor;
   const entradasPagas = (ano, mes) => lancs
     .filter((l) => noPeriodo(l, ano, mes) && l.tipo === "entrada" && l.status === "pago")
-    .reduce((s, l) => s + (l.valor || 0), 0);
+    .reduce((s, l) => s + (l.valor || 0), 0) + asaasNoMes(ano, mes);
   const fluxo = MESES.map((label, m) => ({ label, valor: entradasPagas(comp.ano, m) }));
+  const receitaAsaasMes = asaasNoMes(comp.ano, comp.mes);
   const maxFluxo = Math.max(1, ...fluxo.map((f) => f.valor));
   const receitaMes = fluxo[comp.mes]?.valor || 0;
   // Mês anterior de verdade (em janeiro é dezembro do ano passado).
@@ -70,7 +78,7 @@ export default function Dashboard({ go }) {
     .sort((a, b) => b[1] - a[1]).slice(0, 4).map(([nome, n]) => ({ nome, n }));
 
   const stats = [
-    { label: `Receita ${MESES[comp.mes]}`, val: fmtShort(receitaMes), delta: deltaMes >= 0 ? `▲ ${deltaMes}% vs mês anterior` : `▼ ${Math.abs(deltaMes)}% vs mês anterior`, icon: DollarSign, cor: deltaMes >= 0 ? C.green : C.red },
+    { label: `Receita ${MESES[comp.mes]}`, val: fmtShort(receitaMes), delta: `${deltaMes >= 0 ? `▲ ${deltaMes}%` : `▼ ${Math.abs(deltaMes)}%`} vs mês anterior${receitaAsaasMes ? ` · ${fmtShort(receitaAsaasMes)} do Asaas` : ""}`, icon: DollarSign, cor: deltaMes >= 0 ? C.green : C.red },
     { label: "Receita recorrente", val: fmtShort(recorrenteMes), delta: `avulsa ${fmtShort(avulsaMes)}`, icon: TrendingUp, cor: C.teal },
     { label: "Contas a receber", val: fmtShort(aReceber), delta: `${vencidos.length} boleto(s) vencido(s)`, icon: Receipt, cor: vencidos.length ? C.red : C.cafe },
     { label: "Inadimplentes", val: inadimplentes, delta: inadimplentes ? "acionar cobrança" : "em dia", icon: AlertCircle, cor: inadimplentes ? C.red : C.green },
@@ -201,7 +209,7 @@ export default function Dashboard({ go }) {
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 18 }}>
             <div>
               <div style={{ fontFamily: serif, fontSize: 20, color: C.text }}>Receita do ano</div>
-              <div style={{ fontSize: 13, color: C.text3 }}>Entradas pagas, mês a mês · {unidades.find((u) => u.id === ativo)?.nome || ""}</div>
+              <div style={{ fontSize: 13, color: C.text3 }}>Entradas pagas + recebimentos online (Asaas), mês a mês · {unidades.find((u) => u.id === ativo)?.nome || ""}</div>
             </div>
             <Badge color={deltaMes >= 0 ? C.green : C.red}>{deltaMes >= 0 ? "▲" : "▼"} {Math.abs(deltaMes)}% no mês</Badge>
           </div>
