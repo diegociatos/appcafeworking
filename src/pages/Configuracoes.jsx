@@ -233,7 +233,7 @@ function MeuPerfil() {
 // ===========================================================================
 const PLANOS = [
   { nome: "Essencial", valor: 297, recursos: ["1 unidade", "Reservas + cafeteria", "Financeiro básico"] },
-  { nome: "Pro", valor: 597, recursos: ["Até 3 unidades", "Boletos e cobrança", "DRE e relatórios", "Chat e correspondências"] },
+  { nome: "Pro", valor: 597, recursos: ["Até 3 unidades", "Boletos e cobrança", "DRE e relatórios", "Correspondências digitalizadas"] },
   { nome: "Enterprise", valor: 1290, recursos: ["Unidades ilimitadas", "Multiconta", "API e automações", "Suporte dedicado"] },
 ];
 
@@ -332,7 +332,6 @@ const CANAIS = [
 const EVENTOS = [
   { id: "reserva", label: "Nova reserva", sub: "Cliente reserva uma sala", on: { email: true, whats: true, push: true } },
   { id: "corresp", label: "Nova correspondência", sub: "Documento recebido para um cliente", on: { email: true, whats: false, push: true } },
-  { id: "chat", label: "Mensagem no chat", sub: "Cliente fala com a recepção", on: { email: false, whats: true, push: true } },
   { id: "pedido", label: "Pedido na cafeteria", sub: "Novo pedido feito pelo app", on: { email: false, whats: false, push: true } },
   { id: "boleto", label: "Boleto pago ou vencido", sub: "Baixa automática e atrasos", on: { email: true, whats: true, push: false } },
   { id: "fatura", label: "Fatura da assinatura", sub: "Cobrança mensal do CafeWorking", on: { email: true, whats: false, push: false } },
@@ -356,7 +355,7 @@ function Notificacoes() {
    <div style={{ maxWidth: 660, display: "flex", flexDirection: "column", gap: 18 }}>
     <div style={{ fontSize: 13, color: C.text3 }}>
       <b>Avisos da equipe</b> — quem do time é notificado, e por qual canal, a cada evento.
-      A coluna <b>Push</b> controla os contadores que aparecem no menu do app (PDV, Chat, Reservas e Correspondências).
+      A coluna <b>Push</b> controla os contadores que aparecem no menu do app (PDV, Reservas e Correspondências).
     </div>
     <Card style={{ padding: 0, overflow: "hidden" }}>
       {/* cabeçalho de canais */}

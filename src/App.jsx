@@ -30,7 +30,6 @@ import { CreditCard } from "lucide-react";
 import Estoque from "./pages/Estoque.jsx";
 import Patrimonio from "./pages/Patrimonio.jsx";
 import Eventos from "./pages/Eventos.jsx";
-import Chat from "./pages/Chat.jsx";
 import AreaCliente from "./pages/AreaCliente.jsx";
 import Equipe from "./pages/Equipe.jsx";
 import Catalogo from "./pages/Catalogo.jsx";
@@ -73,7 +72,6 @@ const NAV = [
   { id: "estoque", label: "Estoque", icon: Boxes, group: "operacao" },
   { id: "eventos", label: "Eventos", icon: Mic2, group: "operacao" },
   { id: "clientes", label: "Clientes", icon: Users, group: "relacionamento" },
-  { id: "chat", label: "Chat", icon: MessageSquare, group: "relacionamento", badge: 3 },
   { id: "financeiro", label: "Financeiro", icon: Wallet, group: "financeiro" },
   { id: "boletos", label: "Boletos", icon: Barcode, group: "financeiro" },
   { id: "cobrancas", label: "Cobranças (cartão/PIX)", icon: CreditCard, group: "financeiro" },
@@ -95,7 +93,7 @@ const NAV_GRUPOS = [
 const PAGES = {
   dash: Dashboard, franqueados: Franqueados, crm: CRM, unidades: Unidades,
   reservas: Reservas, corresp: Correspondencias, pdv: PDV, clientes: Clientes,
-  financeiro: Financeiro, boletos: Boletos, cobrancas: Cobrancas, notafiscal: NotaFiscal, estoque: Estoque, patrimonio: Patrimonio, eventos: Eventos, chat: Chat,
+  financeiro: Financeiro, boletos: Boletos, cobrancas: Cobrancas, notafiscal: NotaFiscal, estoque: Estoque, patrimonio: Patrimonio, eventos: Eventos,
   area: AreaCliente, equipe: Equipe, catalogo: Catalogo, planos: Planos, salas: Salas, config: Configuracoes, auditoria: Auditoria, kds: KDS,
   assinaturas: Assinaturas, aberturas: Aberturas, cli_plano: MeuPlano, cli_abertura: AberturaEmpresaCliente,
   cli_inicio: InicioCliente, cli_reservar: ReservarCliente, cli_faturas: FaturasCliente, cli_docs: CorrespondenciasCliente,
@@ -103,7 +101,7 @@ const PAGES = {
 };
 
 export default function App() {
-  const { viewAs, franqueadoAtivo, perfil, setPerfil, activeUnit, pedidosDe, clientes, correspondenciasDe, conversasDe, reservas, meuPerfil, contratosVencendoDe, notificacaoPrefs, aplicarSessaoUsuario, hydrateFromDb, hydrateOperacional, estoqueBaixoDe, syncErrors } = useStore();
+  const { viewAs, franqueadoAtivo, perfil, setPerfil, activeUnit, pedidosDe, clientes, correspondenciasDe, reservas, meuPerfil, contratosVencendoDe, notificacaoPrefs, aplicarSessaoUsuario, hydrateFromDb, hydrateOperacional, estoqueBaixoDe, syncErrors } = useStore();
   const [page, setPage] = useState("dash");
   const [finTab, setFinTab] = useState("visao");
   const [finOpen, setFinOpen] = useState(true); // submenu Financeiro recolhível
@@ -218,9 +216,8 @@ export default function App() {
       ? [{ id: "_cli", label: "", itens: nav }]
       : NAV_GRUPOS.map((g) => ({ ...g, itens: nav.filter((n) => n.group === g.id) })).filter((g) => g.itens.length);
 
-  // Notifica a recepção de pedidos novos da cafeteria + mensagens não lidas
+  // Notifica a recepção de pedidos novos da cafeteria, reservas e correspondências
   const pedidosNovos = pedidosDe(activeUnit).filter((p) => p.status === "recebido").length;
-  const chatUnread = conversasDe(activeUnit).reduce((s, c) => s + (c.unread || 0), 0);
   const reservasNovas = reservas.filter((r) => r.unidadeId === activeUnit && r.origem === "app" && !r.vista).length;
   const correspNovas = correspondenciasDe(activeUnit).filter((c) => c.status === "aguardando").length;
   const contratosRenovar = contratosVencendoDe(activeUnit).length;
@@ -262,7 +259,6 @@ export default function App() {
         }
         @media (max-width: 760px) {
           .cw-search-wrap { display: none !important; }
-          .cw-chat-grid { grid-template-columns: 1fr !important; height: auto !important; }
           .cw-content { padding: 18px !important; }
         }
         .cw-nav-btn:hover { background: ${C.cream2}; }
@@ -308,7 +304,6 @@ export default function App() {
               )}
               {grupo.itens.map((n) => {
                 const badge = n.id === "pdv" ? (pushOn("pedido") ? pedidosNovos : 0)
-                  : n.id === "chat" ? (pushOn("chat") ? chatUnread : 0)
                   : n.id === "reservas" ? (pushOn("reserva") ? reservasNovas : 0)
                   : n.id === "corresp" ? (pushOn("corresp") ? correspNovas : 0)
                   : n.id === "estoque" ? estoqueBaixo

@@ -28,7 +28,7 @@ import { notificacoesApi } from "./notificacoesApi.js";
 import {
   PERFIS, SECOES, gerarDadosBoleto,
   seedUnidades, seedFranqueados, seedUsuarios, seedContas, seedLancamentos,
-  seedCategorias, seedCatalogo, seedCorresp, seedConversas, seedPedidos,
+  seedCategorias, seedCatalogo, seedCorresp, seedPedidos,
   seedSalas, seedProdutos, seedBankAccounts, seedBoletos, seedContratos,
   seedEstoque, seedPatrimonio, seedConfigFiscal, seedNotasFiscais, seedPlanos,
 } from "./storeSeeds.js";
@@ -66,7 +66,6 @@ export function StoreProvider({ children }) {
   const [categorias, setCategorias] = useState(seedCategorias);   // chart of accounts (global) — mantém
   const [pedidos, setPedidos] = useState(seedOr(seedPedidos));
   const [correspondencias, setCorrespondencias] = useState(seedOr(seedCorresp));
-  const [conversas, setConversas] = useState(seedOr(seedConversas));
   const [salas, setSalas] = useState(seedOr(seedSalas));
   const [produtos, setProdutos] = useState(seedProdutos);
   const [bankAccounts, setBankAccounts] = useState(seedOr(seedBankAccounts));
@@ -194,7 +193,6 @@ export function StoreProvider({ children }) {
   useSync("contratos", contratos);
   useSync("correspondencias", correspondencias);
   useSync("pedidos", pedidos);
-  useSync("conversas", conversas);
   useSync("leads", leads);
   useSync("eventos", eventos);
   useSync("planos", planos);
@@ -541,20 +539,6 @@ export function StoreProvider({ children }) {
   };
   const updateEvento = (id, patch) => setEventos((es) => es.map((e) => (e.id === id ? { ...e, ...patch } : e)));
   const removeEvento = (id) => setEventos((es) => es.filter((e) => e.id !== id));
-
-  // Chat / conversas (cliente <-> recepção) --------------------------------
-  const conversasDe = (unidadeId) => conversas.filter((c) => c.unidadeId === unidadeId);
-  const enviarMensagemCliente = (unidadeId, cliente, txt) => {
-    setConversas((cs) => {
-      const existe = cs.find((c) => c.unidadeId === unidadeId && c.cliente === cliente);
-      if (existe) {
-        return cs.map((c) => (c.id === existe.id ? { ...c, online: true, unread: (c.unread || 0) + 1, msgs: [...c.msgs, { de: "cli", txt, h: "agora" }] } : c));
-      }
-      return [...cs, { id: "cv" + Date.now(), unidadeId, cliente, online: true, unread: 1, msgs: [{ de: "cli", txt, h: "agora" }] }];
-    });
-  };
-  const responderConversa = (id, txt) => setConversas((cs) => cs.map((c) => (c.id === id ? { ...c, msgs: [...c.msgs, { de: "adm", txt, h: "Agora" }] } : c)));
-  const marcarConversaLida = (id) => setConversas((cs) => cs.map((c) => (c.id === id ? { ...c, unread: 0 } : c)));
 
   // Financeiro: contas bancárias -------------------------------------------
   const addConta = (unidadeId, c) => setContas((cs) => [...cs, { id: "cb" + Date.now() + Math.floor(Math.random() * 1000), unidadeId, saldo: 0, ...c }]);
@@ -1220,7 +1204,7 @@ export function StoreProvider({ children }) {
       apply("contas", setContas); apply("catalogo", setCatalogo); apply("estoque", setEstoque);
       apply("patrimonio", setPatrimonio); apply("contratos", setContratos);
       apply("correspondencias", setCorrespondencias); apply("pedidos", setPedidos);
-      apply("conversas", setConversas); apply("leads", setLeads); apply("eventos", setEventos);
+      apply("leads", setLeads); apply("eventos", setEventos);
       apply("planos", setPlanos); apply("recibos", setRecibos);
       // Docs globais (doc único) — carrega UMA VEZ por carregamento de página.
       // Re-hidratações (refresh de sessão) NÃO recarregam, para não sobrescrever
@@ -1302,7 +1286,6 @@ export function StoreProvider({ children }) {
       addReserva, criarReserva, removeReserva, marcarReservasVistas,
       pedidos, addPedido, updatePedido, removePedido, pedidosDe,
       correspondencias, addCorrespondencia, updateCorrespondencia, notificarCorrespondencia, removeCorrespondencia, correspondenciasDe,
-      conversas, conversasDe, enviarMensagemCliente, responderConversa, marcarConversaLida,
       salasDe, produtosDe, unidadesDe,
       contas, lancamentos, catalogo, categorias,
       addConta, updateConta, removeConta, contasDe,
@@ -1327,7 +1310,7 @@ export function StoreProvider({ children }) {
     // memorizamos o value apenas pelos ESTADOS. Incluir as funções nas deps
     // anularia o useMemo (novo objeto a cada render) — comportamento indesejado.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, configFiscal, notasFiscais, planos, recibos, creditLedger, configVenda, syncErrors, reservas, leads, crmEtapas, crmOrigens, cobrancaTemplate, eventos, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail]
+    [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, configFiscal, notasFiscais, planos, recibos, creditLedger, configVenda, syncErrors, reservas, leads, crmEtapas, crmOrigens, cobrancaTemplate, eventos, pedidos, correspondencias, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail]
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
