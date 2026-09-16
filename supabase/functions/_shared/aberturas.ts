@@ -81,10 +81,20 @@ export async function avisarClienteAbertura(admin: SupabaseClient, a: Linha, eve
   }
 }
 
-/** E-mails dos logins de contabilidade vinculados à unidade. */
+/**
+ * Caixa fixa da contabilidade parceira, que recebe todo aviso de abertura mesmo
+ * sem login vinculado (secret EMAIL_CONTABILIDADE, vários separados por vírgula).
+ */
+const EMAIL_CONTABILIDADE_PADRAO = "paralegal@ciatoscontabilidade.com.br";
+function emailsFixosDaContabilidade(): string[] {
+  const env = Deno.env.get("EMAIL_CONTABILIDADE");
+  return (env ?? EMAIL_CONTABILIDADE_PADRAO).split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+}
+
+/** E-mails da contabilidade: caixa fixa + logins de contabilidade vinculados à unidade. */
 export async function emailsDaContabilidade(admin: SupabaseClient, unidadeId: string): Promise<string[]> {
   const { data } = await admin.from("unidade_members").select("user_id").eq("unidade_id", unidadeId).eq("role", "contabilidade");
-  const emails: string[] = [];
+  const emails: string[] = emailsFixosDaContabilidade();
   for (const m of data || []) {
     const { data: u } = await admin.auth.admin.getUserById(m.user_id);
     if (u?.user?.email) emails.push(u.user.email.toLowerCase());
@@ -122,6 +132,7 @@ export async function criarAbertura(admin: SupabaseClient, dados: {
   origem: "venda" | "equipe"; usa_endereco_unidade: boolean;
   assinatura_id?: string | null; pending_signup_id?: string | null;
   autor?: { id: string; email: string; papel: PapelAbertura } | null;
+  contato?: { telefone?: string | null; documento?: string | null } | null;
 }): Promise<{ abertura: Linha; criada: boolean }> {
   const linha = {
     unidade_id: dados.unidade_id, cliente_email: dados.cliente_email.trim().toLowerCase(),
@@ -151,6 +162,24 @@ export async function criarAbertura(admin: SupabaseClient, dados: {
   });
   const unidade = await nomeUnidade(admin, data.unidade_id);
   await avisarClienteAbertura(admin, data, "abertura_preencher", { unidade: unidade.nome, usaEnderecoUnidade: data.usa_endereco_unidade });
+  await avisarContabilidade(admin, data.unidade_id, `Nova abertura de empresa: ${data.cliente_nome}`, [
+    dados.origem === "venda" ? "Uma nova abertura de empresa foi contratada e paga." : "A equipe do CafeWorking abriu um novo processo de abertura de empresa.",
+    "",
+    `Cliente: ${data.cliente_nome}`,
+    `E-mail: ${data.cliente_email}`,
+    ...(dados.contato?.telefone ? [`Telefone: ${dados.contato.telefone}`] : []),
+    ...(dados.contato?.documento ? [`CPF/CNPJ: ${dados.contato.documento}`] : []),
+    ...(data.plano_nome ? [`Plano: ${data.plano_nome}`] : []),
+    `Unidade: ${unidade.nome}`,
+    data.usa_endereco_unidade
+      ? "Endereço da empresa: endereço fiscal do CafeWorking (IPTU e índice cadastral vêm do kit da unidade)."
+      : "Endereço da empresa: endereço próprio do cliente (ele anexa o IPTU do local).",
+    "",
+    "Próximos passos:",
+    "1. Entre no sistema pelo botão abaixo com o seu login de Contabilidade e abra o menu Abertura de empresas.",
+    "2. O cliente já recebeu o pedido para preencher os dados e anexar os documentos. Você recebe outro e-mail quando ele enviar.",
+    "3. Se ainda não tiver login, peça à equipe do CafeWorking (atendimento@cafeworking.com.br).",
+  ]);
   return { abertura: data, criada: true };
 }
 
@@ -165,6 +194,7 @@ export async function criarAberturaDaVenda(admin: SupabaseClient, ps: Linha, ass
       unidade_id: ps.unidade_id, cliente_email: ps.email, cliente_nome: ps.nome, plano_nome: ps.plano_nome,
       origem: "venda", usa_endereco_unidade: ps.categoria === "endereco_fiscal",
       assinatura_id: assinatura?.id ?? null, pending_signup_id: ps.id,
+      contato: { telefone: ps.telefone ?? null, documento: ps.documento ?? null },
     });
   } catch (e) {
     console.error(`[aberturas] criar da venda ${ps.id}:`, (e as Error).message);
