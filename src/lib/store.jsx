@@ -773,17 +773,24 @@ export function StoreProvider({ children }) {
 
   // PRODUÇÃO: a Edge Function assina (xmldsig) e transmite ao SEFIN Nacional
   // (ou BHISS). DEMO: gera número/ISS plausíveis em memória.
+  // Devolve Promise<{ nota } | { erro }> (nunca rejeita) para a tela mostrar a
+  // recusa, ex.: "Configure o certificado digital da unidade antes de emitir."
   const emitirNFSe = (unidadeId, dados) => {
     if (nfseApi.configured) {
-      nfseApi.emitir({
+      return nfseApi.emitir({
         unidade_id: unidadeId, tomador: dados.tomador, tomador_documento: dados.tomadorDoc,
         tomador_email: dados.tomadorEmail, valor: dados.valor, descricao: dados.descricao,
         tomador_cep: dados.tomadorCep, tomador_logradouro: dados.tomadorLogradouro, tomador_numero: dados.tomadorNumero,
         tomador_bairro: dados.tomadorBairro, tomador_cidade: dados.tomadorCidade, tomador_uf: dados.tomadorUf,
         boleto_id: dados.boletoId,
-      }).then(({ nota }) => setNotasFiscais((ns) => [_mapApiNota(nota), ...ns]))
-        .catch((e) => console.warn("emitir NFS-e:", e.message));
-      return;
+      }).then(({ nota }) => {
+        const n = _mapApiNota(nota);
+        setNotasFiscais((ns) => [n, ...ns]);
+        return { nota: n };
+      }).catch((e) => {
+        console.warn("emitir NFS-e:", e.message);
+        return { erro: e.message || "Não foi possível emitir a nota." };
+      });
     }
     const cfg = configFiscal.find((c) => c.unidadeId === unidadeId);
     const iss = Math.round(((dados.valor || 0) * (cfg?.aliquotaISS || 0) / 100) * 100) / 100;
@@ -796,7 +803,7 @@ export function StoreProvider({ children }) {
       emitidaEm: new Date().toISOString().slice(0, 10), pdfUrl: "", xmlUrl: "", boletoId: dados.boletoId,
     };
     setNotasFiscais((ns) => [nota, ...ns]);
-    return nota;
+    return Promise.resolve({ nota });
   };
   const cancelarNF = (id) => {
     const aplicar = () => setNotasFiscais((ns) => ns.map((n) => (n.id === id ? { ...n, status: "cancelada" } : n)));
@@ -974,20 +981,39 @@ export function StoreProvider({ children }) {
       }
     }).catch(() => {});
   };
-  // Simula a baixa que, em produção, chega pela Edge Function de webhook.
-  // Se o boleto veio de uma conta a receber, dá baixa no lançamento vinculado.
+  // SÓ MODO DEMONSTRAÇÃO: simula a baixa que, em produção, chega pelo webhook
+  // do banco. Em produção não faz nada (boleto real só é baixado pelo banco).
+  // A nota fiscal não sai daqui: emitir nota é ação separada.
   const baixarBoleto = (id) => {
+    if (boletosApi.configured) return;
     const bol = boletos.find((b) => b.id === id);
+    if (!bol || bol.status === "pago") return;
     setBoletos((bs) => bs.map((b) => (b.id === id ? { ...b, status: "pago", paidAt: new Date().toISOString().slice(0, 10) } : b)));
-    if (bol?.lancamentoId) setLancamentos((ls) => ls.map((l) => (l.id === bol.lancamentoId ? { ...l, status: "pago" } : l)));
-    if (bol) {
-      enfileirarEmail(bol.unidadeId, { cliente: bol.sacado, evento: "boleto_pago", dados: { valor: bol.valor } });
-      // NFS-e automática na baixa da cobrança, se a unidade emite nota.
-      const cfg = configFiscal.find((c) => c.unidadeId === bol.unidadeId);
-      if (cfg?.emissaoAtiva && bol.status !== "pago") {
-        emitirNFSe(bol.unidadeId, { tomador: bol.sacado, tomadorDoc: bol.sacadoDocumento, valor: bol.valor, descricao: bol.instrucoes, boletoId: bol.id });
-      }
+    if (bol.lancamentoId) setLancamentos((ls) => ls.map((l) => (l.id === bol.lancamentoId ? { ...l, status: "pago" } : l)));
+    enfileirarEmail(bol.unidadeId, { cliente: bol.sacado, evento: "boleto_pago", dados: { valor: bol.valor } });
+  };
+
+  // Boleto emitido de verdade no banco (linha da tabela boletos, id uuid) — não
+  // os gerados só na tela (bol_…, demonstração ou provisão local).
+  const boletoEhReal = (id) => boletosApi.configured && !!id && !/^bol(err)?_/.test(String(id));
+
+  // BAIXA MANUAL de um lançamento (conta a receber/pagar): registro contábil de
+  // que o dinheiro entrou/saiu. Não envia e-mail e não emite nota. Se houver
+  // boleto/cobrança real vinculado, NÃO mexe nele: quem baixa é o banco/Asaas
+  // quando confirma o pagamento. Retorna { aviso } para a tela mostrar.
+  const darBaixaLancamento = (id) => {
+    const lanc = lancamentos.find((l) => l.id === id);
+    if (!lanc) return { ok: false };
+    setLancamentos((ls) => ls.map((l) => (l.id === id ? { ...l, status: "pago" } : l)));
+    if (lanc.cobrancaId || boletoEhReal(lanc.boletoId)) {
+      return { ok: true, aviso: "O boleto/cobrança é baixado automaticamente quando o banco confirma o pagamento." };
     }
+    // Boleto só da tela (demonstração/provisão local): acompanha o lançamento, sem e-mail nem nota.
+    if (lanc.boletoId) {
+      setBoletos((bs) => bs.map((b) => (b.id === lanc.boletoId && b.status !== "pago" && b.status !== "cancelado"
+        ? { ...b, status: "pago", paidAt: new Date().toISOString().slice(0, 10) } : b)));
+    }
+    return { ok: true };
   };
 
   // Contratos recorrentes ---------------------------------------------------
@@ -1284,7 +1310,7 @@ export function StoreProvider({ children }) {
       addCategoria, updateCategoria, removeCategoria,
       bankAccounts, boletos,
       bankAccountsDe, addBankAccount, updateBankAccount, removeBankAccount, conectarBanco, desconectarBanco,
-      boletosDe, emitirBoleto, cancelarBoleto, baixarBoleto, sincronizarBoleto,
+      boletosDe, emitirBoleto, cancelarBoleto, baixarBoleto, darBaixaLancamento, sincronizarBoleto,
       contratos, contratosDe, contratosVencendoDe, mesFimContrato,
       addContrato, renovarContrato, encerrarContrato,
       estoque, estoqueDe, estoqueBaixoDe, addItemEstoque, updateItemEstoque, removeItemEstoque, ajustarEstoque, comprarEstoque, venderEstoque, registrarSaidaEstoque,

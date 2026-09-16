@@ -48,6 +48,8 @@ export default function Assinaturas() {
 function ListaAssinaturas({ unidadeId }) {
   const [lista, setLista] = useState([]);
   const [salasLivres, setSalasLivres] = useState([]);
+  // Estorno e acerto são do master/financeiro (a função confirma de novo).
+  const [podeFinanceiro, setPodeFinanceiro] = useState(true);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
   const [filtro, setFiltro] = useState("todas");
@@ -57,7 +59,7 @@ function ListaAssinaturas({ unidadeId }) {
     setCarregando(true);
     setErro("");
     assinaturasApi.listarDaUnidade(unidadeId)
-      .then((d) => { setLista(d.assinaturas || []); setSalasLivres(d.salas_livres || []); })
+      .then((d) => { setLista(d.assinaturas || []); setSalasLivres(d.salas_livres || []); setPodeFinanceiro(d.pode_financeiro !== false); })
       .catch((e) => setErro(e.message))
       .finally(() => setCarregando(false));
   };
@@ -96,13 +98,13 @@ function ListaAssinaturas({ unidadeId }) {
       {erro && <Card style={{ marginBottom: 12 }}><div role="alert" style={{ color: C.red }}>{erro}</div></Card>}
       {!carregando && !filtradas.length && <Card><Empty icon={FileCheck2} title="Nada por aqui" sub="Nenhuma assinatura neste filtro." /></Card>}
       {filtradas.map((a) => (
-        <LinhaAssinatura key={a.id} a={a} salasLivres={salasLivres} aberta={aberta === a.id} onAbrir={() => setAberta(aberta === a.id ? null : a.id)} onMudou={carregar} />
+        <LinhaAssinatura key={a.id} a={a} salasLivres={salasLivres} podeFinanceiro={podeFinanceiro} aberta={aberta === a.id} onAbrir={() => setAberta(aberta === a.id ? null : a.id)} onMudou={carregar} />
       ))}
     </>
   );
 }
 
-function LinhaAssinatura({ a, salasLivres, aberta, onAbrir, onMudou }) {
+function LinhaAssinatura({ a, salasLivres, podeFinanceiro, aberta, onAbrir, onMudou }) {
   const [modal, setModal] = useState(null); // aprovar | reprovar | cancelar | acerto | sala
   const st = STATUS_ASSINATURA[a.status] || { rotulo: a.status, cor: "text3" };
   const docs = a.docs_status && STATUS_DOCUMENTOS[a.docs_status];
@@ -165,13 +167,18 @@ function LinhaAssinatura({ a, salasLivres, aberta, onAbrir, onMudou }) {
             {["enviado", "pendente"].includes(a.docs_status) && a.status !== "cancelada" && (
               <>
                 <Btn variant="teal" onClick={() => setModal("aprovar")} disabled={!a.documentos.length} title={a.documentos.length ? "" : "Aguardando envio"}>Aprovar documentos</Btn>
-                <Btn variant="ghost" style={{ color: C.red }} onClick={() => setModal("reprovar")}>Reprovar e devolver</Btn>
+                {podeFinanceiro && <Btn variant="ghost" style={{ color: C.red }} onClick={() => setModal("reprovar")}>Reprovar e devolver</Btn>}
               </>
             )}
             {precisaSala(a) && <Btn variant="teal" onClick={() => setModal("sala")}>Atribuir sala</Btn>}
             {ativa && <Btn variant="ghost" onClick={() => setModal("cancelar")}>Cancelar pelo cliente</Btn>}
-            {acertoPendente && <Btn variant="soft" onClick={() => setModal("acerto")}>Marcar acerto resolvido</Btn>}
+            {acertoPendente && podeFinanceiro && <Btn variant="soft" onClick={() => setModal("acerto")}>Marcar acerto resolvido</Btn>}
           </div>
+          {!podeFinanceiro && (["enviado", "pendente"].includes(a.docs_status) || acertoPendente) && a.status !== "cancelada" && (
+            <div style={{ marginTop: 8, fontSize: 12.5, color: C.text3 }}>
+              Reprovar documentos (gera devolução) e resolver acerto ficam com o financeiro ou o master.
+            </div>
+          )}
         </div>
       )}
 

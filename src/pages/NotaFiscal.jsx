@@ -14,8 +14,22 @@ const STATUS = {
   processando: { label: "Processando", cor: C.amber, bg: C.amberPale },
   cancelada: { label: "Cancelada", cor: C.text3, bg: C.cream2 },
   erro: { label: "Erro", cor: C.red, bg: C.redPale },
+  // Ambiente de teste sem certificado: sem valor fiscal e sem e-mail ao cliente.
+  simulada: { label: "Simulada · sem valor fiscal", cor: C.text3, bg: C.cream2 },
 };
 const REGIMES = ["Simples Nacional", "Lucro Presumido", "Lucro Real", "MEI"];
+// Regime especial de tributação (regEspTrib da DPS: 0 a 6). O backend traduz o
+// texto para o código. MEI e ME/EPP não são regime especial (vêm do regime).
+const REGIMES_ESPECIAIS = [
+  ["nenhum", "Nenhum"], ["Ato Cooperado (cooperativa)", "Ato Cooperado (cooperativa)"], ["Estimativa", "Estimativa"],
+  ["Microempresa Municipal", "Microempresa Municipal"], ["Notário ou Registrador", "Notário ou Registrador"],
+  ["Profissional Autônomo", "Profissional Autônomo"], ["Sociedade de Profissionais", "Sociedade de Profissionais"],
+];
+const regimeEspecialDaTela = (v) => {
+  if (!v || v === "MEI" || v === "ME/EPP Simples Nacional") return "nenhum";
+  if (v === "Cooperativa") return "Ato Cooperado (cooperativa)";
+  return v;
+};
 const fmtData = (d) => (d ? d.split("-").reverse().join("/") : "—");
 
 export default function NotaFiscal() {
@@ -26,6 +40,7 @@ export default function NotaFiscal() {
   const [aba, setAba] = useState("notas");
   const [emitir, setEmitir] = useState(false);
 
+  const simuladas = notas.filter((n) => n.status === "simulada").length;
   const faturado = notas.filter((n) => n.status === "autorizada").reduce((s, n) => s + n.valor, 0);
   const issTotal = notas.filter((n) => n.status === "autorizada").reduce((s, n) => s + (n.iss || 0), 0);
   const ativa = cfg?.emissaoAtiva;
@@ -44,6 +59,9 @@ export default function NotaFiscal() {
           {ativa
             ? <>Emissão ativa · {cfg?.municipio || ""} · {cfg?.emissor === "bhiss" ? "BHISS (municipal)" : "NFS-e Nacional"} · <b style={{ color: cfg?.ambiente === "producao" ? C.amber : C.teal }}>{cfg?.ambiente === "producao" ? "Produção" : "Produção restrita (testes)"}</b>. O certificado fica no Vault, nunca no app.</>
             : "Configure os dados fiscais desta unidade (aba Configuração) e ative a emissão para emitir notas."}
+          {ativa && !cfg?.certificadoEnviadoEm && (cfg?.ambiente === "producao"
+            ? <> <b style={{ color: C.red }}>Sem certificado digital: a emissão em Produção é recusada até você enviar o certificado A1.</b></>
+            : <> Sem certificado digital: as notas saem <b>simuladas</b> (teste, sem valor fiscal e sem e-mail ao cliente).</>)}
         </span>
       </div>
 
@@ -64,7 +82,7 @@ export default function NotaFiscal() {
             <Kpi label="ISS recolhido" valor={fmt(issTotal)} icon={Percent} cor={C.amber} />
           </div>
           {notas.length === 0 ? (
-            <Card><Empty icon={FileText} title="Nenhuma nota emitida" sub="Emita a primeira NFS-e — ou ela sai sozinha na baixa de uma cobrança." /></Card>
+            <Card><Empty icon={FileText} title="Nenhuma nota emitida" sub="Emita a primeira NFS-e pelo botão Emitir nota." /></Card>
           ) : (
             <Card style={{ padding: 0, overflow: "hidden" }}>
               {notas.map((n, i) => {
@@ -78,6 +96,7 @@ export default function NotaFiscal() {
                         <Badge color={st.cor} bg={st.bg}>{st.label}</Badge>
                       </div>
                       <div style={{ fontSize: 11.5, color: C.text3 }}>{n.tomador} · {n.descricao} · {fmtData(n.emitidaEm)}</div>
+                      {n.status === "simulada" && <div style={{ fontSize: 11, color: C.text4 }}>Nota de teste: não foi transmitida e não vale como documento fiscal.</div>}
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <div style={{ fontFamily: serif, fontSize: 17 }}>{fmt(n.valor)}</div>
@@ -95,7 +114,7 @@ export default function NotaFiscal() {
             </Card>
           )}
           <div style={{ fontSize: 12, color: C.text3, marginTop: 14, fontStyle: "italic", display: "flex", alignItems: "center", gap: 7 }}>
-            <CheckCircle2 size={14} /> A nota é emitida automaticamente quando a cobrança (boleto) é paga.
+            <CheckCircle2 size={14} /> A nota não sai sozinha na baixa de uma cobrança: emita aqui, na cobrança ou no lançamento pago.{simuladas ? ` ${simuladas} nota(s) simulada(s) não entram nos totais.` : ""}
           </div>
         </>
       )}
@@ -109,7 +128,7 @@ export default function NotaFiscal() {
 
       {emitir && (
         <Modal title="Emitir NFS-e" onClose={() => setEmitir(false)} maxWidth={480}>
-          <EmitirNotaForm cfg={cfg} onEmitir={(d) => { store.emitirNFSe(activeUnit, d); setEmitir(false); }} />
+          <EmitirNotaForm cfg={cfg} onEmitir={(d) => store.emitirNFSe(activeUnit, d)} onFeito={() => setEmitir(false)} />
         </Modal>
       )}
     </div>
@@ -147,8 +166,17 @@ function Kpi({ label, valor, icon: Icon, cor }) {
   );
 }
 
-function EmitirNotaForm({ cfg, onEmitir }) {
+function EmitirNotaForm({ cfg, onEmitir, onFeito }) {
   const [f, setF] = useState({ tomador: "", tomadorDoc: "", tomadorEmail: "", descricao: cfg?.descricaoServico || "", valor: "" });
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState("");
+  const emitir = async () => {
+    if (!valido || enviando) return;
+    setEnviando(true); setErro("");
+    const r = await onEmitir({ ...f, valor: +f.valor });
+    setEnviando(false);
+    if (r?.erro) setErro(r.erro); else onFeito();
+  };
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const iss = (+f.valor || 0) * (cfg?.aliquotaISS || 0) / 100;
   const valido = f.tomador.trim() && +f.valor > 0;
@@ -164,8 +192,13 @@ function EmitirNotaForm({ cfg, onEmitir }) {
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, color: C.text3, background: C.cream2, borderRadius: 9, padding: "9px 12px", marginBottom: 14 }}>
         <span>ISS ({cfg?.aliquotaISS || 0}%)</span><b style={{ color: C.cafe }}>{fmt(iss)}</b>
       </div>
-      <Btn style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.5 }} onClick={() => valido && onEmitir({ ...f, valor: +f.valor })}>
-        <FileText size={16} /> Emitir NFS-e
+      {erro && (
+        <div role="alert" style={{ display: "flex", alignItems: "flex-start", gap: 7, color: C.red, fontSize: 13, marginBottom: 10 }}>
+          <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 1 }} /> {erro}
+        </div>
+      )}
+      <Btn style={{ width: "100%", justifyContent: "center", opacity: valido && !enviando ? 1 : 0.5 }} onClick={emitir}>
+        <FileText size={16} /> {enviando ? "Emitindo…" : "Emitir NFS-e"}
       </Btn>
     </>
   );
@@ -250,7 +283,7 @@ function ConfigFiscal({ cfg, unidadeNome, unidadeId, onSalvar }) {
     codigoTributacaoNacional: cfg?.codigoTributacaoNacional || "",
     codigoServicoMunicipal: cfg?.codigoServicoMunicipal || "",
     nbs: cfg?.nbs || "",
-    regimeEspecial: cfg?.regimeEspecial || "nenhum",
+    regimeEspecial: regimeEspecialDaTela(cfg?.regimeEspecial),
     aliquotaSimples: cfg?.aliquotaSimples ?? 0,
     issRetido: cfg?.issRetido ?? false,
     exigibilidadeIss: cfg?.exigibilidadeIss || "exigivel",
@@ -366,7 +399,7 @@ function ConfigFiscal({ cfg, unidadeNome, unidadeId, onSalvar }) {
             <Field label="Alíq. Simples (%)"><input type="number" min="0" step="0.0001" value={f.aliquotaSimples} onChange={(e) => { setF({ ...f, aliquotaSimples: +e.target.value }); setSalvo(false); }} style={inp} /></Field>
             <Field label="Regime especial">
               <select value={f.regimeEspecial} onChange={set("regimeEspecial")} style={inp}>
-                {["nenhum", "Microempresa Municipal", "Estimativa", "Sociedade de Profissionais", "Cooperativa", "MEI", "ME/EPP Simples Nacional"].map((r) => <option key={r} value={r}>{r}</option>)}
+                {REGIMES_ESPECIAIS.map(([v, lb]) => <option key={v} value={v}>{lb}</option>)}
               </select>
             </Field>
           </div>

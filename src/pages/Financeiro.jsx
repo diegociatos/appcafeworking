@@ -63,6 +63,14 @@ export default function Financeiro({ finTab }) {
   const [contaPRModal, setContaPRModal] = useState(null);
   const [detalheLanc, setDetalheLanc] = useState(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [avisoBaixa, setAvisoBaixa] = useState("");
+
+  // Baixa manual = registro contábil. Boleto/cobrança real não é tocado (o banco
+  // baixa quando confirma o pagamento), sem e-mail de pago e sem nota automática.
+  const darBaixa = (l) => {
+    const r = store.darBaixaLancamento(l.id);
+    setAvisoBaixa(r?.aviso || "");
+  };
 
   const contas = store.contasDe(activeUnit);
   const lancamentos = store.lancamentosDe(activeUnit).slice().sort((a, b) => b.mes - a.mes || diaDe(b.data) - diaDe(a.data));
@@ -107,6 +115,14 @@ export default function Financeiro({ finTab }) {
         <Kpi label="Resultado do mês" valor={resultadoMes} icon={TrendingUp} cor={resultadoMes >= 0 ? C.green : C.red} sub={`Entradas − saídas (${MESES[MES_ATUAL]})`} />
       </div>
 
+      {avisoBaixa && (
+        <div role="status" style={{ display: "flex", gap: 9, alignItems: "flex-start", background: C.amberPale, border: `1px solid ${C.amber}40`, borderRadius: 12, padding: "10px 14px", marginBottom: 16, fontSize: 12.5, color: C.text2 }}>
+          <AlertCircle size={16} color={C.amber} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span style={{ flex: 1 }}>Lançamento marcado como pago. {avisoBaixa}</span>
+          <button onClick={() => setAvisoBaixa("")} className="cw-btn" title="Fechar aviso" style={{ color: C.text3, padding: 2 }}><X size={15} /></button>
+        </div>
+      )}
+
       {/* Conteúdo (seções navegadas pelo sidebar principal) */}
       <div style={{ minWidth: 0 }}>
         {tab === "visao" && <VisaoGeral fluxo={fluxo} lancamentos={lancamentos} contas={contas} onAbrir={setDetalheLanc} />}
@@ -116,7 +132,7 @@ export default function Financeiro({ finTab }) {
             tipo={tab === "receber" ? "entrada" : "saida"}
             onNova={(tipo) => setContaPRModal({ tipo })}
             onAbrir={setDetalheLanc}
-            onBaixar={(l) => { if (l.boletoId) store.baixarBoleto(l.boletoId); else store.updateLancamento(l.id, { status: "pago" }); }}
+            onBaixar={darBaixa}
             onEditar={(l) => setLancModal(l)}
             onExcluir={(l) => store.removeLancamento(l.id)}
           />
@@ -171,7 +187,9 @@ export default function Financeiro({ finTab }) {
           boleto={detalheLanc.boletoId ? store.boletos.find((b) => b.id === detalheLanc.boletoId) : null}
           onClose={() => setDetalheLanc(null)}
           onEditar={() => { setLancModal(detalheLanc); setDetalheLanc(null); }}
-          onBaixar={() => { if (detalheLanc.boletoId) store.baixarBoleto(detalheLanc.boletoId); else store.updateLancamento(detalheLanc.id, { status: "pago" }); setDetalheLanc(null); }}
+          onBaixar={() => { darBaixa(detalheLanc); setDetalheLanc(null); }}
+          emissaoAtiva={!!store.configFiscalDe(activeUnit)?.emissaoAtiva}
+          onEmitirNota={(dados) => store.emitirNFSe(activeUnit, dados)}
           onExcluir={() => { store.removeLancamento(detalheLanc.id); setDetalheLanc(null); }}
         />
       )}
@@ -315,8 +333,17 @@ function baixarAnexoArq(a) {
   document.body.appendChild(el); el.click(); el.remove();
 }
 
-function LancamentoDetalhe({ lanc, contas, boleto, onClose, onEditar, onBaixar, onExcluir }) {
+function LancamentoDetalhe({ lanc, contas, boleto, onClose, onEditar, onBaixar, onExcluir, emissaoAtiva, onEmitirNota }) {
   const ent = lanc.tipo === "entrada";
+  // Nota fiscal é ação explícita (nunca sai sozinha da baixa).
+  const [nota, setNota] = useState({ enviando: false, msg: "", erro: false });
+  const emitirNota = async () => {
+    if (!boleto || nota.enviando) return;
+    setNota({ enviando: true, msg: "", erro: false });
+    const r = await onEmitirNota({ tomador: boleto.sacado, tomadorDoc: boleto.sacadoDocumento, valor: boleto.valor, descricao: boleto.instrucoes || lanc.descricao, boletoId: boleto.id });
+    if (r?.erro) setNota({ enviando: false, msg: r.erro, erro: true });
+    else setNota({ enviando: false, msg: r?.nota?.status === "simulada" ? "Nota simulada gerada (teste, sem valor fiscal)." : "Nota fiscal enviada para emissão. Acompanhe em Notas Fiscais.", erro: false, feita: true });
+  };
   const conta = contas.find((c) => c.id === lanc.contaId);
   const copiar = (txt) => navigator.clipboard?.writeText(txt);
   const linha = (lbl, val) => (
@@ -392,6 +419,15 @@ function LancamentoDetalhe({ lanc, contas, boleto, onClose, onEditar, onBaixar, 
           <div style={{ fontSize: 12.5, color: C.text4, fontStyle: "italic" }}>Sem anexo. Use "Editar" para anexar um comprovante.</div>
         )}
       </div>
+
+      {ent && boleto && emissaoAtiva && lanc.status === "pago" && (
+        <div style={{ marginBottom: 12 }}>
+          <Btn variant="ghost" style={{ width: "100%", justifyContent: "center", color: C.teal }} onClick={emitirNota} disabled={nota.enviando || nota.feita}>
+            <FileText size={16} /> {nota.enviando ? "Emitindo…" : nota.feita ? "Nota solicitada" : "Emitir nota fiscal"}
+          </Btn>
+          {nota.msg && <div role={nota.erro ? "alert" : "status"} style={{ fontSize: 12.5, marginTop: 6, color: nota.erro ? C.red : C.green }}>{nota.msg}</div>}
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 8 }}>
         {lanc.status === "previsto" && (

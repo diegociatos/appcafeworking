@@ -35,6 +35,7 @@ export default function Cobrancas() {
   const [lista, setLista] = useState([]);
   const [novo, setNovo] = useState(false);
   const [detalhe, setDetalhe] = useState(null);
+  const [erroNota, setErroNota] = useState("");
   const [config, setConfig] = useState(false);
   const [recibo, setRecibo] = useState(null);
 
@@ -102,13 +103,13 @@ export default function Cobrancas() {
         <Modal title="Nova conta a receber" onClose={() => setNovo(false)} maxWidth={500}>
           <CobrancaForm
             store={store}
-            onCriada={(c, rec) => { setLista((l) => [c, ...l]); setNovo(false); if (rec) setRecibo(rec); else setDetalhe(c); }}
+            onCriada={(c, rec, erroNota) => { setLista((l) => [c, ...l]); setNovo(false); setErroNota(erroNota || ""); if (rec) setRecibo(rec); else setDetalhe(c); }}
           />
         </Modal>
       )}
       {detalhe && (
         <Modal title="Cobrança" onClose={() => setDetalhe(null)} maxWidth={460}>
-          <DetalheCobranca c={detalhe} store={store} onRecibo={(rec) => { setDetalhe(null); setRecibo(rec); }} />
+          <DetalheCobranca c={detalhe} store={store} erroNotaInicial={erroNota} onRecibo={(rec) => { setDetalhe(null); setRecibo(rec); }} />
         </Modal>
       )}
       {recibo && (
@@ -259,7 +260,7 @@ function CobrancaForm({ store, onCriada }) {
       });
 
       // Documento fiscal escolhido.
-      if (f.documento === "nf") emitirNFSe(activeUnit, {
+      const nf = f.documento !== "nf" ? null : await emitirNFSe(activeUnit, {
         tomador: nome, tomadorDoc: doc, tomadorEmail: email, valor: +f.valor, descricao: descricaoFinal,
         tomadorCep: cli?.cep, tomadorLogradouro: cli?.endereco, tomadorNumero: cli?.numero,
         tomadorBairro: cli?.bairro, tomadorCidade: cli?.cidade, tomadorUf: cli?.uf,
@@ -267,7 +268,7 @@ function CobrancaForm({ store, onCriada }) {
       let rec = null;
       if (f.documento === "recibo") rec = emitirRecibo(activeUnit, { cliente: nome, clienteDoc: doc, valor: +f.valor, descricao: descricaoFinal, forma: TIPOS.find((t) => t.v === f.tipo)?.lb, cobrancaId: cobranca.id });
 
-      onCriada(cobranca, rec);
+      onCriada(cobranca, rec, nf?.erro);
     } catch (e) {
       setErro(e.message);
     } finally {
@@ -340,15 +341,19 @@ function CobrancaForm({ store, onCriada }) {
   );
 }
 
-function DetalheCobranca({ c, store, onRecibo }) {
+function DetalheCobranca({ c, store, onRecibo, erroNotaInicial }) {
   const { activeUnit, emitirNFSe, emitirRecibo } = store;
   const [cop, setCop] = useState("");
   const [nfFeita, setNfFeita] = useState(false);
+  const [nf, setNf] = useState({ enviando: false, erro: erroNotaInicial || "", simulada: false });
   const copiar = (txt, tag) => { navigator.clipboard?.writeText(txt); setCop(tag); setTimeout(() => setCop(""), 1500); };
   const st = STATUS[c.status] || STATUS.pendente;
-  const emitirNota = () => {
-    emitirNFSe(activeUnit, { tomador: c.cliente, tomadorDoc: c.documento, tomadorEmail: c.email, valor: c.valor, descricao: c.descricao });
-    setNfFeita(true);
+  const emitirNota = async () => {
+    if (nf.enviando) return;
+    setNf({ enviando: true, erro: "", simulada: false });
+    const r = await emitirNFSe(activeUnit, { tomador: c.cliente, tomadorDoc: c.documento, tomadorEmail: c.email, valor: c.valor, descricao: c.descricao });
+    setNf({ enviando: false, erro: r?.erro || "", simulada: r?.nota?.status === "simulada" });
+    if (!r?.erro) setNfFeita(true);
   };
   const gerarRecibo = () => {
     const rec = emitirRecibo(activeUnit, { cliente: c.cliente, clienteDoc: c.documento, valor: c.valor, descricao: c.descricao || "Cobrança", forma: (TIPOS.find((t) => t.v === c.tipo) || {}).lb, cobrancaId: c.id });
@@ -386,12 +391,13 @@ function DetalheCobranca({ c, store, onRecibo }) {
 
       <div style={{ borderTop: `1px solid ${C.border2}`, marginTop: 14, paddingTop: 14, display: "flex", gap: 8 }}>
         <Btn variant="ghost" style={{ flex: 1, justifyContent: "center", color: nfFeita ? C.green : C.teal }} onClick={emitirNota} disabled={nfFeita}>
-          <FileText size={15} /> {nfFeita ? "Nota emitida" : "Emitir nota fiscal"}
+          <FileText size={15} /> {nf.enviando ? "Emitindo…" : nfFeita ? (nf.simulada ? "Nota simulada (teste)" : "Nota emitida") : "Emitir nota fiscal"}
         </Btn>
         <Btn variant="ghost" style={{ flex: 1, justifyContent: "center" }} onClick={gerarRecibo}>
           <Receipt size={15} /> Gerar recibo
         </Btn>
       </div>
+      {nf.erro && <div role="alert" style={{ fontSize: 12.5, color: C.red, marginTop: 8 }}>Nota fiscal não emitida: {nf.erro}</div>}
     </>
   );
 }
