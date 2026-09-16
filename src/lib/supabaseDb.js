@@ -60,6 +60,7 @@ export async function upsertConfigFiscal(patch) {
     nbs: patch.nbs, regime_especial: patch.regimeEspecial,
     aliquota_simples: patch.aliquotaSimples, iss_retido: patch.issRetido,
     exigibilidade_iss: patch.exigibilidadeIss,
+    emitir_ao_receber: patch.emitirAoReceber,
   };
   Object.keys(row).forEach((k) => row[k] === undefined && delete row[k]);
   try {

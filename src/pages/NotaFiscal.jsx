@@ -114,7 +114,7 @@ export default function NotaFiscal() {
             </Card>
           )}
           <div style={{ fontSize: 12, color: C.text3, marginTop: 14, fontStyle: "italic", display: "flex", alignItems: "center", gap: 7 }}>
-            <CheckCircle2 size={14} /> A nota não sai sozinha na baixa de uma cobrança: emita aqui, na cobrança ou no lançamento pago.{simuladas ? ` ${simuladas} nota(s) simulada(s) não entram nos totais.` : ""}
+            <CheckCircle2 size={14} /> {cfg?.emitirAoReceber ? "Pagamentos confirmados pelo Asaas emitem a nota sozinhos (Configuração fiscal). A baixa manual de um lançamento não emite nota." : "A nota não sai sozinha na baixa de uma cobrança: emita aqui, na cobrança ou no lançamento pago. Para o Asaas emitir ao receber, ligue na Configuração fiscal."}{simuladas ? ` ${simuladas} nota(s) simulada(s) não entram nos totais.` : ""}
           </div>
         </>
       )}
@@ -287,6 +287,7 @@ function ConfigFiscal({ cfg, unidadeNome, unidadeId, onSalvar }) {
     aliquotaSimples: cfg?.aliquotaSimples ?? 0,
     issRetido: cfg?.issRetido ?? false,
     exigibilidadeIss: cfg?.exigibilidadeIss || "exigivel",
+    emitirAoReceber: cfg?.emitirAoReceber ?? false,   // desligado por padrão
   });
   const [maisFiscal, setMaisFiscal] = useState((cfg?.emissor || "nacional") === "nacional");
   const [salvo, setSalvo] = useState(false);
@@ -448,6 +449,17 @@ function ConfigFiscal({ cfg, unidadeNome, unidadeId, onSalvar }) {
         <input type="checkbox" checked={f.emissaoAtiva} onChange={(e) => { setF({ ...f, emissaoAtiva: e.target.checked }); setSalvo(false); }} />
         Emissão fiscal ativa nesta unidade
       </label>
+      <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13.5, fontWeight: 600, color: C.text, margin: "-4px 0 6px", cursor: "pointer" }}>
+        <input type="checkbox" checked={f.emitirAoReceber} onChange={(e) => { setF({ ...f, emitirAoReceber: e.target.checked }); setSalvo(false); }} style={{ marginTop: 3 }} />
+        Emitir a nota automaticamente quando o pagamento for confirmado (Asaas)
+      </label>
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: f.emitirAoReceber ? C.amberPale : C.cream2, borderRadius: 10, padding: "9px 12px", fontSize: 11.5, color: C.text2, marginBottom: 14 }}>
+        <AlertTriangle size={14} color={f.emitirAoReceber ? C.amber : C.text4} style={{ flexShrink: 0, marginTop: 1 }} />
+        <span>
+          Só funciona com <b>certificado digital enviado</b>, <b>emissão ativa</b> e ambiente em <b>Produção</b>: a nota sai de verdade, com valor fiscal, no valor pago e com o CPF/CNPJ da cobrança. Uma nota por pagamento. Se não der para emitir, o pagamento é confirmado normalmente e a equipe recebe um e-mail com o motivo.
+          {f.emitirAoReceber && (!f.emissaoAtiva || f.ambiente !== "producao" || !cfg?.certificadoEnviadoEm) && <b style={{ color: C.red }}> Hoje não vai emitir: {[!cfg?.certificadoEnviadoEm && "falta o certificado", !f.emissaoAtiva && "a emissão está inativa", f.ambiente !== "producao" && "o ambiente não é Produção"].filter(Boolean).join(", ")}.</b>}
+        </span>
+      </div>
       <Btn style={{ width: "100%", justifyContent: "center" }} onClick={() => { onSalvar(f); setSalvo(true); }}>
         <SlidersHorizontal size={16} /> {salvo ? "Configuração salva" : "Salvar configuração fiscal"}
       </Btn>

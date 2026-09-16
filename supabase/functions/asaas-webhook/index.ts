@@ -15,6 +15,11 @@
 // Venda com abertura de empresa (categoria abertura_empresa ou direito
 // aberturaEmpresa) cria o processo em aberturas e pede ao cliente os dados.
 //
+// Nota fiscal automática: com a cobrança paga e a unidade com "emitir ao
+// receber" ligado (config_fiscal.emitir_ao_receber), emite a NFS-e pela mesma
+// lógica do emitir-nfse (_shared/nfse/emitirNota.ts). Uma nota por cobrança;
+// falha nunca derruba o webhook, vira aviso à equipe com o motivo.
+//
 // Tudo é idempotente: o Asaas reenvia eventos e manda PAYMENT_CONFIRMED e
 // PAYMENT_RECEIVED para o mesmo pagamento.
 //
@@ -33,11 +38,15 @@ import { avisarEquipe } from "../_shared/assinaturas.ts";
 import { criarAberturaDaVenda } from "../_shared/aberturas.ts";
 import { ocuparSala } from "../_shared/disponibilidade.ts";
 import { nomeExibicaoUnidade } from "../_shared/unidadeNome.ts";
+import { emitirNotaAoReceber } from "../_shared/nfse/emitirNota.ts";
 import {
   creditosDoPlano, fidelidadeAte, hojeBRT, idCreditoPagamento, referenciaExterna, servicosDaVenda, STATUS_PAGAMENTO_ASAAS,
 } from "../_shared/venda.ts";
 
 const APP_URL = Deno.env.get("APP_URL") ?? "https://app.cafeworking.com.br";
+
+// Pagamento que não deve virar nota: reserva inexistente ou paga sem horário (vai ser estornada).
+const SEM_NOTA_AO_RECEBER = ["reserva_inexistente", "reserva_sem_horario", "reserva_nao_reconfirmavel"];
 
 // deno-lint-ignore no-explicit-any
 type Linha = Record<string, any>;
@@ -424,7 +433,18 @@ Deno.serve(async (req) => {
     if (ref.tipo === "reserva" && ref.id) resultado = await tratarReserva(admin, ref.id, pay, status);
     else if (pay.subscription) resultado = await tratarAssinatura(admin, pay, status);
     else resultado = await tratarAvulso(admin, pay, status);
-    return json({ ok: true, status, resultado }, 200, req);
+
+    // Nota automática: depois da baixa, nunca falha o webhook.
+    let nota: string | undefined;
+    if (status === "pago" && !SEM_NOTA_AO_RECEBER.includes(resultado)) {
+      try {
+        nota = await emitirNotaAoReceber(admin, pay.id);
+      } catch (e) {
+        console.error("asaas-webhook nota", pay.id, (e as Error).message);
+        nota = "nota_erro";
+      }
+    }
+    return json({ ok: true, status, resultado, ...(nota ? { nota } : {}) }, 200, req);
   } catch (e) {
     console.error("asaas-webhook", ev, pay.id, (e as Error).message);
     return json({ error: (e as Error).message ?? "Erro interno" }, 500, req);

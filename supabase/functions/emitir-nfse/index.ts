@@ -3,7 +3,7 @@
 //
 // POST /functions/v1/emitir-nfse
 // body: { unidade_id, tomador, tomador_documento, tomador_email?,
-//         valor, descricao?, codigo_servico?, boleto_id? }
+//         valor, descricao?, codigo_servico?, boleto_id?, cobranca_id? }
 //
 // Segurança:
 //  1. Só admin da plataforma ou master/financeiro da unidade emitem (403 para
@@ -13,18 +13,17 @@
 //     em homologação grava a nota como "simulada" (sem valor fiscal, sem e-mail).
 //  4. O nDPS é reservado no banco (proximo_numero_dps: sem corrida entre duas
 //     emissões simultâneas) e gravado com unique (unidade, série, número).
-//  5. Chama o NfseProvider correto (adapter) e grava a nota.
+//  5. Com cobranca_id: a cobrança tem que ser da unidade e não ter nota valendo
+//     (409 NOTA_JA_EMITIDA), inclusive a automática do asaas-webhook.
+//  6. Chama o NfseProvider correto (adapter) e grava a nota.
+// A emissão em si mora em _shared/nfse/emitirNota.ts (mesma do webhook).
 // ============================================================================
 
 import { handleOptions, json } from "../_shared/cors.ts";
 import { userClient, adminClient } from "../_shared/supabaseAdmin.ts";
-import { getFiscalCredentials } from "../_shared/fiscalVault.ts";
-import { uploadNfseFile } from "../_shared/storage.ts";
-import { getNfseProvider, FiscalError, type ConfigFiscal, type EmitirNfseInput } from "../_shared/nfse/index.ts";
-import { modoEmissao, serieDps } from "../_shared/nfse/dps.ts";
-import { dispatchNotificacao } from "../_shared/notify/index.ts";
-import { registrarAuditoria, ipDaReq } from "../_shared/audit.ts";
+import { ipDaReq } from "../_shared/audit.ts";
 import { podeMexerNoDinheiro, recusaSemFinanceiro } from "../_shared/permissoes.ts";
+import { emitirNotaFiscal } from "../_shared/nfse/emitirNota.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -48,127 +47,35 @@ Deno.serve(async (req) => {
       return recusaSemFinanceiro("Emitir nota fiscal");
     }
 
-    // 2) config fiscal da unidade
-    const { data: config, error: cfgErr } = await admin
-      .from("config_fiscal")
-      .select("*")
-      .eq("unidade_id", body.unidade_id)
-      .maybeSingle<ConfigFiscal & { certificado_ref: string }>();
-    if (cfgErr) return json({ error: `Falha ao ler a configuração fiscal: ${cfgErr.message}` }, 500);
-    if (!config) return json({ error: "Configuração fiscal da unidade não encontrada. Preencha a aba Configuração fiscal." }, 404);
-    if (!config.emissao_ativa) return json({ error: "Emissão fiscal inativa nesta unidade" }, 409);
-
-    // 3) certificado do Vault (service_role): real, simulada ou recusada
-    const creds = await getFiscalCredentials(admin, config.certificado_ref);
-    const modo = modoEmissao(config.ambiente, creds);
-    if (modo.tipo === "recusada") return json({ error: modo.motivo, codigo: "SEM_CERTIFICADO" }, 412);
-    const simulada = modo.tipo === "simulada";
-    const provider = getNfseProvider(config as ConfigFiscal, creds);
-
-    // 4) número da DPS reservado no banco (a simulada não consome número)
-    const serie = serieDps(config as unknown as Record<string, unknown>);
-    let numeroDps: number | null = null;
-    let rpsNumero: string;
-    if (simulada) {
-      rpsNumero = String(Date.now());
-    } else {
-      const { data: reservado, error: numErr } = await admin.rpc("proximo_numero_dps", {
-        p_unidade_id: config.unidade_id, p_serie: serie,
-      });
-      if (numErr || !reservado) {
-        return json({ error: `Não foi possível reservar o número da DPS: ${numErr?.message ?? "sem retorno"}` }, 500);
-      }
-      numeroDps = Number(reservado);
-      rpsNumero = String(numeroDps);
-    }
-
-    const input: EmitirNfseInput = {
-      rpsNumero,
-      tomador: {
-        nome: body.tomador,
-        documento: String(body.tomador_documento),
-        email: body.tomador_email,
-        cep: body.tomador_cep || undefined,
-        logradouro: body.tomador_logradouro || undefined,
-        numero: body.tomador_numero || undefined,
-        bairro: body.tomador_bairro || undefined,
-        municipio: body.tomador_cidade || undefined,
-        uf: body.tomador_uf || undefined,
-      },
-      valor: Number(body.valor),
-      descricao: body.descricao ?? config.descricao_servico,
-      codigoServico: body.codigo_servico,
-      boletoId: body.boleto_id ?? null,
-    };
-    const result = await provider.emitirNfse(input);
-    // Defesa: nunca grava simulação como nota de verdade.
-    const status = simulada ? "simulada" : result.status;
-
-    // 5) grava a nota (service_role)
-    const insert = {
-      unidade_id: config.unidade_id,
-      numero: result.numero ?? rpsNumero,
-      rps_numero: rpsNumero,
-      serie_dps: simulada ? null : serie,
-      numero_dps: numeroDps,
-      tomador: input.tomador.nome,
-      tomador_documento: input.tomador.documento,
-      descricao: input.descricao,
-      valor: input.valor,
-      iss: result.iss ?? null,
-      emissor: config.emissor,
-      nfse_id: result.nfseId,
-      codigo_verificacao: result.codigoVerificacao ?? null,
-      status,
-      boleto_id: input.boletoId,
-      created_by: auth.user.id,
-    };
-    const { data: nota, error: insErr } = await admin
-      .from("notas_fiscais")
-      .insert(insert)
-      .select()
-      .single();
-    if (insErr) return json({ error: `Falha ao gravar nota: ${insErr.message}` }, 500);
-
-    // XML → Storage (não bloqueia a resposta se falhar)
-    if (result.xml) {
-      const url = await uploadNfseFile(admin, `${config.unidade_id}/${nota.id}.xml`, result.xml);
-      if (url) { await admin.from("notas_fiscais").update({ xml_url: url }).eq("id", nota.id); nota.xml_url = url; }
-    }
-    if (result.pdfUrl) {
-      await admin.from("notas_fiscais").update({ pdf_url: result.pdfUrl }).eq("id", nota.id);
-      nota.pdf_url = result.pdfUrl;
-    }
-
-    // Envia a nota ao e-mail do tomador (Resend) — best-effort. Só nota real de
-    // produção: simulada e produção restrita não têm valor fiscal.
-    if (body.tomador_email && !simulada && config.ambiente === "producao") {
-      await dispatchNotificacao(admin, {
-        unidade_id: config.unidade_id, evento: "nfse_emitida", email: body.tomador_email, cliente: input.tomador.nome,
-        dados: { numero: nota.numero, valor: input.valor, descricao: input.descricao, pdfUrl: nota.pdf_url || result.pdfUrl },
-      });
-    }
-
-    await registrarAuditoria(admin, {
-      unidade_id: config.unidade_id,
-      ator_id: auth.user.id,
-      ator_email: (auth.user.email || "").toLowerCase(),
-      acao: simulada ? "nfse.simulada" : "nfse.emitida",
-      entidade: "nota_fiscal",
-      entidade_id: nota.id,
-      detalhe: {
-        numero: nota.numero, rps_numero: rpsNumero, serie_dps: insert.serie_dps, numero_dps: numeroDps,
-        valor: input.valor, tomador: input.tomador.nome, tomador_documento: input.tomador.documento,
-        emissor: config.emissor, ambiente: config.ambiente, status, boleto_id: input.boletoId,
-      },
+    const r = await emitirNotaFiscal(admin, {
+      unidade_id: body.unidade_id,
+      tomador: body.tomador,
+      tomador_documento: String(body.tomador_documento),
+      tomador_email: body.tomador_email,
+      valor: body.valor,
+      descricao: body.descricao,
+      codigo_servico: body.codigo_servico,
+      boleto_id: body.boleto_id ?? null,
+      cobranca_id: body.cobranca_id ?? null,
+      tomador_cep: body.tomador_cep,
+      tomador_logradouro: body.tomador_logradouro,
+      tomador_numero: body.tomador_numero,
+      tomador_bairro: body.tomador_bairro,
+      tomador_cidade: body.tomador_cidade,
+      tomador_uf: body.tomador_uf,
+    }, {
+      id: auth.user.id,
+      email: (auth.user.email || "").toLowerCase(),
       ip: ipDaReq(req),
+      origem: "equipe",
     });
 
-    return json({ nota }, 201);
-  } catch (e) {
-    if (e instanceof FiscalError) {
-      return json({ error: e.message, emissor: e.emissor, detail: e.detail }, e.httpStatus ?? 502);
+    if (!r.ok) {
+      const { status, error, codigo, emissor, detail } = r;
+      return json({ error, ...(codigo ? { codigo } : {}), ...(emissor ? { emissor, detail } : {}) }, status);
     }
+    return json({ nota: r.nota }, 201);
+  } catch (e) {
     console.error(e);
     return json({ error: (e as Error).message ?? "Erro interno" }, 500);
   }

@@ -261,7 +261,7 @@ function CobrancaForm({ store, onCriada }) {
 
       // Documento fiscal escolhido.
       const nf = f.documento !== "nf" ? null : await emitirNFSe(activeUnit, {
-        tomador: nome, tomadorDoc: doc, tomadorEmail: email, valor: +f.valor, descricao: descricaoFinal,
+        tomador: nome, tomadorDoc: doc, tomadorEmail: email, valor: +f.valor, descricao: descricaoFinal, cobrancaId: cobranca.id,
         tomadorCep: cli?.cep, tomadorLogradouro: cli?.endereco, tomadorNumero: cli?.numero,
         tomadorBairro: cli?.bairro, tomadorCidade: cli?.cidade, tomadorUf: cli?.uf,
       });
@@ -351,7 +351,7 @@ function DetalheCobranca({ c, store, onRecibo, erroNotaInicial }) {
   const emitirNota = async () => {
     if (nf.enviando) return;
     setNf({ enviando: true, erro: "", simulada: false });
-    const r = await emitirNFSe(activeUnit, { tomador: c.cliente, tomadorDoc: c.documento, tomadorEmail: c.email, valor: c.valor, descricao: c.descricao });
+    const r = await emitirNFSe(activeUnit, { tomador: c.cliente, tomadorDoc: c.documento, tomadorEmail: c.email, valor: c.valor, descricao: c.descricao, cobrancaId: c.id });
     setNf({ enviando: false, erro: r?.erro || "", simulada: r?.nota?.status === "simulada" });
     if (!r?.erro) setNfFeita(true);
   };

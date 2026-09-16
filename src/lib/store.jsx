@@ -772,7 +772,7 @@ export function StoreProvider({ children }) {
     tomador: n.tomador, tomadorDoc: n.tomador_documento, descricao: n.descricao,
     valor: Number(n.valor), iss: Number(n.iss || 0), status: n.status,
     emitidaEm: (n.created_at || "").slice(0, 10), pdfUrl: n.pdf_url || "", xmlUrl: n.xml_url || "",
-    boletoId: n.boleto_id || null,
+    boletoId: n.boleto_id || null, cobrancaId: n.cobranca_id || null,
   });
 
   // PRODUÇÃO: a Edge Function assina (xmldsig) e transmite ao SEFIN Nacional
@@ -787,6 +787,8 @@ export function StoreProvider({ children }) {
         tomador_cep: dados.tomadorCep, tomador_logradouro: dados.tomadorLogradouro, tomador_numero: dados.tomadorNumero,
         tomador_bairro: dados.tomadorBairro, tomador_cidade: dados.tomadorCidade, tomador_uf: dados.tomadorUf,
         boleto_id: dados.boletoId,
+        // Só cobrança real (uuid): a nota fica vinculada e o webhook não emite outra.
+        cobranca_id: /^[0-9a-f-]{36}$/i.test(String(dados.cobrancaId || "")) ? dados.cobrancaId : undefined,
       }).then(({ nota }) => {
         const n = _mapApiNota(nota);
         setNotasFiscais((ns) => [n, ...ns]);
@@ -1196,6 +1198,7 @@ export function StoreProvider({ children }) {
     codigoTributacaoNacional: r.codigo_tributacao_nacional, codigoServicoMunicipal: r.codigo_servico_municipal,
     nbs: r.nbs, regimeEspecial: r.regime_especial, aliquotaSimples: Number(r.aliquota_simples || 0),
     issRetido: r.iss_retido, exigibilidadeIss: r.exigibilidade_iss,
+    emitirAoReceber: r.emitir_ao_receber === true,
   });
 
   // Hidrata as entidades operacionais (app_state) + as de tabela própria
