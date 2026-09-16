@@ -59,4 +59,48 @@ export function parseDateBR(data, hoje = new Date()) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+// ---------------------------------------------------------------------------
+// Ano dos lançamentos. Até set/2026 o lançamento guardava só o mês (0..11).
+// Os gravados sem `ano` são tratados como 2026: conferido no banco em
+// 16/09/2026 (1227 lançamentos, todos criados em 2026). Cinco importados da
+// planilha têm data "15/01/2025", provável erro de digitação: continuam em
+// 2026 como sempre apareceram, até alguém corrigir o lançamento.
+// Lançamento novo ou salvo grava o `ano`.
+// ---------------------------------------------------------------------------
+export const ANO_LEGADO = 2026;
+
+/** Ano do lançamento (sem `ano` gravado → ANO_LEGADO). */
+export function anoDoLancamento(l) {
+  const a = Number(l?.ano);
+  return Number.isInteger(a) && a >= 2000 && a <= 2100 ? a : ANO_LEGADO;
+}
+
+/** Número único e ordenável de uma competência (ano × 12 + mês). */
+export function chaveCompetencia(ano, mes) {
+  return ano * 12 + (Number(mes) || 0);
+}
+
+export function chaveDoLancamento(l) {
+  return chaveCompetencia(anoDoLancamento(l), l?.mes);
+}
+
+/** O lançamento é da competência (ano, mês)? mes = null → ano inteiro. */
+export function noPeriodo(l, ano, mes = null) {
+  return anoDoLancamento(l) === ano && (mes == null || l?.mes === mes);
+}
+
+/** Anos para os seletores: os que têm lançamento + o ano atual, do mais recente ao mais antigo. */
+export function anosDisponiveis(lancamentos = [], extras = []) {
+  const anos = new Set([getCurrentCompetencia().ano, ...extras.filter(Boolean)]);
+  for (const l of lancamentos) anos.add(anoDoLancamento(l));
+  return [...anos].sort((a, b) => b - a);
+}
+
+/** Mês e ano de uma data com ano explícito (dd/mm/aaaa ou ISO); null se não tiver ano. */
+export function competenciaComAno(data) {
+  const s = String(data || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}/.test(s) && !/^\d{1,2}\/\d{1,2}\/\d{4}/.test(s)) return null;
+  return parseDateToCompetencia(s);
+}
+
 export { MESES_BR };

@@ -7,7 +7,9 @@ import {
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, FileInput } from "../components/ui.jsx";
 import { C, serif, sans, fmt, fmtShort, inp } from "../lib/theme.js";
 import { useStore, SECOES, COBRANCA_TEMPLATE_DEFAULT, MODO_REAL } from "../lib/store.jsx";
-import { getCurrentCompetencia, parseDateBR } from "../lib/dateUtils.js";
+import {
+  getCurrentCompetencia, parseDateBR, anoDoLancamento, chaveCompetencia, chaveDoLancamento, noPeriodo, anosDisponiveis, competenciaComAno,
+} from "../lib/dateUtils.js";
 import { gerarModeloFluxo, lerPlanilhaFluxo, validarLinhas, exportarExtratoExcel, exportarProvisaoExcel } from "../lib/fluxoImport.js";
 
 const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
@@ -15,6 +17,18 @@ const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "O
 const { mes: MES_ATUAL, ano: ANO_ATUAL } = getCurrentCompetencia();
 const TODOS_MESES = MESES.map((_, i) => i);
 const diaDe = (data) => parseInt((data || "").slice(0, 2), 10) || 0;
+// "Jan" no ano atual, "Jan/25" em outro ano.
+const mesAnoCurto = (l) => (anoDoLancamento(l) === ANO_ATUAL ? MESES[l.mes] : `${MESES[l.mes]}/${String(anoDoLancamento(l)).slice(2)}`);
+const selPeq = { ...inp, width: "auto", padding: "7px 10px", fontSize: 13 };
+
+/** Seletor de ano (os anos com lançamento + o atual). */
+function SeletorAno({ valor, onChange, anos, style }) {
+  return (
+    <select value={valor} onChange={(e) => onChange(+e.target.value)} aria-label="Ano" style={{ ...selPeq, ...style }}>
+      {anos.map((a) => <option key={a} value={a}>{a}</option>)}
+    </select>
+  );
+}
 // Máscara de data DD/MM/AAAA — a "barra" fica fixa: o usuário só digita números
 // e as barras entram sozinhas nas posições certas.
 const maskData = (v) => {
@@ -73,21 +87,15 @@ export default function Financeiro({ finTab }) {
   };
 
   const contas = store.contasDe(activeUnit);
-  const lancamentos = store.lancamentosDe(activeUnit).slice().sort((a, b) => b.mes - a.mes || diaDe(b.data) - diaDe(a.data));
+  const lancamentos = store.lancamentosDe(activeUnit).slice().sort((a, b) => chaveDoLancamento(b) - chaveDoLancamento(a) || diaDe(b.data) - diaDe(a.data));
   const clientesUnidade = store.clientesDe(unidadeAtiva?.nome);
 
   const saldoTotal = contas.reduce((s, c) => s + saldoAtualConta(c, lancamentos), 0);
   const aReceber = lancamentos.filter((l) => l.tipo === "entrada" && l.status === "previsto").reduce((s, l) => s + l.valor, 0);
   const aPagar = lancamentos.filter((l) => l.tipo === "saida" && l.status === "previsto").reduce((s, l) => s + l.valor, 0);
-  const entradasMes = lancamentos.filter((l) => l.mes === MES_ATUAL && l.tipo === "entrada" && l.status === "pago").reduce((s, l) => s + l.valor, 0);
-  const saidasMes = lancamentos.filter((l) => l.mes === MES_ATUAL && l.tipo === "saida" && l.status === "pago").reduce((s, l) => s + l.valor, 0);
+  const entradasMes = lancamentos.filter((l) => noPeriodo(l, ANO_ATUAL, MES_ATUAL) && l.tipo === "entrada" && l.status === "pago").reduce((s, l) => s + l.valor, 0);
+  const saidasMes = lancamentos.filter((l) => noPeriodo(l, ANO_ATUAL, MES_ATUAL) && l.tipo === "saida" && l.status === "pago").reduce((s, l) => s + l.valor, 0);
   const resultadoMes = entradasMes - saidasMes;
-
-  const fluxo = MESES.map((label, m) => {
-    const e = lancamentos.filter((l) => l.mes === m && l.tipo === "entrada").reduce((s, l) => s + l.valor, 0);
-    const sa = lancamentos.filter((l) => l.mes === m && l.tipo === "saida").reduce((s, l) => s + l.valor, 0);
-    return { label, entrada: e, saida: sa, saldo: e - sa };
-  });
 
   const secaoAtual = FIN_GRUPOS.flatMap((g) => g.itens).find((i) => i.id === tab);
 
@@ -112,7 +120,7 @@ export default function Financeiro({ finTab }) {
         <Kpi label="Saldo em contas" valor={saldoTotal} icon={Wallet} cor={C.teal} sub={`${contas.length} contas`} />
         <Kpi label="A receber" valor={aReceber} icon={ArrowUpRight} cor={C.green} sub="Previstos não pagos" />
         <Kpi label="A pagar" valor={aPagar} icon={ArrowDownRight} cor={C.red} sub="Despesas previstas" />
-        <Kpi label="Resultado do mês" valor={resultadoMes} icon={TrendingUp} cor={resultadoMes >= 0 ? C.green : C.red} sub={`Entradas − saídas (${MESES[MES_ATUAL]})`} />
+        <Kpi label="Resultado do mês" valor={resultadoMes} icon={TrendingUp} cor={resultadoMes >= 0 ? C.green : C.red} sub={`Entradas − saídas (${MESES[MES_ATUAL]}/${ANO_ATUAL})`} />
       </div>
 
       {avisoBaixa && (
@@ -125,7 +133,7 @@ export default function Financeiro({ finTab }) {
 
       {/* Conteúdo (seções navegadas pelo sidebar principal) */}
       <div style={{ minWidth: 0 }}>
-        {tab === "visao" && <VisaoGeral fluxo={fluxo} lancamentos={lancamentos} contas={contas} onAbrir={setDetalheLanc} />}
+        {tab === "visao" && <VisaoGeral lancamentos={lancamentos} contas={contas} onAbrir={setDetalheLanc} />}
         {(tab === "receber" || tab === "pagar") && (
           <Contas
             lancamentos={lancamentos}
@@ -507,7 +515,7 @@ function Anexos({ lancamentos, onAbrir }) {
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13.5, fontWeight: 600 }}>{l.descricao}</div>
-                <div style={{ fontSize: 11.5, color: C.text3 }}>{l.anexo.nome || "Comprovante"} · {MESES[l.mes]} {l.data}</div>
+                <div style={{ fontSize: 11.5, color: C.text3 }}>{l.anexo.nome || "Comprovante"} · {mesAnoCurto(l)} {l.data}</div>
               </div>
               <div style={{ fontFamily: serif, fontSize: 15, color: ent ? C.green : C.red }}>{ent ? "+" : "−"} {fmt(l.valor)}</div>
               <button onClick={(e) => { e.stopPropagation(); baixarAnexoArq(l.anexo); }} title="Baixar anexo" className="cw-btn" style={{ color: C.text4, padding: 5 }}><Download size={16} /></button>
@@ -519,13 +527,23 @@ function Anexos({ lancamentos, onAbrir }) {
   );
 }
 
-function VisaoGeral({ fluxo, lancamentos, onAbrir }) {
+function VisaoGeral({ lancamentos, onAbrir }) {
+  const [ano, setAno] = useState(ANO_ATUAL);
   const recentes = lancamentos.slice(0, 6);
+  const fluxo = MESES.map((label, m) => {
+    const doMes = lancamentos.filter((l) => noPeriodo(l, ano, m));
+    const e = doMes.filter((l) => l.tipo === "entrada").reduce((s, l) => s + l.valor, 0);
+    const sa = doMes.filter((l) => l.tipo === "saida").reduce((s, l) => s + l.valor, 0);
+    return { label, entrada: e, saida: sa, saldo: e - sa };
+  });
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 16 }} className="cw-grid-stack">
       <Card>
-        <div style={{ fontFamily: serif, fontSize: 19, marginBottom: 4 }}>Movimentação do ano</div>
-        <div style={{ fontSize: 12, color: C.text3, marginBottom: 18 }}>Entradas e saídas mês a mês (realizado + provisionado)</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 4 }}>
+          <div style={{ fontFamily: serif, fontSize: 19 }}>Movimentação do ano</div>
+          <SeletorAno valor={ano} onChange={setAno} anos={anosDisponiveis(lancamentos)} />
+        </div>
+        <div style={{ fontSize: 12, color: C.text3, marginBottom: 18 }}>Entradas e saídas mês a mês de {ano} (realizado + provisionado)</div>
         <GraficoFluxo fluxo={fluxo} />
       </Card>
       <Card style={{ padding: 0, overflow: "hidden" }}>
@@ -556,7 +574,7 @@ function VisaoGeral({ fluxo, lancamentos, onAbrir }) {
 // ===== CONTAS A PAGAR / RECEBER ===========================================
 function Contas({ lancamentos, tipo, onNova, onAbrir, onBaixar, onEditar, onExcluir }) {
   const previstos = lancamentos.filter((l) => l.status === "previsto");
-  const ordena = (a, b) => a.mes - b.mes || diaDe(a.data) - diaDe(b.data);
+  const ordena = (a, b) => chaveDoLancamento(a) - chaveDoLancamento(b) || diaDe(a.data) - diaDe(b.data);
   const receber = previstos.filter((l) => l.tipo === "entrada").sort(ordena);
   const pagar = previstos.filter((l) => l.tipo === "saida").sort(ordena);
   const totalRec = receber.reduce((s, l) => s + l.valor, 0);
@@ -579,7 +597,7 @@ function Contas({ lancamentos, tipo, onNova, onAbrir, onBaixar, onEditar, onExcl
         itens.map((l, i) => (
           <div key={l.id} onClick={() => onAbrir && onAbrir(l)} title="Ver lançamento completo" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", borderBottom: i < itens.length - 1 ? `1px solid ${C.border2}` : "none", cursor: "pointer" }}>
             <div style={{ textAlign: "center", minWidth: 38 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: cor }}>{MESES[l.mes]}</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: cor }}>{mesAnoCurto(l)}</div>
               <div style={{ fontSize: 10, color: C.text4 }}>{(l.data || "").slice(0, 2) || "—"}</div>
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -634,7 +652,7 @@ function ContaPRForm({ inicialTipo, contas, categorias, bankAccounts = [], clien
   const [f, setF] = useState(() => {
     const cat = cats[0]?.nome || "";
     return {
-      descricao: "", categoria: cat, subcategoria: subsDe(cat)[0] || "", valor: 0, contaId: contas[0]?.id || "", dataVencimento: "", dataPagamento: "", mesInicial: MES_ATUAL, recorrencia: "unica", nMeses: 6, clienteId: "",
+      descricao: "", categoria: cat, subcategoria: subsDe(cat)[0] || "", valor: 0, contaId: contas[0]?.id || "", dataVencimento: "", dataPagamento: "", mesInicial: MES_ATUAL, anoInicial: ANO_ATUAL, recorrencia: "unica", nMeses: 6, clienteId: "",
       // Boleto (só conta a receber, só na demonstração). Liga se houver conta bancária.
       gerarBoleto: !MODO_REAL && ehReceber && bankAccounts.length > 0,
       bankAccountId: bankAccounts[0]?.id || "",
@@ -656,11 +674,12 @@ function ContaPRForm({ inicialTipo, contas, categorias, bankAccounts = [], clien
       tipo, descricao: f.descricao, categoria: f.categoria, subcategoria: f.subcategoria, valor: f.valor, contaId: f.contaId,
       data, dataVencimento: f.dataVencimento, dataPagamento: f.dataPagamento || "",
       status: pago ? "pago" : "previsto",
-      recorrente: f.recorrencia === "mensal", clienteId, clienteNome,
+      recorrente: f.recorrencia === "mensal", clienteId, clienteNome, ano: f.anoInicial,
     };
+    // Com o ano gravado, a recorrência pode passar de dezembro (12, 13… = jan, fev do ano seguinte).
     const start = f.mesInicial;
     const meses = f.recorrencia === "mensal"
-      ? Array.from({ length: Math.min(f.nMeses, MESES.length - start) }, (_, i) => start + i)
+      ? Array.from({ length: f.nMeses }, (_, i) => start + i)
       : [start];
     const boletoCfg = !MODO_REAL && ehReceber && f.gerarBoleto
       ? { gerar: true, bankAccountId: f.bankAccountId, sacado: f.sacado, sacadoDocumento: f.sacadoDocumento }
@@ -711,10 +730,15 @@ function ContaPRForm({ inicialTipo, contas, categorias, bankAccounts = [], clien
         <Field label="Vencimento">
           <input value={f.dataVencimento} onChange={(e) => setF({ ...f, dataVencimento: maskData(e.target.value) })} style={inp} placeholder="DD/MM/AAAA" inputMode="numeric" />
         </Field>
-        <Field label="1ª competência (mês)">
-          <select value={f.mesInicial} onChange={(e) => setF({ ...f, mesInicial: +e.target.value })} style={inp}>
-            {MESES.map((m, i) => <option key={i} value={i}>{m}</option>)}
-          </select>
+        <Field label="1ª competência (mês/ano)">
+          <div style={{ display: "flex", gap: 6 }}>
+            <select value={f.mesInicial} onChange={(e) => setF({ ...f, mesInicial: +e.target.value })} style={{ ...inp, flex: 1 }}>
+              {MESES.map((m, i) => <option key={i} value={i}>{m}</option>)}
+            </select>
+            <select value={f.anoInicial} onChange={(e) => setF({ ...f, anoInicial: +e.target.value })} style={{ ...inp, width: 86 }} aria-label="Ano da 1ª competência">
+              {[ANO_ATUAL - 1, ANO_ATUAL, ANO_ATUAL + 1].map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
         </Field>
       </div>
       <Field label="Pagamento — preencha só se já foi pago (entra no regime de caixa)">
@@ -734,7 +758,7 @@ function ContaPRForm({ inicialTipo, contas, categorias, bankAccounts = [], clien
         <Field label="Repetir por quantos meses">
           <input type="number" min="1" max="12" value={f.nMeses} onChange={(e) => setF({ ...f, nMeses: Math.max(1, Math.min(12, +e.target.value)) })} style={inp} />
           <div style={{ fontSize: 11, color: C.text4, marginTop: 5 }}>
-            Gera {Math.min(f.nMeses, MESES.length - f.mesInicial)} lançamentos previstos (provisionados no DRE).
+            Gera {f.nMeses} lançamentos previstos (provisionados no DRE), de {MESES[f.mesInicial]}/{f.anoInicial} a {MESES[(f.mesInicial + f.nMeses - 1) % 12]}/{f.anoInicial + Math.floor((f.mesInicial + f.nMeses - 1) / 12)}.
           </div>
         </Field>
       )}
@@ -781,7 +805,7 @@ function ContaPRForm({ inicialTipo, contas, categorias, bankAccounts = [], clien
                   <div style={{ fontSize: 11.5, color: C.text3, display: "flex", alignItems: "center", gap: 6 }}>
                     <QrCode size={13} color={contaBoleto?.banco === "inter" ? C.green : C.text4} />
                     {f.recorrencia === "mensal"
-                      ? `Gera ${Math.min(f.nMeses, MESES.length - f.mesInicial)} boletos (1 por parcela)`
+                      ? `Gera ${f.nMeses} boletos (1 por parcela)`
                       : "Gera 1 boleto"}
                     {contaBoleto?.banco === "inter" ? " com PIX integrado." : "."}
                   </div>
@@ -990,6 +1014,7 @@ function RenovarForm({ contrato, onSalvar }) {
 function Extrato({ contas, lancamentos, onAbrir, onRemoverImportados }) {
   const [contaSel, setContaSel] = useState(contas[0]?.id || "");
   const [mesSel, setMesSel] = useState(MES_ATUAL); // 0..11 ou "todos" (ano inteiro)
+  const [anoSel, setAnoSel] = useState(ANO_ATUAL);
   const [busca, setBusca] = useState("");
   const [tipoFiltro, setTipoFiltro] = useState("todos"); // todos | entradas | saidas
   const conta = contas.find((c) => c.id === contaSel);
@@ -1006,17 +1031,16 @@ function Extrato({ contas, lancamentos, onAbrir, onRemoverImportados }) {
   // Extrato por período (mês selecionado ou ano inteiro), estilo extrato bancário.
   const anoTodo = mesSel === "todos";
   const pagosConta = lancamentos.filter((l) => l.contaId === contaSel && l.status === "pago");
-  const netMes = (m) => pagosConta.filter((l) => l.mes === m).reduce((s, l) => s + (l.tipo === "entrada" ? l.valor : -l.valor), 0);
-  const movs = (anoTodo ? pagosConta : pagosConta.filter((l) => l.mes === mesSel))
+  const movs = pagosConta.filter((l) => noPeriodo(l, anoSel, anoTodo ? null : mesSel))
     .slice()
-    .sort((a, b) => (a.mes - b.mes) || (diaDe(a.data) - diaDe(b.data)));
+    .sort((a, b) => (chaveDoLancamento(a) - chaveDoLancamento(b)) || (diaDe(a.data) - diaDe(b.data)));
   // Saldo de abertura do período = SALDO INICIAL (do cadastro) + movimentos
-  // ANTES do período. Assim o valor do banco é o ponto de partida do fluxo e os
-  // lançamentos somam a partir dele.
+  // ANTES do período (inclusive de anos anteriores). Assim o valor do banco é o
+  // ponto de partida do fluxo e os lançamentos somam a partir dele.
   const saldoInicial = conta.saldo || 0;
-  let antesDoPeriodo = 0;
-  const inicioPeriodo = anoTodo ? 0 : mesSel;
-  for (let k = 0; k < inicioPeriodo; k++) antesDoPeriodo += netMes(k);
+  const inicioPeriodo = chaveCompetencia(anoSel, anoTodo ? 0 : mesSel);
+  const antesDoPeriodo = pagosConta.filter((l) => chaveDoLancamento(l) < inicioPeriodo)
+    .reduce((s, l) => s + (l.tipo === "entrada" ? l.valor : -l.valor), 0);
   const saldoAnterior = saldoInicial + antesDoPeriodo;
   let run = saldoAnterior;
   const linhas = movs.map((l) => {
@@ -1060,16 +1084,17 @@ function Extrato({ contas, lancamentos, onAbrir, onRemoverImportados }) {
         <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border2}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
           <div>
             <div style={{ fontFamily: serif, fontSize: 19 }}>{conta.banco}</div>
-            <div style={{ fontSize: 12, color: C.text3 }}>{conta.tipo} · extrato de {anoTodo ? `${ANO_ATUAL} (ano todo)` : `${MESES[mesSel]}/${ANO_ATUAL}`} · saldo inicial {fmt(saldoInicial)}</div>
+            <div style={{ fontSize: 12, color: C.text3 }}>{conta.tipo} · extrato de {anoTodo ? `${anoSel} (ano todo)` : `${MESES[mesSel]}/${anoSel}`} · saldo inicial {fmt(saldoInicial)}</div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <select value={String(mesSel)} onChange={(e) => setMesSel(e.target.value === "todos" ? "todos" : +e.target.value)}
               style={{ ...inp, width: "auto", padding: "8px 12px", fontSize: 13 }}>
-              <option value="todos">Ano todo ({ANO_ATUAL})</option>
-              {MESES.map((m, i) => <option key={i} value={i}>{m}/{ANO_ATUAL}</option>)}
+              <option value="todos">Ano todo ({anoSel})</option>
+              {MESES.map((m, i) => <option key={i} value={i}>{m}/{anoSel}</option>)}
             </select>
+            <SeletorAno valor={anoSel} onChange={setAnoSel} anos={anosDisponiveis(lancamentos)} style={{ padding: "8px 12px" }} />
             <Btn variant="soft" disabled={linhasFiltradas.length === 0} onClick={() => exportarExtratoExcel({
-              contaNome: conta.banco, periodoLabel: anoTodo ? `Ano ${ANO_ATUAL}` : `${MESES[mesSel]} ${ANO_ATUAL}`,
+              contaNome: conta.banco, periodoLabel: anoTodo ? `Ano ${anoSel}` : `${MESES[mesSel]} ${anoSel}`,
               saldoInicial, saldoAnterior, saldoFim: saldoFimPeriodo,
               linhas: filtroAtivo ? linhasFiltradas : linhas,
               totalEntradas: filtroAtivo ? fEntradas : totalEntradas,
@@ -1143,7 +1168,7 @@ function Extrato({ contas, lancamentos, onAbrir, onRemoverImportados }) {
           <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: C.text4 }}>
             {filtroAtivo
               ? "Nenhum lançamento com esse filtro. Ajuste a busca ou o tipo acima."
-              : `Nenhuma movimentação em ${anoTodo ? ANO_ATUAL : `${MESES[mesSel]}/${ANO_ATUAL}`} nesta conta. Troque o mês acima para procurar em outro período.`}
+              : `Nenhuma movimentação em ${anoTodo ? anoSel : `${MESES[mesSel]}/${anoSel}`} nesta conta. Troque o mês ou o ano acima para procurar em outro período.`}
           </div>
         )}
 
@@ -1154,7 +1179,7 @@ function Extrato({ contas, lancamentos, onAbrir, onRemoverImportados }) {
             <Cel style={{ textAlign: "right", color: C.green }}>{fmt(fEntradas)}</Cel>
             <Cel style={{ textAlign: "right", color: C.red }}>{fmt(fSaidas)}</Cel>
             <Cel style={{ textAlign: "right", color: (fEntradas - fSaidas) >= 0 ? C.teal : C.red }}>{fmt(fEntradas - fSaidas)}</Cel>
-            <Cel style={{ color: C.text3, fontStyle: "italic" }}>{filtroAtivo ? `${linhasFiltradas.length} lançamento(s) no filtro · entradas − saídas` : `Entradas e saídas ${anoTodo ? `de ${ANO_ATUAL}` : `de ${MESES[mesSel]}`} · resultado do período`}</Cel>
+            <Cel style={{ color: C.text3, fontStyle: "italic" }}>{filtroAtivo ? `${linhasFiltradas.length} lançamento(s) no filtro · entradas − saídas` : `Entradas e saídas ${anoTodo ? `de ${anoSel}` : `de ${MESES[mesSel]}/${anoSel}`} · resultado do período`}</Cel>
           </div>
         )}
 
@@ -1163,7 +1188,7 @@ function Extrato({ contas, lancamentos, onAbrir, onRemoverImportados }) {
           <Cel />
           <Cel /><Cel />
           <Cel style={{ textAlign: "right", fontFamily: serif, fontSize: 16, color: saldoFimPeriodo >= 0 ? C.teal : C.red }}>{fmt(saldoFimPeriodo)}</Cel>
-          <Cel style={{ fontFamily: serif, fontSize: 15 }}>Saldo ao fim {anoTodo ? `de ${ANO_ATUAL}` : `de ${MESES[mesSel]}`}</Cel>
+          <Cel style={{ fontFamily: serif, fontSize: 15 }}>Saldo ao fim {anoTodo ? `de ${anoSel}` : `de ${MESES[mesSel]}/${anoSel}`}</Cel>
         </div>
       </Card>
 
@@ -1237,19 +1262,21 @@ function DRE({ lancamentos, categorias }) {
   const [regime, setRegime] = useState("competencia");
   const [visao, setVisao] = useState("ano"); // abre no ano todo (senão o mês atual pode estar vazio)
   const [mesSel, setMesSel] = useState(MES_ATUAL);
+  const [anoSel, setAnoSel] = useState(ANO_ATUAL);
   const [triSel, setTriSel] = useState(1);
 
   const porRegime = (l) => (regime === "caixa" ? l.status === "pago" : true);
   const mesesVisao = visao === "mes" ? [mesSel] : visao === "trimestre" ? TRIMESTRES[triSel].meses : TODOS_MESES;
-  const base = lancamentos.filter((l) => porRegime(l) && mesesVisao.includes(l.mes));
+  const doAno = lancamentos.filter((l) => anoDoLancamento(l) === anoSel);
+  const base = doAno.filter((l) => porRegime(l) && mesesVisao.includes(l.mes));
   const dre = calcDRE(base, categorias);
   const margem = dre.rb > 0 ? (dre.lucroLiq / dre.rb) * 100 : 0;
 
   const periodoLabel =
-    visao === "mes" ? `${MESES[mesSel]} de ${ANO_ATUAL}` :
-    visao === "trimestre" ? `${TRIMESTRES[triSel].label} · ${ANO_ATUAL}` :
-    visao === "ano" ? `Ano de ${ANO_ATUAL}` :
-    `Exercício ${ANO_ATUAL} · mês a mês`;
+    visao === "mes" ? `${MESES[mesSel]} de ${anoSel}` :
+    visao === "trimestre" ? `${TRIMESTRES[triSel].label} · ${anoSel}` :
+    visao === "ano" ? `Ano de ${anoSel}` :
+    `Exercício ${anoSel} · mês a mês`;
 
   const Toggle = ({ opcoes, valor, set }) => (
     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -1280,6 +1307,7 @@ function DRE({ lancamentos, categorias }) {
             {TRIMESTRES.map((t, i) => <option key={i} value={i}>{t.label}</option>)}
           </select>
         )}
+        <SeletorAno valor={anoSel} onChange={setAnoSel} anos={anosDisponiveis(lancamentos)} />
         <div style={{ marginLeft: "auto", fontSize: 13, fontWeight: 700, color: C.cafe, background: C.cafePale, padding: "6px 13px", borderRadius: 9, whiteSpace: "nowrap" }}>
           {periodoLabel}
         </div>
@@ -1289,7 +1317,7 @@ function DRE({ lancamentos, categorias }) {
 
   // ---- Visão mensal (matriz: linhas × meses) ----
   if (visao === "mensal") {
-    const cols = TODOS_MESES.map((m) => calcDRE(lancamentos.filter((l) => porRegime(l) && l.mes === m), categorias));
+    const cols = TODOS_MESES.map((m) => calcDRE(doAno.filter((l) => porRegime(l) && l.mes === m), categorias));
     const ROWS = [
       { label: "Receita Operacional Bruta", get: (d) => d.rb, t: "n" },
       { label: "(−) Tributos", get: (d) => -d.trib, t: "n" },
@@ -1586,6 +1614,7 @@ function Bancos({ contas, lancamentos = [], saldoTotal, onNovo, onEditar, onExcl
 // ===== RECEBIMENTOS POR CLIENTE ============================================
 function RecebimentosCliente({ clientes = [], lancamentos = [], updateLancamento }) {
   const [mesRef, setMesRef] = useState(MES_ATUAL);
+  const [anoRef, setAnoRef] = useState(ANO_ATUAL);
   const [previa, setPrevia] = useState(null); // { vinculaveis:[{l,cliente}], ambiguos, semMatch }
   const normTxt = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   const naoVinculados = lancamentos.filter((l) => l.tipo === "entrada" && l.status === "pago" && !l.clienteId);
@@ -1605,13 +1634,10 @@ function RecebimentosCliente({ clientes = [], lancamentos = [], updateLancamento
     setPrevia(null);
   };
   const [view, setView] = useState("mensal"); // "mensal" (mês a mês) | "consolidado"
-  // Regime de caixa: mês em que o dinheiro entrou (data de pagamento). Cai para
-  // a competência (l.mes) quando o lançamento antigo não tem data de pagamento.
-  const mesCaixa = (l) => {
-    const d = l.dataPagamento || l.data;
-    if (d && /^\d{2}\/\d{2}\/\d{4}$/.test(d)) { const m = +d.slice(3, 5) - 1; if (m >= 0 && m <= 11) return m; }
-    return l.mes;
-  };
+  // Regime de caixa: mês/ano em que o dinheiro entrou (data de pagamento). Cai
+  // na competência (l.mes + ano) quando o lançamento não tem data de pagamento.
+  const caixaDe = (l) => competenciaComAno(l.dataPagamento || l.data) || { mes: l.mes, ano: anoDoLancamento(l) };
+  const noCaixa = (l, mes = null) => { const c = caixaDe(l); return c.ano === anoRef && (mes == null || c.mes === mes); };
   const recebidos = lancamentos.filter((l) => l.tipo === "entrada" && l.status === "pago" && l.clienteId);
   const clientesOrd = clientes.slice().sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"));
   const triIdx = Math.floor(mesRef / 3);
@@ -1619,15 +1645,15 @@ function RecebimentosCliente({ clientes = [], lancamentos = [], updateLancamento
   const somaCli = (cid, filtro) => recebidos.filter((l) => l.clienteId === cid && filtro(l)).reduce((s, l) => s + l.valor, 0);
   const linhas = clientesOrd.map((c) => ({
     id: c.id, nome: c.nome,
-    mes: somaCli(c.id, (l) => mesCaixa(l) === mesRef),
-    tri: somaCli(c.id, (l) => triMeses.includes(mesCaixa(l))),
-    ano: somaCli(c.id, () => true),
+    mes: somaCli(c.id, (l) => noCaixa(l, mesRef)),
+    tri: somaCli(c.id, (l) => noCaixa(l) && triMeses.includes(caixaDe(l).mes)),
+    ano: somaCli(c.id, (l) => noCaixa(l)),
     acum: somaCli(c.id, () => true),
   }));
   const tot = linhas.reduce((t, r) => ({ mes: t.mes + r.mes, tri: t.tri + r.tri, ano: t.ano + r.ano, acum: t.acum + r.acum }), { mes: 0, tri: 0, ano: 0, acum: 0 });
   // Matriz mês a mês (regime de caixa): cada cliente x 12 meses + total
   const matriz = clientesOrd.map((c) => {
-    const meses = MESES.map((_, mi) => somaCli(c.id, (l) => mesCaixa(l) === mi));
+    const meses = MESES.map((_, mi) => somaCli(c.id, (l) => noCaixa(l, mi)));
     return { id: c.id, nome: c.nome, meses, total: meses.reduce((s, v) => s + v, 0) };
   });
   const totMes = MESES.map((_, mi) => matriz.reduce((s, r) => s + r.meses[mi], 0));
@@ -1656,9 +1682,10 @@ function RecebimentosCliente({ clientes = [], lancamentos = [], updateLancamento
           </div>
           {view === "consolidado" && (
             <select value={mesRef} onChange={(e) => setMesRef(+e.target.value)} style={{ ...inp, width: "auto", padding: "7px 10px", fontSize: 13 }}>
-              {MESES.map((m, i) => <option key={i} value={i}>{m}/{ANO_ATUAL}</option>)}
+              {MESES.map((m, i) => <option key={i} value={i}>{m}/{anoRef}</option>)}
             </select>
           )}
+          <SeletorAno valor={anoRef} onChange={setAnoRef} anos={anosDisponiveis(lancamentos)} />
         </div>
       </div>
 
@@ -1705,7 +1732,7 @@ function RecebimentosCliente({ clientes = [], lancamentos = [], updateLancamento
                     <div style={{ display: "grid", gridTemplateColumns: mcol, gap: 0, padding: "11px 18px", background: C.cream, fontSize: 10.5, fontWeight: 700, color: C.text3, letterSpacing: 0.3, position: "sticky", top: 0 }}>
                       <div>CLIENTE</div>
                       {MESES.map((m, i) => <div key={i} style={{ textAlign: "right" }}>{m.slice(0, 3).toUpperCase()}</div>)}
-                      <div style={{ textAlign: "right" }}>TOTAL {ANO_ATUAL}</div>
+                      <div style={{ textAlign: "right" }}>TOTAL {anoRef}</div>
                     </div>
                     {matriz.map((r) => {
                       const semRec = r.total === 0;
@@ -1739,7 +1766,7 @@ function RecebimentosCliente({ clientes = [], lancamentos = [], updateLancamento
                 <div>CLIENTE</div>
                 <div style={{ textAlign: "right" }}>{MESES[mesRef].toUpperCase()}</div>
                 <div style={{ textAlign: "right" }}>{triIdx + 1}º TRI</div>
-                <div style={{ textAlign: "right" }}>ANO {ANO_ATUAL}</div>
+                <div style={{ textAlign: "right" }}>ANO {anoRef}</div>
                 <div style={{ textAlign: "right" }}>ACUMULADO</div>
               </div>
               {linhas.map((r) => (
@@ -2043,13 +2070,14 @@ function LancarInadimplenciaModal({ clientes = [], categorias = [], contas = [],
 // ===== PROVISÃO / DRE PROVISIONADO =========================================
 function Provisao({ store, activeUnit, lancamentos = [], categorias = [], unidadeNome = "", onNovaDespesa }) {
   const [incluirRealizado, setIncluirRealizado] = useState(false);
+  const [anoSel, setAnoSel] = useState(ANO_ATUAL);
   const contratos = store.contratosDe(activeUnit).filter((c) => c.status === "ativo");
   const mesFim = (c) => Math.min(c.mesInicial + c.meses - 1, 11);
 
   // Base da provisão: lançamentos PREVISTOS (já incluem contratos recorrentes e
   // despesas recorrentes). Opcionalmente soma os realizados (pagos) p/ ver a
   // projeção total do ano.
-  const base = lancamentos.filter((l) => (incluirRealizado ? true : l.status === "previsto"));
+  const base = lancamentos.filter((l) => anoDoLancamento(l) === anoSel && (incluirRealizado ? true : l.status === "previsto"));
 
   const linhasMes = MESES.map((lbl, m) => {
     const rec = base.filter((l) => l.tipo === "entrada" && l.mes === m).reduce((s, l) => s + l.valor, 0);
@@ -2084,8 +2112,8 @@ function Provisao({ store, activeUnit, lancamentos = [], categorias = [], unidad
   const modo = incluirRealizado ? "tudo" : "prev";
   const gcol = "90px 1fr 1fr 1fr";
   const exportar = () => exportarProvisaoExcel({
-    ano: ANO_ATUAL, modo: incluirRealizado ? "Provisionado + realizado" : "Só provisionado",
-    projRows: linhasMes.map((x) => ({ mes: `${x.lbl}/${ANO_ATUAL}`, rec: x.rec, desp: x.desp, res: x.res })),
+    ano: anoSel, modo: incluirRealizado ? "Provisionado + realizado" : "Só provisionado",
+    projRows: linhasMes.map((x) => ({ mes: `${x.lbl}/${anoSel}`, rec: x.rec, desp: x.desp, res: x.res })),
     dre,
     contratoRows: contratos.map((c) => ({ cliente: c.cliente, plano: c.plano, periodo: `${MESES[c.mesInicial]}–${MESES[mesFim(c)]}/${ANO_ATUAL}`, valorMensal: c.valorMensal, meses: mesFim(c) - c.mesInicial + 1, total: c.valorMensal * (mesFim(c) - c.mesInicial + 1) })),
     despRows: despRec.map((g) => ({ descricao: g.descricao, categoria: g.categoria, valorMensal: g.valorMensal, meses: g.meses, total: g.total })),
@@ -2107,14 +2135,15 @@ function Provisao({ store, activeUnit, lancamentos = [], categorias = [], unidad
                   background: modo === v ? C.white : "transparent", color: modo === v ? C.cafe : C.text3, boxShadow: modo === v ? "0 1px 3px rgba(0,0,0,.08)" : "none" }}>{lb}</button>
             ))}
           </div>
+          <SeletorAno valor={anoSel} onChange={setAnoSel} anos={anosDisponiveis(lancamentos)} />
           <Btn variant="soft" onClick={exportar}><Download size={15} /> Exportar Excel</Btn>
           <Btn variant="soft" onClick={onNovaDespesa}><Plus size={15} /> Despesa recorrente</Btn>
         </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12, marginBottom: 16 }}>
-        <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Receita provisionada (ano)</div><div style={{ fontFamily: serif, fontSize: 24, color: C.green }}>{fmt(totRec)}</div></Card>
-        <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Despesa provisionada (ano)</div><div style={{ fontFamily: serif, fontSize: 24, color: C.red }}>{fmt(totDesp)}</div></Card>
+        <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Receita provisionada ({anoSel})</div><div style={{ fontFamily: serif, fontSize: 24, color: C.green }}>{fmt(totRec)}</div></Card>
+        <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Despesa provisionada ({anoSel})</div><div style={{ fontFamily: serif, fontSize: 24, color: C.red }}>{fmt(totDesp)}</div></Card>
         <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Resultado provisionado</div><div style={{ fontFamily: serif, fontSize: 24, color: totRes >= 0 ? C.teal : C.red }}>{fmt(totRes)}</div></Card>
         <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Margem projetada</div><div style={{ fontFamily: serif, fontSize: 24 }}>{margem.toFixed(1)}%</div></Card>
       </div>
@@ -2127,7 +2156,7 @@ function Provisao({ store, activeUnit, lancamentos = [], categorias = [], unidad
           </div>
           {linhasMes.map((x) => (
             <div key={x.m} style={{ display: "grid", gridTemplateColumns: gcol, gap: 8, padding: "9px 18px", borderTop: `1px solid ${C.border2}`, alignItems: "center", opacity: (x.rec || x.desp) ? 1 : 0.5 }}>
-              <Cel style={{ fontWeight: 600 }}>{x.lbl}/{ANO_ATUAL}</Cel>
+              <Cel style={{ fontWeight: 600 }}>{x.lbl}/{anoSel}</Cel>
               <Cel style={{ textAlign: "right", color: x.rec ? C.green : C.text4 }}>{x.rec ? fmt(x.rec) : "—"}</Cel>
               <Cel style={{ textAlign: "right", color: x.desp ? C.red : C.text4 }}>{x.desp ? fmt(x.desp) : "—"}</Cel>
               <Cel style={{ textAlign: "right", fontWeight: 700, color: x.res > 0 ? C.teal : x.res < 0 ? C.red : C.text4 }}>{(x.rec || x.desp) ? fmt(x.res) : "—"}</Cel>
@@ -2144,7 +2173,7 @@ function Provisao({ store, activeUnit, lancamentos = [], categorias = [], unidad
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 16, marginBottom: 16 }}>
         <Card>
-          <div style={{ fontFamily: serif, fontSize: 17, marginBottom: 10 }}>DRE Provisionado (ano)</div>
+          <div style={{ fontFamily: serif, fontSize: 17, marginBottom: 10 }}>DRE Provisionado ({anoSel})</div>
           <Linha label="Receita Operacional Bruta" valor={dre.rb} />
           <Linha label="(−) Tributos" valor={-dre.trib} />
           <Linha label="= Receita Líquida" valor={dre.recLiq} tipo="b" />

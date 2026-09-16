@@ -6,7 +6,7 @@ import {
 import { Card, Badge, Btn, PageHead } from "../components/ui.jsx";
 import { C, serif, fmt, fmtShort } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
-import { getCurrentCompetencia, MESES_BR as MESES } from "../lib/dateUtils.js";
+import { getCurrentCompetencia, MESES_BR as MESES, noPeriodo } from "../lib/dateUtils.js";
 import { Store } from "lucide-react";
 
 const ICONS = { fatura: Receipt, corresp: Mail, sala: DoorOpen, lead: Target, estoque: AlertCircle };
@@ -30,14 +30,15 @@ export default function Dashboard({ go }) {
   const salas = store.salasDe ? store.salasDe(ativo) : [];
   const contratos = store.contratosDe ? store.contratosDe(ativo).filter((c) => c.status === "ativo") : [];
 
-  // Fluxo real de 12 meses (entradas pagas) — substitui o gráfico procedural.
-  const fluxo = MESES.map((label, m) => ({
-    label,
-    valor: lancs.filter((l) => l.mes === m && l.tipo === "entrada" && l.status === "pago").reduce((s, l) => s + (l.valor || 0), 0),
-  }));
+  // Fluxo real de 12 meses do ano atual (entradas pagas) — substitui o gráfico procedural.
+  const entradasPagas = (ano, mes) => lancs
+    .filter((l) => noPeriodo(l, ano, mes) && l.tipo === "entrada" && l.status === "pago")
+    .reduce((s, l) => s + (l.valor || 0), 0);
+  const fluxo = MESES.map((label, m) => ({ label, valor: entradasPagas(comp.ano, m) }));
   const maxFluxo = Math.max(1, ...fluxo.map((f) => f.valor));
   const receitaMes = fluxo[comp.mes]?.valor || 0;
-  const receitaAnterior = fluxo[(comp.mes + 11) % 12]?.valor || 0;
+  // Mês anterior de verdade (em janeiro é dezembro do ano passado).
+  const receitaAnterior = comp.mes === 0 ? entradasPagas(comp.ano - 1, 11) : fluxo[comp.mes - 1]?.valor || 0;
   const deltaMes = receitaAnterior > 0 ? Math.round(((receitaMes - receitaAnterior) / receitaAnterior) * 100) : 0;
 
   const recorrenteMes = contratos.reduce((s, c) => s + (c.valorMensal || 0), 0);

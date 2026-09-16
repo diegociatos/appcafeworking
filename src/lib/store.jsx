@@ -21,7 +21,7 @@ import {
   upsertConfigFiscal, insertCliente, patchCliente, deleteClienteDb,
   putAppState, delAppState, upsertSalaDb, deleteSalaDb, insertCreditoDb,
 } from "./supabaseDb.js";
-import { getCurrentCompetencia, parseDateToCompetencia } from "./dateUtils.js";
+import { getCurrentCompetencia, parseDateToCompetencia, anoDoLancamento } from "./dateUtils.js";
 import { legacyReservaToDateRange, dateRangeToLegacy, temConflito, TZ } from "./reservas.js";
 import { reservasApi } from "./reservasApi.js";
 import { notificacoesApi } from "./notificacoesApi.js";
@@ -63,7 +63,7 @@ export function StoreProvider({ children }) {
   const [usuarios, setUsuarios] = useState(seedOr(seedUsuarios));
   const [clientes, setClientes] = useState(seedOr(CLIENTES));
   const [contas, setContas] = useState(seedOr(seedContas));
-  const [lancamentos, setLancamentos] = useState(seedOr(seedLancamentos));
+  const [lancamentos, setLancamentos] = useState(() => seedOr(seedLancamentos.map((l) => ({ ano: ANO_ATUAL, ...l }))));
   const [catalogo, setCatalogo] = useState(seedOr(seedCatalogo));
   const [categorias, setCategorias] = useState(seedCategorias);   // chart of accounts (global) — mantém
   const [pedidos, setPedidos] = useState(seedOr(seedPedidos));
@@ -564,10 +564,17 @@ export function StoreProvider({ children }) {
   const contasDe = (unidadeId) => contas.filter((c) => c.unidadeId === unidadeId);
 
   // Financeiro: lançamentos (fluxo de caixa) -------------------------------
+  // Competência = mês (0..11) + ano. Usa l.mes/l.ano se vierem; senão deriva da
+  // DATA DE COMPETÊNCIA (ou data; sem ano na data → ano atual; sem data → hoje).
+  const _competencia = (l) => {
+    const c = parseDateToCompetencia(l.dataCompetencia || l.data);
+    return { mes: l.mes != null ? l.mes : c.mes, ano: l.ano != null ? l.ano : c.ano };
+  };
+  // Lançamento antigo (sem ano) grava o ano ao ser salvo de novo.
+  const _comAno = (l) => (l.ano != null ? l : { ...l, ano: anoDoLancamento(l) });
   const addLancamento = (unidadeId, l) => {
-    // Competência: usa l.mes se vier; senão deriva da DATA DE COMPETÊNCIA (ou data/hoje).
-    const mes = l.mes != null ? l.mes : parseDateToCompetencia(l.dataCompetencia || l.data).mes;
-    setLancamentos((ls) => [...ls, { id: "lc" + Date.now() + Math.floor(Math.random() * 1000), unidadeId, status: "pago", ...l, mes }]);
+    const { mes, ano } = _competencia(l);
+    setLancamentos((ls) => [...ls, { id: "lc" + Date.now() + Math.floor(Math.random() * 1000), unidadeId, status: "pago", ...l, mes, ano }]);
   };
   // Importação em lote (planilha de fluxo de caixa). Um único setState → cada
   // item ganha id/unidadeId e persiste pelo useSync. Retorna quantos entraram.
@@ -575,13 +582,15 @@ export function StoreProvider({ children }) {
     if (!unidadeId || !lista?.length) return 0;
     const base = Date.now();
     const novos = lista.map((l, i) => {
-      const mes = l.mes != null ? l.mes : parseDateToCompetencia(l.dataCompetencia || l.data).mes;
-      return { id: `lc${base}_${i}`, unidadeId, status: "pago", ...l, mes };
+      const { mes, ano } = _competencia(l);
+      return { id: `lc${base}_${i}`, unidadeId, status: "pago", ...l, mes, ano };
     });
     setLancamentos((ls) => [...ls, ...novos]);
     return novos.length;
   };
   // Conta a pagar/receber recorrente: provisiona um lançamento "previsto" por mês.
+  // `meses` conta a partir de base.ano (padrão: ano atual); 12, 13… viram jan, fev
+  // do ano seguinte.
   // boletoCfg (opcional, só p/ entrada): { gerar, bankAccountId, sacado, sacadoDocumento }
   // → DEMONSTRAÇÃO: gera 1 boleto de mentira por parcela e vincula lançamento ↔ boleto.
   // PRODUÇÃO: ignora o boletoCfg. Linha digitável e PIX só saem de integração real
@@ -589,15 +598,18 @@ export function StoreProvider({ children }) {
   const addContaRecorrente = (unidadeId, base, meses, boletoCfg) => {
     const grupo = "rec" + Date.now();
     const ts = Date.now();
-    const novos = meses.map((m, i) => ({ ...base, id: `lc${ts}_${m}_${i}`, unidadeId, mes: m, status: base.status || "previsto", grupoRecorrencia: meses.length > 1 ? grupo : undefined }));
+    const anoBase = Number(base.ano) || ANO_ATUAL;
+    const novos = meses.map((m, i) => ({
+      ...base, id: `lc${ts}_${m}_${i}`, unidadeId, mes: ((m % 12) + 12) % 12, ano: anoBase + Math.floor(m / 12),
+      status: base.status || "previsto", grupoRecorrencia: meses.length > 1 ? grupo : undefined,
+    }));
     const novosBoletos = [];
     if (!REAL && boletoCfg && boletoCfg.gerar && base.tipo === "entrada") {
       const conta = bankAccounts.find((b) => b.id === boletoCfg.bankAccountId);
       novos.forEach((lanc, i) => {
         const id = `bol_${ts}_${i}`;
         const dia = ((lanc.data || "10").split("/")[0] || "10").padStart(2, "0").slice(0, 2);
-        const ano = ANO_ATUAL + Math.floor(lanc.mes / 12); // suporta virada de ano
-        const venc = `${ano}-${String((lanc.mes % 12) + 1).padStart(2, "0")}-${dia}`;
+        const venc = `${lanc.ano}-${String(lanc.mes + 1).padStart(2, "0")}-${dia}`;
         novosBoletos.push({
           id, unidadeId, bankAccountId: boletoCfg.bankAccountId,
           sacado: boletoCfg.sacado || base.descricao, sacadoDocumento: boletoCfg.sacadoDocumento || "",
@@ -613,7 +625,7 @@ export function StoreProvider({ children }) {
     if (novosBoletos.length) setBoletos((bs) => [...bs, ...novosBoletos]);
     return { lancamentos: novos, boletos: novosBoletos };
   };
-  const updateLancamento = (id, patch) => setLancamentos((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  const updateLancamento = (id, patch) => setLancamentos((ls) => ls.map((l) => (l.id === id ? _comAno({ ...l, ...patch }) : l)));
   const removeLancamento = (id) => setLancamentos((ls) => ls.filter((l) => l.id !== id));
   // Remove em lote os lançamentos que vieram de IMPORTAÇÃO (origem: "importacao")
   // de uma conta. Nunca toca nos digitados à mão. Retorna quantos foram removidos.
@@ -983,7 +995,7 @@ export function StoreProvider({ children }) {
       setBoletos((bs) => bs.map((b) => (b.id === id ? { ...b, status: r.status, linhaDigitavel: r.linhaDigitavel || b.linhaDigitavel, pixCopiaCola: r.pixCopiaCola || b.pixCopiaCola, pdfUrl: r.pdfUrl || b.pdfUrl } : b)));
       if (r.status === "pago") {
         const bb = boletos.find((x) => x.id === id);
-        if (bb?.lancamentoId) setLancamentos((ls) => ls.map((l) => (l.id === bb.lancamentoId ? { ...l, status: "pago" } : l)));
+        if (bb?.lancamentoId) setLancamentos((ls) => ls.map((l) => (l.id === bb.lancamentoId ? _comAno({ ...l, status: "pago" }) : l)));
       }
     }).catch(() => {});
   };
@@ -995,7 +1007,7 @@ export function StoreProvider({ children }) {
     const bol = boletos.find((b) => b.id === id);
     if (!bol || bol.status === "pago") return;
     setBoletos((bs) => bs.map((b) => (b.id === id ? { ...b, status: "pago", paidAt: new Date().toISOString().slice(0, 10) } : b)));
-    if (bol.lancamentoId) setLancamentos((ls) => ls.map((l) => (l.id === bol.lancamentoId ? { ...l, status: "pago" } : l)));
+    if (bol.lancamentoId) setLancamentos((ls) => ls.map((l) => (l.id === bol.lancamentoId ? _comAno({ ...l, status: "pago" }) : l)));
     enfileirarEmail(bol.unidadeId, { cliente: bol.sacado, evento: "boleto_pago", dados: { valor: bol.valor } });
   };
 
@@ -1010,7 +1022,7 @@ export function StoreProvider({ children }) {
   const darBaixaLancamento = (id) => {
     const lanc = lancamentos.find((l) => l.id === id);
     if (!lanc) return { ok: false };
-    setLancamentos((ls) => ls.map((l) => (l.id === id ? { ...l, status: "pago" } : l)));
+    setLancamentos((ls) => ls.map((l) => (l.id === id ? _comAno({ ...l, status: "pago" }) : l)));
     if (lanc.cobrancaId || boletoEhReal(lanc.boletoId)) {
       return { ok: true, aviso: "O boleto/cobrança é baixado automaticamente quando o banco confirma o pagamento." };
     }
@@ -1040,7 +1052,7 @@ export function StoreProvider({ children }) {
       descricao: `${c.plano} · ${c.cliente}${sufixo}`,
       categoria: "Receita Operacional Bruta", subcategoria: "",
       valor, contaId: contaCx, data: String(c.diaVencimento || "10"),
-      recorrente: true, contratoId: c.id,
+      recorrente: true, contratoId: c.id, ano: ANO_ATUAL,
     };
     addContaRecorrente(c.unidadeId, base, meses, {
       gerar: true, bankAccountId: c.bankAccountId, sacado: c.cliente, sacadoDocumento: c.documento,
