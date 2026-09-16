@@ -8,8 +8,8 @@
 //
 // Observação: BH aderiu ao padrão NFS-e Nacional; na prática a maioria das
 // unidades usará `NfseNacionalProvider`. Este provider existe para casos em
-// que a emissão municipal direta ainda é exigida. Sem certificado A1
-// configurado, responde em modo simulado.
+// que a emissão municipal direta ainda é exigida. Sem certificado A1: nota
+// "simulada" só em homologação; em produção a emissão é recusada.
 // ============================================================================
 
 import type { NfseProvider } from "./NfseProvider.ts";
@@ -22,6 +22,7 @@ import {
   type CancelarNfseResult,
   FiscalError,
 } from "./types.ts";
+import { modoEmissao } from "./dps.ts";
 
 const ENDPOINT = {
   homologacao: "https://bhisshomologa.pbh.gov.br/bhiss-ws/nfse",
@@ -36,22 +37,20 @@ export class BhissProvider implements NfseProvider {
     private readonly creds: FiscalCredentials,
   ) {}
 
-  private get podeAssinar(): boolean {
-    return Boolean(this.creds.cert_pfx_base64 || (this.creds.cert_pem && this.creds.key_pem));
-  }
-
   async emitirNfse(input: EmitirNfseInput): Promise<EmitirNfseResult> {
     const aliquota = input.aliquotaISS ?? this.config.aliquota_iss ?? 0;
     const iss = Math.round(input.valor * aliquota) / 100;
 
-    if (!this.podeAssinar) {
+    const modo = modoEmissao(this.config.ambiente, this.creds);
+    if (modo.tipo === "recusada") throw new FiscalError(modo.motivo, this.emissor, 412);
+    if (modo.tipo === "simulada") {
       return {
         nfseId: `SIM-BH-${input.rpsNumero}`,
         numero: input.rpsNumero,
         codigoVerificacao: "SIMULADO",
         iss,
-        status: "autorizada",
-        raw: { simulado: true, motivo: "certificado A1 não configurado no Vault" },
+        status: "simulada",
+        raw: { simulado: true, motivo: "certificado A1 não configurado no Vault (homologação)" },
       };
     }
 
@@ -80,7 +79,7 @@ export class BhissProvider implements NfseProvider {
   }
 
   async consultarNfse(nfseId: string): Promise<ConsultaNfseResult> {
-    if (nfseId.startsWith("SIM-")) return { nfseId, status: "autorizada", raw: { simulado: true } };
+    if (nfseId.startsWith("SIM-")) return { nfseId, status: "simulada", raw: { simulado: true } };
     // ConsultarNfsePorRps / ConsultarNfseServicoPrestado — omitido por brevidade.
     return { nfseId, status: "autorizada", raw: { stub: true } };
   }

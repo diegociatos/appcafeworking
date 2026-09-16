@@ -75,8 +75,9 @@ export interface EmitirNfseResult {
   numero?: string;
   codigoVerificacao?: string;
   iss?: number;
-  /** "autorizada" quando já processada; "processando" quando assíncrona. */
-  status: "autorizada" | "processando" | "erro";
+  /** "autorizada" quando já processada; "processando" quando assíncrona;
+   *  "simulada" em ambiente de teste sem certificado (sem valor fiscal). */
+  status: "autorizada" | "processando" | "simulada" | "erro";
   pdfUrl?: string;
   /** XML assinado/autorizado (texto) — a Edge Function guarda no Storage. */
   xml?: string;
@@ -86,7 +87,7 @@ export interface EmitirNfseResult {
 export interface ConsultaNfseResult {
   nfseId: string;
   numero?: string;
-  status: "autorizada" | "processando" | "cancelada" | "erro";
+  status: "autorizada" | "processando" | "simulada" | "cancelada" | "erro";
   pdfUrl?: string;
   xml?: string;
   raw?: unknown;

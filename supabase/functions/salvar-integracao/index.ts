@@ -17,6 +17,7 @@
 
 import { handleOptions, json } from "../_shared/cors.ts";
 import { userClient, adminClient } from "../_shared/supabaseAdmin.ts";
+import { podeMexerNoDinheiro, recusaSemFinanceiro } from "../_shared/permissoes.ts";
 
 const BANCOS = ["inter", "itau", "btg", "bradesco"];
 
@@ -36,11 +37,9 @@ Deno.serve(async (req) => {
     if (!auth?.user) return json({ error: "Não autenticado" }, 401);
     const admin = adminClient();
 
-    // acesso à unidade (equipe ou admin da plataforma; cliente e contabilidade não)
-    const { data: pa } = await admin.from("platform_admins").select("user_id").eq("user_id", auth.user.id).maybeSingle();
-    if (!pa) {
-      const { data: mem } = await admin.from("unidade_members").select("unidade_id").eq("user_id", auth.user.id).eq("unidade_id", body.unidade_id).not("role", "in", "(cliente,contabilidade)").maybeSingle();
-      if (!mem) return json({ error: "Sem acesso a esta unidade." }, 403);
+    // só admin da plataforma ou master/financeiro da unidade (recepção e contabilidade não)
+    if (!(await podeMexerNoDinheiro(admin, auth.user.id, body.unidade_id))) {
+      return recusaSemFinanceiro("Salvar integração bancária");
     }
 
     // a referência é montada no backend (cliente não escolhe)

@@ -58,7 +58,7 @@ export class ItauProvider implements BankProvider {
 
   private client(): Deno.HttpClient {
     if (!this.httpClient) {
-      this.httpClient = Deno.createHttpClient({ cert: this.creds.cert_pem, key: this.creds.key_pem });
+      this.httpClient = Deno.createHttpClient({ cert: this.creds.cert_pem!, key: this.creds.key_pem! });
     }
     return this.httpClient;
   }

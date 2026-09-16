@@ -10,6 +10,7 @@
 
 import { handleOptions, json } from "../_shared/cors.ts";
 import { userClient, adminClient } from "../_shared/supabaseAdmin.ts";
+import { podeMexerNoDinheiro, recusaSemFinanceiro } from "../_shared/permissoes.ts";
 import { getBankCredentials } from "../_shared/vault.ts";
 import { getProvider, BankError, type BankAccount } from "../_shared/banks/index.ts";
 
@@ -27,6 +28,13 @@ Deno.serve(async (req) => {
     const { data: auth } = await user.auth.getUser();
     if (!auth?.user) return json({ error: "Não autenticado" }, 401);
 
+    // papel do financeiro na unidade da conta bancária (recepção e contabilidade não)
+    const admin = adminClient();
+    const { data: alvo } = await admin.from("bank_accounts").select("unidade_id").eq("id", body.bank_account_id).maybeSingle();
+    if (alvo && !(await podeMexerNoDinheiro(admin, auth.user.id, alvo.unidade_id))) {
+      return recusaSemFinanceiro("Testar a conta bancária");
+    }
+
     // 2) conta bancária (RLS garante ownership da unidade)
     const { data: account, error: accErr } = await user
       .from("bank_accounts")
@@ -36,7 +44,6 @@ Deno.serve(async (req) => {
     if (accErr || !account) return json({ error: "Conta bancária não encontrada ou sem acesso" }, 403);
 
     // 3) credenciais do Vault — se não houver, é o que falta cadastrar
-    const admin = adminClient();
     let creds;
     try {
       creds = await getBankCredentials(admin, account.credenciais_ref);

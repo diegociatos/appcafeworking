@@ -10,13 +10,14 @@
 // guardamos metadados não sensíveis (titular, validade, referência do Vault).
 //
 // Segurança:
-//  1. JWT do usuário → RLS confirma que ele é membro da unidade.
+//  1. JWT do usuário → só admin da plataforma ou master/financeiro da unidade.
 //  2. Conversão/gravação com service_role (Vault só responde ao backend).
 // ============================================================================
 
 import forge from "https://esm.sh/node-forge@1.3.1";
 import { handleOptions, json } from "../_shared/cors.ts";
 import { userClient, adminClient } from "../_shared/supabaseAdmin.ts";
+import { podeMexerNoDinheiro, recusaSemFinanceiro } from "../_shared/permissoes.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -29,18 +30,15 @@ Deno.serve(async (req) => {
       if (!body?.[k]) return json({ error: `Campo obrigatório ausente: ${k}` }, 400);
     }
 
-    // 1) usuário autenticado + acesso à unidade (membro OU admin da plataforma)
+    // 1) usuário autenticado + acesso à unidade (master/financeiro OU admin da plataforma)
     const user = userClient(req);
     const { data: auth } = await user.auth.getUser();
     if (!auth?.user) return json({ error: "Não autenticado" }, 401);
 
     const admin = adminClient();
-    const { data: pa } = await admin.from("platform_admins").select("user_id").eq("user_id", auth.user.id).maybeSingle();
-    if (!pa) {
-      const { data: mem } = await admin.from("unidade_members")
-        .select("unidade_id").eq("user_id", auth.user.id).eq("unidade_id", body.unidade_id)
-        .not("role", "in", "(cliente,contabilidade)").maybeSingle();
-      if (!mem) return json({ error: "Sem acesso à configuração fiscal desta unidade" }, 403);
+    // só admin da plataforma ou master/financeiro da unidade (recepção e contabilidade não)
+    if (!(await podeMexerNoDinheiro(admin, auth.user.id, body.unidade_id))) {
+      return recusaSemFinanceiro("Enviar o certificado digital");
     }
 
     // 2) abre o .pfx e extrai cert + chave em PEM

@@ -9,6 +9,10 @@
 //
 // Documentos reprovados (contrato de endereço fiscal, 3.4): cancela na hora e
 // devolve integralmente o que foi pago.
+//
+// Permissões: a recepção lista, aprova documentos e atribui sala. Mexe em
+// dinheiro, e por isso é só do master/financeiro (ou admin da plataforma):
+// ver as últimas cobranças, reprovar documentos (gera estorno) e resolver acerto.
 // ============================================================================
 
 import { handleOptions, json } from "../_shared/cors.ts";
@@ -17,6 +21,7 @@ import {
   APP_URL, avisarCliente, avisarEquipe, cancelarAgora, carregarAssinatura, documentosComLink, ehEquipe, usuarioDoReq,
 } from "../_shared/assinaturas.ts";
 import { ocuparSala } from "../_shared/disponibilidade.ts";
+import { podeMexerNoDinheiro, recusaSemFinanceiro } from "../_shared/permissoes.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -31,6 +36,7 @@ Deno.serve(async (req) => {
       const unidadeId = new URL(req.url).searchParams.get("unidade_id") || "";
       if (!unidadeId) return json({ error: "unidade_id é obrigatório." }, 400, req);
       if (!(await ehEquipe(req, unidadeId))) return json({ error: "Acesso só da equipe da unidade." }, 403, req);
+      const verCobrancas = await podeMexerNoDinheiro(admin, usuario.id, unidadeId);
 
       const { data, error } = await admin.from("assinaturas").select("*")
         .eq("unidade_id", unidadeId).order("created_at", { ascending: false }).limit(300);
@@ -53,8 +59,10 @@ Deno.serve(async (req) => {
           a.aceite_id
             ? admin.from("aceites_contrato").select("aceito_em, versao, ip, origem").eq("id", a.aceite_id).maybeSingle().then((r) => r.data)
             : Promise.resolve(null),
-          admin.from("cobrancas").select("valor, vencimento, status, forma:tipo").eq("assinatura_id", a.id)
-            .order("vencimento", { ascending: false }).limit(6),
+          verCobrancas
+            ? admin.from("cobrancas").select("valor, vencimento, status, forma:tipo").eq("assinatura_id", a.id)
+              .order("vencimento", { ascending: false }).limit(6)
+            : Promise.resolve({ data: [] }),
         ]);
         return {
           ...a, documentos, aceite, cobrancas: cobrancas || [],
@@ -62,7 +70,7 @@ Deno.serve(async (req) => {
           sala_nome: a.sala_id ? nomeSala.get(a.sala_id) || a.sala_id : null,
         };
       }));
-      return json({ assinaturas, salas_livres: salasLivres }, 200, req);
+      return json({ assinaturas, salas_livres: salasLivres, pode_financeiro: verCobrancas }, 200, req);
     }
 
     if (req.method !== "POST") return json({ error: "Método não permitido" }, 405, req);
@@ -85,6 +93,9 @@ Deno.serve(async (req) => {
       }
 
       if (body.decisao === "reprovado") {
+        if (!(await podeMexerNoDinheiro(admin, usuario.id, a.unidade_id))) {
+          return recusaSemFinanceiro("Reprovar documentos cancela o plano e devolve o pagamento", req);
+        }
         if (!parecer) return json({ error: "Informe o motivo da reprovação: ele vai no e-mail ao cliente." }, 400, req);
         const r = await cancelarAgora(admin, a, "documentos_reprovados", parecer, {
           docs_status: "reprovado", docs_parecer: parecer,
@@ -122,6 +133,9 @@ Deno.serve(async (req) => {
     }
 
     if (body.acao === "resolver_acerto") {
+      if (!(await podeMexerNoDinheiro(admin, usuario.id, a.unidade_id))) {
+        return recusaSemFinanceiro("Resolver acerto financeiro", req);
+      }
       if (!a.requer_acerto) return json({ error: "Esta assinatura não tem acerto pendente." }, 400, req);
       const obs = typeof body.observacao === "string" ? body.observacao.trim().slice(0, 500) : "";
       await admin.from("assinaturas").update({

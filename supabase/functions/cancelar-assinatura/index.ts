@@ -9,6 +9,9 @@
 //   depois               → aviso prévio de 30 dias: fica "cancelando" e a
 //                          rotina-diaria encerra no Asaas na data
 //   fidelidade que passa do aviso ou plano anual → marca acerto para a equipe
+//
+// Pela equipe, o cancelamento com devolução (arrependimento) é só do master ou
+// do financeiro; a recepção registra o aviso prévio.
 // ============================================================================
 
 import { handleOptions, json } from "../_shared/cors.ts";
@@ -18,6 +21,7 @@ import { planoDeCancelamento } from "../_shared/ciclo.ts";
 import {
   APP_URL, avisarCliente, avisarEquipe, cancelarAgora, carregarAssinatura, ehEquipe, usuarioDoReq,
 } from "../_shared/assinaturas.ts";
+import { podeMexerNoDinheiro, recusaSemFinanceiro } from "../_shared/permissoes.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -47,6 +51,10 @@ Deno.serve(async (req) => {
     const quem = dono ? "cliente" : `equipe (${usuario.email})`;
 
     if (plano.tipo === "arrependimento") {
+      // devolve dinheiro: pela equipe, só master/financeiro (o próprio cliente pode)
+      if (!dono && !(await podeMexerNoDinheiro(admin, usuario.id, a.unidade_id))) {
+        return recusaSemFinanceiro("Cancelamento com devolução do pagamento", req);
+      }
       const r = await cancelarAgora(admin, a, "arrependimento", motivo);
       if (r.jaCancelada) return json({ error: "Este plano já está sendo cancelado.", codigo: "JA_CANCELADA" }, 409, req);
       await avisarCliente(admin, a, "cancelamento_confirmado", {

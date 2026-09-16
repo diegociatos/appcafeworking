@@ -5,11 +5,15 @@
 // body: { unidade_id, tomador, tomador_documento, tomador_email?,
 //         valor, descricao?, codigo_servico?, boleto_id? }
 //
-// Segurança (igual ao módulo de boletos):
-//  1. Lê a config fiscal com o JWT do usuário → RLS garante que ele só emite
-//     por unidades das quais é membro.
+// Segurança:
+//  1. Só admin da plataforma ou master/financeiro da unidade emitem (403 para
+//     recepção e contabilidade).
 //  2. Lê o certificado A1 do Vault com service_role (nunca exposto ao cliente).
-//  3. Chama o NfseProvider correto (adapter) e grava a nota.
+//  3. Sem certificado: em PRODUÇÃO recusa ("Configure o certificado digital…");
+//     em homologação grava a nota como "simulada" (sem valor fiscal, sem e-mail).
+//  4. O nDPS é reservado no banco (proximo_numero_dps: sem corrida entre duas
+//     emissões simultâneas) e gravado com unique (unidade, série, número).
+//  5. Chama o NfseProvider correto (adapter) e grava a nota.
 // ============================================================================
 
 import { handleOptions, json } from "../_shared/cors.ts";
@@ -17,8 +21,10 @@ import { userClient, adminClient } from "../_shared/supabaseAdmin.ts";
 import { getFiscalCredentials } from "../_shared/fiscalVault.ts";
 import { uploadNfseFile } from "../_shared/storage.ts";
 import { getNfseProvider, FiscalError, type ConfigFiscal, type EmitirNfseInput } from "../_shared/nfse/index.ts";
+import { modoEmissao, serieDps } from "../_shared/nfse/dps.ts";
 import { dispatchNotificacao } from "../_shared/notify/index.ts";
 import { registrarAuditoria, ipDaReq } from "../_shared/audit.ts";
+import { podeMexerNoDinheiro, recusaSemFinanceiro } from "../_shared/permissoes.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -33,31 +39,48 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 1) usuário autenticado
+    // 1) usuário autenticado + papel do financeiro
     const user = userClient(req);
     const { data: auth } = await user.auth.getUser();
     if (!auth?.user) return json({ error: "Não autenticado" }, 401);
+    const admin = adminClient();
+    if (!(await podeMexerNoDinheiro(admin, auth.user.id, body.unidade_id))) {
+      return recusaSemFinanceiro("Emitir nota fiscal");
+    }
 
-    // 2) config fiscal da unidade (RLS garante ownership)
-    const { data: config, error: cfgErr } = await user
+    // 2) config fiscal da unidade
+    const { data: config, error: cfgErr } = await admin
       .from("config_fiscal")
       .select("*")
       .eq("unidade_id", body.unidade_id)
-      .single<ConfigFiscal & { certificado_ref: string }>();
-    if (cfgErr || !config) return json({ error: "Configuração fiscal não encontrada ou sem acesso" }, 403);
+      .maybeSingle<ConfigFiscal & { certificado_ref: string }>();
+    if (cfgErr) return json({ error: `Falha ao ler a configuração fiscal: ${cfgErr.message}` }, 500);
+    if (!config) return json({ error: "Configuração fiscal da unidade não encontrada. Preencha a aba Configuração fiscal." }, 404);
     if (!config.emissao_ativa) return json({ error: "Emissão fiscal inativa nesta unidade" }, 409);
 
-    // 3) certificado do Vault (service_role) + provider
-    const admin = adminClient();
+    // 3) certificado do Vault (service_role): real, simulada ou recusada
     const creds = await getFiscalCredentials(admin, config.certificado_ref);
+    const modo = modoEmissao(config.ambiente, creds);
+    if (modo.tipo === "recusada") return json({ error: modo.motivo, codigo: "SEM_CERTIFICADO" }, 412);
+    const simulada = modo.tipo === "simulada";
     const provider = getNfseProvider(config as ConfigFiscal, creds);
 
-    // 4) próximo número de RPS (sequencial por unidade)
-    const { count } = await admin
-      .from("notas_fiscais")
-      .select("id", { count: "exact", head: true })
-      .eq("unidade_id", config.unidade_id);
-    const rpsNumero = String((count ?? 0) + 1).padStart(6, "0");
+    // 4) número da DPS reservado no banco (a simulada não consome número)
+    const serie = serieDps(config as unknown as Record<string, unknown>);
+    let numeroDps: number | null = null;
+    let rpsNumero: string;
+    if (simulada) {
+      rpsNumero = String(Date.now());
+    } else {
+      const { data: reservado, error: numErr } = await admin.rpc("proximo_numero_dps", {
+        p_unidade_id: config.unidade_id, p_serie: serie,
+      });
+      if (numErr || !reservado) {
+        return json({ error: `Não foi possível reservar o número da DPS: ${numErr?.message ?? "sem retorno"}` }, 500);
+      }
+      numeroDps = Number(reservado);
+      rpsNumero = String(numeroDps);
+    }
 
     const input: EmitirNfseInput = {
       rpsNumero,
@@ -78,12 +101,16 @@ Deno.serve(async (req) => {
       boletoId: body.boleto_id ?? null,
     };
     const result = await provider.emitirNfse(input);
+    // Defesa: nunca grava simulação como nota de verdade.
+    const status = simulada ? "simulada" : result.status;
 
     // 5) grava a nota (service_role)
     const insert = {
       unidade_id: config.unidade_id,
       numero: result.numero ?? rpsNumero,
       rps_numero: rpsNumero,
+      serie_dps: simulada ? null : serie,
+      numero_dps: numeroDps,
       tomador: input.tomador.nome,
       tomador_documento: input.tomador.documento,
       descricao: input.descricao,
@@ -92,7 +119,7 @@ Deno.serve(async (req) => {
       emissor: config.emissor,
       nfse_id: result.nfseId,
       codigo_verificacao: result.codigoVerificacao ?? null,
-      status: result.status,
+      status,
       boleto_id: input.boletoId,
       created_by: auth.user.id,
     };
@@ -113,8 +140,9 @@ Deno.serve(async (req) => {
       nota.pdf_url = result.pdfUrl;
     }
 
-    // Envia a nota ao e-mail do tomador (Resend) — best-effort.
-    if (body.tomador_email) {
+    // Envia a nota ao e-mail do tomador (Resend) — best-effort. Só nota real de
+    // produção: simulada e produção restrita não têm valor fiscal.
+    if (body.tomador_email && !simulada && config.ambiente === "producao") {
       await dispatchNotificacao(admin, {
         unidade_id: config.unidade_id, evento: "nfse_emitida", email: body.tomador_email, cliente: input.tomador.nome,
         dados: { numero: nota.numero, valor: input.valor, descricao: input.descricao, pdfUrl: nota.pdf_url || result.pdfUrl },
@@ -125,13 +153,13 @@ Deno.serve(async (req) => {
       unidade_id: config.unidade_id,
       ator_id: auth.user.id,
       ator_email: (auth.user.email || "").toLowerCase(),
-      acao: "nfse.emitida",
+      acao: simulada ? "nfse.simulada" : "nfse.emitida",
       entidade: "nota_fiscal",
       entidade_id: nota.id,
       detalhe: {
-        numero: nota.numero, rps_numero: rpsNumero, valor: input.valor,
-        tomador: input.tomador.nome, tomador_documento: input.tomador.documento,
-        emissor: config.emissor, status: result.status, boleto_id: input.boletoId,
+        numero: nota.numero, rps_numero: rpsNumero, serie_dps: insert.serie_dps, numero_dps: numeroDps,
+        valor: input.valor, tomador: input.tomador.nome, tomador_documento: input.tomador.documento,
+        emissor: config.emissor, ambiente: config.ambiente, status, boleto_id: input.boletoId,
       },
       ip: ipDaReq(req),
     });

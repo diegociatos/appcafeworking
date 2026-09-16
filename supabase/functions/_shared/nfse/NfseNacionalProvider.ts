@@ -19,12 +19,13 @@
 //   POST /nfse/{chaveAcesso}/eventos body { pedidoRegistroEventoXmlGZipB64 } → cancela
 //
 // A assinatura XML (xmldsig) fica no ponto de extensão `assinarDps()`. Sem
-// certificado no Vault, o provider responde em modo simulado (homologação).
+// certificado no Vault: nota "simulada" (sem valor fiscal) só em homologação;
+// em produção a emissão é recusada (ver dps.ts → modoEmissao).
 // ============================================================================
 
 import type { NfseProvider } from "./NfseProvider.ts";
 import { assinarDpsXmlDsig } from "./xmlsign.ts";
-import { cMunDe } from "./municipios.ts";
+import { escXml, modoEmissao, montarDpsXml } from "./dps.ts";
 import {
   type ConfigFiscal,
   type FiscalCredentials,
@@ -50,11 +51,6 @@ export class NfseNacionalProvider implements NfseProvider {
 
   private get base() {
     return BASE[this.config.ambiente] ?? BASE.homologacao;
-  }
-
-  /** Tem certificado A1 disponível para assinar/conectar? Sem ele, modo simulado. */
-  private get podeAssinar(): boolean {
-    return Boolean(this.creds.cert_pfx_base64 || (this.creds.cert_pem && this.creds.key_pem));
   }
 
   /**
@@ -84,15 +80,17 @@ export class NfseNacionalProvider implements NfseProvider {
     const aliquota = input.aliquotaISS ?? this.config.aliquota_iss ?? 0;
     const iss = Math.round(input.valor * aliquota) / 100;
 
-    // Sem certificado configurado: devolve simulação coerente (homologação).
-    if (!this.podeAssinar) {
+    // Sem certificado: simula só em homologação; em produção recusa.
+    const modo = modoEmissao(this.config.ambiente, this.creds);
+    if (modo.tipo === "recusada") throw new FiscalError(modo.motivo, this.emissor, 412);
+    if (modo.tipo === "simulada") {
       return {
         nfseId: `SIM-${input.rpsNumero}`,
         numero: input.rpsNumero,
         codigoVerificacao: "SIMULADO",
         iss,
-        status: "autorizada",
-        raw: { simulado: true, motivo: "certificado A1 não configurado no Vault" },
+        status: "simulada",
+        raw: { simulado: true, motivo: "certificado A1 não configurado no Vault (homologação)" },
       };
     }
 
@@ -132,7 +130,7 @@ export class NfseNacionalProvider implements NfseProvider {
 
   async consultarNfse(nfseId: string): Promise<ConsultaNfseResult> {
     if (nfseId.startsWith("SIM-")) {
-      return { nfseId, status: "autorizada", raw: { simulado: true } };
+      return { nfseId, status: "simulada", raw: { simulado: true } };
     }
     const res = await this.mtlsFetch(`${this.base}/nfse/${nfseId}`, {
       headers: { Accept: "application/json" },
@@ -171,125 +169,21 @@ export class NfseNacionalProvider implements NfseProvider {
     return { nfseId, status: "cancelada", raw: body };
   }
 
-  // --------------------------------------------------------------------------
-  // Montagem da DPS no layout NACIONAL v1.01 (schema oficial DPS_v1.01.xsd).
-  // Ordem dos elementos de infDPS é obrigatória (xs:sequence):
-  //   tpAmb, dhEmi, verAplic, serie, nDPS, dCompet, tpEmit, cLocEmi,
-  //   prest(CNPJ, IM, regTrib{opSimpNac, regEspTrib}),
-  //   toma(CNPJ|CPF, xNome),
-  //   serv(locPrest{cLocPrestacao}, cServ{cTribNac, xDescServ}),
-  //   valores(vServPrest{vServ}, trib{tribMun{tribISSQN, tpRetISSQN, pAliq}, totTrib{indTotTrib}})
-  //
-  // O Id de infDPS é a CHAVE DE ACESSO da DPS (53 dígitos): "DPS" +
-  //   cLocEmi(7) + tpInsc(1) + inscFederal(14, CPF completado com 000) +
-  //   serie(5) + nDPS(15). Os parâmetros municipais (cTribNac, alíquota,
-  //   opSimpNac) vêm da config_fiscal da unidade (preenchida a partir do
-  //   GET /parametros_municipais do município conveniado).
-  // --------------------------------------------------------------------------
-  private montarDps(input: EmitirNfseInput): string {
-    const c = this.config as ConfigFiscal & Record<string, unknown>;
-    const t = input.tomador;
-    const cnpjPrest = (c.cnpj || "").replace(/\D/g, "");
-    const cLocEmi = this.codMunicipio();
-    const serie = String((c.serie_dps as string) || "00001").padStart(5, "0").slice(-5);
-    const nDPS = String(parseInt(input.rpsNumero, 10) || 1);
-    const idDps = this.chaveDps(cLocEmi, cnpjPrest, serie, nDPS);
-
-    const docToma = (t.documento || "").replace(/\D/g, "");
-    const tagToma = docToma.length > 11 ? "CNPJ" : "CPF";
-
-    const opSimpNac = this.opSimpNac();
-    const regEspTrib = String((c.regime_especial as string) ?? "0") || "0";
-    const cTribNac = this.cTribNac();
-    const aliq = (input.aliquotaISS ?? c.aliquota_iss ?? 0);
-    const tpRet = String((c.iss_retido as string) || "1") || "1"; // 1 = não retido
-    const descServ = (input.descricao || c.descricao_servico || "Serviço").slice(0, 2000);
-
-    return `<?xml version="1.0" encoding="UTF-8"?>` +
-`<DPS xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.01">` +
-`<infDPS Id="${idDps}">` +
-`<tpAmb>${c.ambiente === "producao" ? 1 : 2}</tpAmb>` +
-`<dhEmi>${new Date().toISOString().replace(/\.\d{3}Z$/, "Z")}</dhEmi>` +
-`<verAplic>CafeWorking-1.0</verAplic>` +
-`<serie>${serie}</serie>` +
-`<nDPS>${nDPS}</nDPS>` +
-`<dCompet>${new Date().toISOString().slice(0, 10)}</dCompet>` +
-`<tpEmit>1</tpEmit>` +
-`<cLocEmi>${cLocEmi}</cLocEmi>` +
-`<prest>` +
-`<CNPJ>${cnpjPrest}</CNPJ>` +
-(c.inscricao_municipal ? `<IM>${esc(String(c.inscricao_municipal))}</IM>` : ``) +
-`<regTrib><opSimpNac>${opSimpNac}</opSimpNac><regEspTrib>${regEspTrib}</regEspTrib></regTrib>` +
-`</prest>` +
-`<toma><${tagToma}>${docToma}</${tagToma}><xNome>${esc(t.nome)}</xNome>${montarEndToma(t)}</toma>` +
-`<serv>` +
-`<locPrest><cLocPrestacao>${cLocEmi}</cLocPrestacao></locPrest>` +
-`<cServ><cTribNac>${cTribNac}</cTribNac><xDescServ>${esc(descServ)}</xDescServ></cServ>` +
-`</serv>` +
-`<valores>` +
-`<vServPrest><vServ>${input.valor.toFixed(2)}</vServ></vServPrest>` +
-`<trib>` +
-`<tribMun><tribISSQN>1</tribISSQN><tpRetISSQN>${tpRet}</tpRetISSQN><pAliq>${Number(aliq).toFixed(2)}</pAliq></tribMun>` +
-`<totTrib><indTotTrib>0</indTotTrib></totTrib>` +
-`</trib>` +
-`</valores>` +
-`</infDPS>` +
-`</DPS>`;
-  }
-
-  /** Código IBGE do município emissor (cLocEmi). Vem da config; BH = 3106200. */
-  private codMunicipio(): string {
-    const c = this.config as Record<string, unknown>;
-    const direto = String((c.codigo_municipio as string) || "").replace(/\D/g, "");
-    if (direto.length === 7) return direto;
-    const mapa: Record<string, string> = {
-      "belo horizonte": "3106200", "sao paulo": "3550308", "rio de janeiro": "3304557",
-    };
-    const norm = String(c.municipio || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
-    if (mapa[norm]) return mapa[norm];
-    throw new FiscalError(
-      `Código IBGE do município (cLocEmi) não definido na config fiscal (${c.municipio}). Informe "codigo_municipio".`,
-      this.emissor, 400,
-    );
-  }
-
-  /** cTribNac (6 dígitos: item+subitem+desdobro). Usa o campo nacional ou deriva do codigo_servico. */
-  private cTribNac(): string {
-    const c = this.config as Record<string, unknown>;
-    const nac = String((c.codigo_tributacao_nacional as string) || "").replace(/\D/g, "");
-    if (nac.length === 6) return nac;
-    const item = String(c.codigo_servico || "").replace(/\D/g, ""); // "08.01" -> "0801"
-    return (item + "000000").slice(0, 6).padStart(6, "0");
-  }
-
-  /** opSimpNac: 1 Não optante, 2 MEI, 3 ME/EPP — a partir do regime configurado. */
-  private opSimpNac(): string {
-    const c = this.config as Record<string, unknown>;
-    const reg = String(c.regime || "").toLowerCase();
-    if (reg.includes("mei")) return "2";
-    if (reg.includes("simples")) return "3";
-    return "1";
-  }
-
-  /** Chave/Id da DPS (53 dígitos): DPS + cLocEmi(7)+tpInsc(1)+inscFed(14)+serie(5)+nDPS(15). */
-  private chaveDps(cLocEmi: string, cnpj: string, serie: string, nDPS: string): string {
-    const tpInsc = cnpj.length > 11 ? "2" : "1";
-    const inscFed = cnpj.padStart(14, "0").slice(-14);
-    const nSerie = serie.padStart(5, "0").slice(-5);
-    const nNum = nDPS.padStart(15, "0").slice(-15);
-    return `DPS${cLocEmi}${tpInsc}${inscFed}${nSerie}${nNum}`;
+  /** DPS no leiaute nacional v1.01 (montagem pura em dps.ts → montarDpsXml). */
+  montarDps(input: EmitirNfseInput, agora: Date = new Date()): string {
+    return montarDpsXml(this.config, input, agora);
   }
 
   private montarCancelamento(nfseId: string, motivo: string): string {
     return `<?xml version="1.0" encoding="UTF-8"?>
 <pedRegEvento xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.01">
-  <infPedReg><chNFSe>${nfseId}</chNFSe><xMotivo>${esc(motivo)}</xMotivo></infPedReg>
+  <infPedReg><chNFSe>${nfseId}</chNFSe><xMotivo>${escXml(motivo)}</xMotivo></infPedReg>
 </pedRegEvento>`;
   }
 
   /**
    * Assina o XML (xmldsig enveloped, RSA-SHA256) com o A1 (cert_pem/key_pem).
-   * Sem PEM disponível, devolve o XML sem assinatura (modo simulado).
+   * Sem PEM disponível, devolve o XML sem assinatura (o SEFIN recusa).
    */
   private async assinarDps(xml: string): Promise<string> {
     if (!(this.creds.cert_pem && this.creds.key_pem)) return xml;
@@ -301,26 +195,6 @@ export class NfseNacionalProvider implements NfseProvider {
 // ----------------------------------------------------------------------------
 // Helpers
 // ----------------------------------------------------------------------------
-function esc(s: string): string {
-  return (s ?? "").replace(/[<>&'"]/g, (ch) =>
-    ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" }[ch] as string));
-}
-
-// Endereço do tomador (<end>) no layout nacional. Só é incluído quando dá para
-// resolver o código IBGE (cMun) da cidade/UF E há logradouro + CEP válido —
-// senão é OMITIDO (a nota segue válida, sem endereço do tomador).
-function montarEndToma(t: { cep?: string; logradouro?: string; numero?: string; bairro?: string; municipio?: string; uf?: string }): string {
-  const cMun = cMunDe(t.municipio, t.uf);
-  const cep = (t.cep ?? "").replace(/\D/g, "");
-  if (!cMun || !t.logradouro || cep.length !== 8) return "";
-  return `<end>` +
-    `<endNac><cMun>${cMun}</cMun><CEP>${cep}</CEP></endNac>` +
-    `<xLgr>${esc(t.logradouro.slice(0, 255))}</xLgr>` +
-    `<nro>${esc((t.numero || "S/N").slice(0, 60))}</nro>` +
-    `<xBairro>${esc((t.bairro || "Centro").slice(0, 60))}</xBairro>` +
-    `</end>`;
-}
-
 async function gzipBase64(text: string): Promise<string> {
   const enc = new TextEncoder().encode(text);
   const stream = new Response(enc).body!.pipeThrough(new CompressionStream("gzip"));

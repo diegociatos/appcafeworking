@@ -7,14 +7,15 @@
 //         descontoValor? }
 //
 // Segurança:
-//  1. Lê a conta bancária com o JWT do usuário → RLS garante que ele só
-//     emite por contas da própria unidade.
+//  1. Só admin da plataforma ou master/financeiro da unidade da conta emitem;
+//     a conta é lida com o JWT do usuário (RLS de bank_accounts, idem).
 //  2. Lê as credenciais do Vault com service_role (nunca expostas ao cliente).
 //  3. Chama o BankProvider correto (adapter) e grava o boleto.
 // ============================================================================
 
 import { handleOptions, json } from "../_shared/cors.ts";
 import { userClient, adminClient } from "../_shared/supabaseAdmin.ts";
+import { podeMexerNoDinheiro, recusaSemFinanceiro } from "../_shared/permissoes.ts";
 import { getBankCredentials } from "../_shared/vault.ts";
 import { uploadBoletoPdf } from "../_shared/storage.ts";
 import { getProvider, BankError, type BankAccount, type EmitirBoletoInput } from "../_shared/banks/index.ts";
@@ -36,6 +37,13 @@ Deno.serve(async (req) => {
     const { data: auth } = await user.auth.getUser();
     if (!auth?.user) return json({ error: "Não autenticado" }, 401);
 
+    // papel do financeiro na unidade da conta bancária (recepção e contabilidade não)
+    const admin = adminClient();
+    const { data: alvo } = await admin.from("bank_accounts").select("unidade_id").eq("id", body.bank_account_id).maybeSingle();
+    if (alvo && !(await podeMexerNoDinheiro(admin, auth.user.id, alvo.unidade_id))) {
+      return recusaSemFinanceiro("Emitir boleto");
+    }
+
     // 2) conta bancária (RLS garante ownership da unidade)
     const { data: account, error: accErr } = await user
       .from("bank_accounts")
@@ -45,7 +53,6 @@ Deno.serve(async (req) => {
     if (accErr || !account) return json({ error: "Conta bancária não encontrada ou sem acesso" }, 403);
 
     // 3) credenciais do Vault (service_role) + provider
-    const admin = adminClient();
     const creds = await getBankCredentials(admin, account.credenciais_ref);
     const provider = getProvider(account as BankAccount, creds);
 

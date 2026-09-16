@@ -72,8 +72,8 @@ export class InterProvider implements BankProvider {
     // Cliente HTTP com certificado de cliente (mTLS). Deno o reaproveita.
     if (!this.httpClient) {
       this.httpClient = Deno.createHttpClient({
-        cert: this.creds.cert_pem,
-        key: this.creds.key_pem,
+        cert: this.creds.cert_pem!,
+        key: this.creds.key_pem!,
       });
     }
     return this.httpClient;

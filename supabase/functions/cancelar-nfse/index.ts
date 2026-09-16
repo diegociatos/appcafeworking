@@ -5,12 +5,14 @@
 // body: { nota_id, motivo? }
 //
 // Cancela a NFS-e no emissor e marca a nota como "cancelada".
+// Só admin da plataforma ou master/financeiro da unidade da nota.
 // ============================================================================
 
 import { handleOptions, json } from "../_shared/cors.ts";
 import { userClient, adminClient } from "../_shared/supabaseAdmin.ts";
 import { getFiscalCredentials } from "../_shared/fiscalVault.ts";
 import { getNfseProvider, FiscalError, type ConfigFiscal } from "../_shared/nfse/index.ts";
+import { podeMexerNoDinheiro, recusaSemFinanceiro } from "../_shared/permissoes.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -25,18 +27,20 @@ Deno.serve(async (req) => {
     const { data: auth } = await user.auth.getUser();
     if (!auth?.user) return json({ error: "Não autenticado" }, 401);
 
-    // nota (RLS) + config fiscal da unidade
-    const { data: nota, error: nErr } = await user
-      .from("notas_fiscais").select("*").eq("id", body.nota_id).single();
-    if (nErr || !nota) return json({ error: "Nota não encontrada ou sem acesso" }, 403);
+    // nota + papel do financeiro na unidade da nota + config fiscal
+    const admin = adminClient();
+    const { data: nota } = await admin
+      .from("notas_fiscais").select("*").eq("id", body.nota_id).maybeSingle();
+    if (!nota || !(await podeMexerNoDinheiro(admin, auth.user.id, nota.unidade_id))) {
+      return nota ? recusaSemFinanceiro("Cancelar nota fiscal") : json({ error: "Nota não encontrada ou sem acesso" }, 403);
+    }
     if (nota.status === "cancelada") return json({ nota }, 200);
 
-    const { data: config, error: cErr } = await user
+    const { data: config, error: cErr } = await admin
       .from("config_fiscal").select("*").eq("unidade_id", nota.unidade_id)
       .single<ConfigFiscal & { certificado_ref: string }>();
     if (cErr || !config) return json({ error: "Configuração fiscal não encontrada" }, 403);
 
-    const admin = adminClient();
     const creds = await getFiscalCredentials(admin, config.certificado_ref);
     const provider = getNfseProvider(config as ConfigFiscal, creds);
 

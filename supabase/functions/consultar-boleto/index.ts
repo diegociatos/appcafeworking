@@ -5,6 +5,7 @@
 
 import { handleOptions, json } from "../_shared/cors.ts";
 import { userClient, adminClient } from "../_shared/supabaseAdmin.ts";
+import { podeMexerNoDinheiro, recusaSemFinanceiro } from "../_shared/permissoes.ts";
 import { getBankCredentials } from "../_shared/vault.ts";
 import { getProvider, BankError, type BankAccount } from "../_shared/banks/index.ts";
 
@@ -21,6 +22,13 @@ Deno.serve(async (req) => {
     const { data: auth } = await user.auth.getUser();
     if (!auth?.user) return json({ error: "Não autenticado" }, 401);
 
+    // papel do financeiro na unidade da boleto (recepção e contabilidade não)
+    const admin = adminClient();
+    const { data: alvo } = await admin.from("boletos").select("unidade_id").eq("id", boleto_id).maybeSingle();
+    if (alvo && !(await podeMexerNoDinheiro(admin, auth.user.id, alvo.unidade_id))) {
+      return recusaSemFinanceiro("Consultar boleto");
+    }
+
     // RLS garante que o usuário só lê boletos da sua unidade.
     const { data: boleto, error } = await user
       .from("boletos")
@@ -29,7 +37,6 @@ Deno.serve(async (req) => {
       .single();
     if (error || !boleto) return json({ error: "Boleto não encontrado" }, 404);
 
-    const admin = adminClient();
     const { data: account } = await admin
       .from("bank_accounts")
       .select("*")
