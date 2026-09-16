@@ -12,6 +12,9 @@
 //   3. avulso              pending_signups pelo payment id   → ativa o cadastro
 //                          (ou só atualiza a cobrança emitida pelo app)
 //
+// Venda com abertura de empresa (categoria abertura_empresa ou direito
+// aberturaEmpresa) cria o processo em aberturas e pede ao cliente os dados.
+//
 // Tudo é idempotente: o Asaas reenvia eventos e manda PAYMENT_CONFIRMED e
 // PAYMENT_RECEIVED para o mesmo pagamento.
 //
@@ -27,6 +30,7 @@ import { garantirCobranca } from "../_shared/cobrancas.ts";
 import { getNotifProvider, renderTemplate } from "../_shared/notify/index.ts";
 import { proximaCobranca } from "../_shared/ciclo.ts";
 import { avisarEquipe } from "../_shared/assinaturas.ts";
+import { criarAberturaDaVenda } from "../_shared/aberturas.ts";
 import { ocuparSala } from "../_shared/disponibilidade.ts";
 import { nomeExibicaoUnidade } from "../_shared/unidadeNome.ts";
 import {
@@ -205,9 +209,11 @@ async function ativarCadastro(
       `CPF/CNPJ: ${ps.documento || "não informado"}`,
       `Valor: R$ ${Number(ps.valor).toFixed(2)} (${ps.recorrencia || "mensal"})`,
       ...(ps.turno ? [`Turno: ${ps.turno === "manha" ? "manhã (8h às 12h)" : "tarde (12h às 18h)"}`] : []),
-      ...(servicos.abertura ? ["Abertura de empresa: contatar o cliente em até 1 dia útil e encaminhar à Ciatos Contabilidade. Taxas oficiais por conta do cliente."] : []),
+      ...(servicos.abertura ? ["Abertura de empresa: o cliente preenche os dados e anexa os documentos no app; a Ciatos Contabilidade acompanha em Aberturas. Taxas oficiais por conta do cliente."] : []),
       ...(servicos.certificado ? ["Certificado digital e-CNPJ A1 (1 ano): emitir depois que o CNPJ existir; agendar a validação com o cliente."] : []),
     ], APP_URL);
+    // Processo de abertura da empresa (idempotente; nunca derruba a ativação)
+    if (servicos.abertura) await criarAberturaDaVenda(admin, ps, assinatura);
     try {
       await enviarBoasVindas(admin, ps);
     } catch (e) {

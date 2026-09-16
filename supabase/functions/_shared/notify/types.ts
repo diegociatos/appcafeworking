@@ -36,6 +36,9 @@ export type Evento =
   | "cancelamento_confirmado"
   | "documentos_aprovados"
   | "documentos_reprovados"
+  | "abertura_preencher"
+  | "abertura_pendencia"
+  | "abertura_concluida"
   | "aviso_equipe";
 
 export class NotifyError extends Error {

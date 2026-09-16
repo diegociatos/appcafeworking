@@ -116,3 +116,24 @@ Deno.test("assinatura_ativa da abertura avulsa não pede cartão CNPJ", () => {
   assertEquals(m.html.includes("cartão CNPJ"), false);
   assertEquals(m.html.includes("e-CNPJ"), false);
 });
+
+Deno.test("abertura_preencher leva à tela de abertura e fala do IPTU conforme o endereço", () => {
+  const unidade = renderTemplate("abertura_preencher", { cliente: "Ana", email: "a@x.com", plano: "Fiscal Pro", unidade: "Luxemburgo", usaEnderecoUnidade: true });
+  assertStringIncludes(unidade.assunto, "abrir sua empresa");
+  assertStringIncludes(unidade.html, "/?p=abertura");
+  assertStringIncludes(unidade.html, "já enviamos o IPTU");
+  const propria = renderTemplate("abertura_preencher", { cliente: "Ana", email: "a@x.com", plano: "Abertura de empresa", usaEnderecoUnidade: false });
+  assertStringIncludes(propria.html, "com o IPTU do imóvel");
+  assertEquals(propria.html.includes("já enviamos o IPTU"), false);
+});
+
+Deno.test("abertura_pendencia escapa o texto da contabilidade e abertura_concluida mostra o CNPJ", () => {
+  const p = renderTemplate("abertura_pendencia", { cliente: "Ana", email: "a@x.com", pendencia: "RG <ilegível>" });
+  assertStringIncludes(p.html, "RG &lt;ilegível&gt;");
+  assertStringIncludes(p.html, "/?p=abertura");
+  const c = renderTemplate("abertura_concluida", { cliente: "Ana", email: "a@x.com", razaoSocial: "Alfa & Beta LTDA", cnpj: "11.222.333/0001-81" });
+  assertStringIncludes(c.assunto, "Alfa & Beta LTDA");
+  assertStringIncludes(c.html, "Alfa &amp; Beta LTDA");
+  assertStringIncludes(c.html, "11.222.333/0001-81");
+  assertStringIncludes(c.html, "Ver minha empresa");
+});

@@ -135,7 +135,7 @@ const TEMPLATES: Record<Evento, (d: any) => Render> = {
       `Seu plano ${esc(d.plano)} está ativo`,
       `Olá <b>${esc(d.cliente)}</b>,<br><br>Pagamento confirmado. O plano <b>${esc(d.plano)}</b>${d.unidade ? ` na unidade <b>${esc(d.unidade)}</b>` : ""} já está ativo.<br><br>
        ${d.linkSenha ? "O próximo passo é criar sua senha para entrar na área do cliente. O link vale por tempo limitado." : "Entre na área do cliente com seu e-mail e senha."}
-       ${d.abertura ? "<br><br><b>Abertura da empresa:</b> nossa equipe, com a Ciatos Contabilidade, entra em contato em até 1 dia útil para coletar os dados dos sócios e das atividades. As taxas dos órgãos oficiais (Junta Comercial, prefeitura) são pagas à parte." : ""}
+       ${d.abertura ? "<br><br><b>Abertura da empresa:</b> depois de entrar, preencha em <b>Abertura da empresa</b> os dados dos sócios e das atividades e anexe os documentos. A Ciatos Contabilidade confere e acompanha o registro. As taxas dos órgãos oficiais (Junta Comercial, prefeitura) são pagas à parte." : ""}
        ${d.certificado ? "<br><br><b>Certificado digital:</b> o e-CNPJ A1 é emitido assim que o CNPJ estiver ativo. Vamos agendar a validação com você." : ""}
        ${d.categoria === "endereco_fiscal" ? (d.abertura
          ? "<br><br>Se a empresa já existe, envie na área do cliente o cartão CNPJ e o documento dos sócios. Se ainda vamos abri-la, envie o documento com foto e o comprovante de endereço dos futuros sócios."
@@ -197,6 +197,46 @@ const TEMPLATES: Record<Evento, (d: any) => Render> = {
        ${d.parecer ? `<br><br><b>Motivo:</b> ${esc(d.parecer)}` : ""}
        <br><br>Como previsto no contrato, o plano foi cancelado e o valor pago será devolvido integralmente em até 10 dias úteis${d.reembolso === "manual" ? ". Nossa equipe vai entrar em contato para combinar a devolução" : ", pela mesma forma de pagamento"}.
        <br><br>Se quiser conversar sobre outra solução, responda este e-mail.`,
+    ),
+  }),
+  abertura_preencher: (d) => ({
+    assunto: "Preencha os dados para abrir sua empresa",
+    texto: `Olá ${d.cliente}, para começarmos a abertura da sua empresa, preencha os dados e anexe os documentos na área do cliente: ${linkApp("abertura")}`,
+    html: layout(
+      "Vamos abrir a sua empresa",
+      `Olá <b>${esc(d.cliente)}</b>,<br><br>Para começarmos a abertura da sua empresa${d.plano ? ` (plano <b>${esc(d.plano)}</b>)` : ""}, preencha na área do cliente:
+       <ul style="margin:10px 0;padding-left:20px">
+         <li>tipo de empresa, opções de nome e atividades;</li>
+         <li>dados e documentos de cada sócio (RG ou CNH e comprovante de residência);</li>
+         ${d.usaEnderecoUnidade
+           ? `<li>nada sobre o endereço: a empresa vai usar o endereço fiscal do CafeWorking${d.unidade ? ` ${esc(d.unidade)}` : ""}, e nós já enviamos o IPTU;</li>`
+           : "<li>endereço da empresa, com o IPTU do imóvel;</li>"}
+         <li>o nível da conta gov.br de cada sócio (prata ou ouro para assinar).</li>
+       </ul>
+       O que você preencher fica salvo; dá para continuar depois. Quando enviar, a Ciatos Contabilidade confere e acompanha o registro. As taxas dos órgãos oficiais são pagas à parte.`,
+      { label: "Preencher os dados", url: linkApp("abertura") },
+    ),
+  }),
+  abertura_pendencia: (d) => ({
+    assunto: "Abertura da empresa: precisamos de um ajuste",
+    texto: `Olá ${d.cliente}, a contabilidade pediu um ajuste nos dados da abertura da sua empresa: ${d.pendencia}. Corrija e reenvie em ${linkApp("abertura")}`,
+    html: layout(
+      "Precisamos de um ajuste",
+      `Olá <b>${esc(d.cliente)}</b>,<br><br>A contabilidade conferiu os dados da abertura da sua empresa e pediu um ajuste:
+       <div style="margin:12px 0;padding:12px 14px;background:${CREME};border-left:3px solid ${MARCA};border-radius:8px;white-space:pre-wrap">${esc(d.pendencia)}</div>
+       Corrija na área do cliente e clique em <b>Enviar para a contabilidade</b> de novo. O processo continua assim que recebermos.`,
+      { label: "Corrigir e reenviar", url: linkApp("abertura") },
+    ),
+  }),
+  abertura_concluida: (d) => ({
+    assunto: `Sua empresa está aberta${d.razaoSocial ? ` · ${d.razaoSocial}` : ""}`,
+    texto: `Olá ${d.cliente}, a abertura foi concluída: ${d.razaoSocial || "sua empresa"}${d.cnpj ? `, CNPJ ${d.cnpj}` : ""}. Os documentos estão na área do cliente: ${linkApp("abertura")}`,
+    html: layout(
+      "Sua empresa está aberta",
+      `Olá <b>${esc(d.cliente)}</b>,<br><br>A abertura foi concluída.
+       ${d.razaoSocial ? `<br><br><b>${esc(d.razaoSocial)}</b>` : ""}${d.cnpj ? `<br>CNPJ ${esc(d.cnpj)}` : ""}
+       <br><br>Na área do cliente estão os dados da empresa e os documentos para baixar (contrato social e cartão CNPJ, entre outros).`,
+      { label: "Ver minha empresa", url: linkApp("abertura") },
     ),
   }),
   aviso_equipe: (d) => ({
