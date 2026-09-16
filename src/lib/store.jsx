@@ -40,6 +40,8 @@ export { PERFIS, SECOES };
 // de demonstração — parte vazio e hidrata do banco; mutações persistem.
 const REAL = nfseApi.configured;
 const seedOr = (seed) => (REAL ? [] : seed);
+// As telas usam para esconder o que só existe na demonstração (ex.: boleto gerado na tela).
+export const MODO_REAL = REAL;
 
 // Modelo padrão da mensagem de cobrança (régua de inadimplência). Editável por
 // unidade (persistido como doc global "cobrancaTemplate"). Placeholders:
@@ -581,13 +583,15 @@ export function StoreProvider({ children }) {
   };
   // Conta a pagar/receber recorrente: provisiona um lançamento "previsto" por mês.
   // boletoCfg (opcional, só p/ entrada): { gerar, bankAccountId, sacado, sacadoDocumento }
-  // → emite 1 boleto por parcela e vincula lançamento ↔ boleto.
+  // → DEMONSTRAÇÃO: gera 1 boleto de mentira por parcela e vincula lançamento ↔ boleto.
+  // PRODUÇÃO: ignora o boletoCfg. Linha digitável e PIX só saem de integração real
+  // (Cobranças/Asaas ou Boletos/banco); aqui fica só a conta a receber prevista.
   const addContaRecorrente = (unidadeId, base, meses, boletoCfg) => {
     const grupo = "rec" + Date.now();
     const ts = Date.now();
     const novos = meses.map((m, i) => ({ ...base, id: `lc${ts}_${m}_${i}`, unidadeId, mes: m, status: base.status || "previsto", grupoRecorrencia: meses.length > 1 ? grupo : undefined }));
     const novosBoletos = [];
-    if (boletoCfg && boletoCfg.gerar && base.tipo === "entrada") {
+    if (!REAL && boletoCfg && boletoCfg.gerar && base.tipo === "entrada") {
       const conta = bankAccounts.find((b) => b.id === boletoCfg.bankAccountId);
       novos.forEach((lanc, i) => {
         const id = `bol_${ts}_${i}`;

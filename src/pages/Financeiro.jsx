@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, FileInput } from "../components/ui.jsx";
 import { C, serif, sans, fmt, fmtShort, inp } from "../lib/theme.js";
-import { useStore, SECOES, COBRANCA_TEMPLATE_DEFAULT } from "../lib/store.jsx";
+import { useStore, SECOES, COBRANCA_TEMPLATE_DEFAULT, MODO_REAL } from "../lib/store.jsx";
 import { getCurrentCompetencia, parseDateBR } from "../lib/dateUtils.js";
 import { gerarModeloFluxo, lerPlanilhaFluxo, validarLinhas, exportarExtratoExcel, exportarProvisaoExcel } from "../lib/fluxoImport.js";
 
@@ -635,8 +635,8 @@ function ContaPRForm({ inicialTipo, contas, categorias, bankAccounts = [], clien
     const cat = cats[0]?.nome || "";
     return {
       descricao: "", categoria: cat, subcategoria: subsDe(cat)[0] || "", valor: 0, contaId: contas[0]?.id || "", dataVencimento: "", dataPagamento: "", mesInicial: MES_ATUAL, recorrencia: "unica", nMeses: 6, clienteId: "",
-      // Boleto (só conta a receber). Liga automaticamente se houver conta bancária.
-      gerarBoleto: ehReceber && bankAccounts.length > 0,
+      // Boleto (só conta a receber, só na demonstração). Liga se houver conta bancária.
+      gerarBoleto: !MODO_REAL && ehReceber && bankAccounts.length > 0,
       bankAccountId: bankAccounts[0]?.id || "",
       sacado: "", sacadoDocumento: "",
     };
@@ -662,7 +662,7 @@ function ContaPRForm({ inicialTipo, contas, categorias, bankAccounts = [], clien
     const meses = f.recorrencia === "mensal"
       ? Array.from({ length: Math.min(f.nMeses, MESES.length - start) }, (_, i) => start + i)
       : [start];
-    const boletoCfg = ehReceber && f.gerarBoleto
+    const boletoCfg = !MODO_REAL && ehReceber && f.gerarBoleto
       ? { gerar: true, bankAccountId: f.bankAccountId, sacado: f.sacado, sacadoDocumento: f.sacadoDocumento }
       : null;
     onSave(base, meses, boletoCfg);
@@ -739,8 +739,16 @@ function ContaPRForm({ inicialTipo, contas, categorias, bankAccounts = [], clien
         </Field>
       )}
 
-      {/* Emissão de boleto — só faz sentido em conta a RECEBER (cobrança) */}
-      {ehReceber && (
+      {/* Produção: boleto/PIX de verdade só pela integração (Cobranças/Asaas). */}
+      {ehReceber && MODO_REAL && (
+        <div role="note" style={{ display: "flex", gap: 9, alignItems: "flex-start", border: `1px solid ${C.border}`, borderRadius: 12, padding: 14, marginBottom: 14, background: C.cream, fontSize: 12.5, color: C.text2 }}>
+          <Barcode size={16} color={C.cafe} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>Esta conta a receber fica só como <b>previsão</b>, sem boleto. Para cobrar o cliente com boleto, PIX ou cartão de verdade, use <b>Cobranças (cartão/PIX) → Nova cobrança</b>: o Asaas registra a cobrança e dá baixa sozinho quando o cliente paga.</span>
+        </div>
+      )}
+
+      {/* Emissão de boleto (demonstração) — só faz sentido em conta a RECEBER */}
+      {ehReceber && !MODO_REAL && (
         <div style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: 14, marginBottom: 14, background: C.cream }}>
           {bankAccounts.length === 0 ? (
             <div style={{ fontSize: 12.5, color: C.text3, display: "flex", alignItems: "center", gap: 8 }}>
@@ -786,7 +794,7 @@ function ContaPRForm({ inicialTipo, contas, categorias, bankAccounts = [], clien
 
       <Btn style={{ width: "100%", justifyContent: "center", marginTop: 4 }} onClick={submit}>
         {ehReceber
-          ? (f.gerarBoleto && bankAccounts.length ? "Lançar e emitir boleto" : "Lançar conta a receber")
+          ? (!MODO_REAL && f.gerarBoleto && bankAccounts.length ? "Lançar e emitir boleto" : "Lançar conta a receber")
           : "Lançar conta a pagar"}
       </Btn>
     </>
@@ -806,9 +814,11 @@ function Contratos({ store, activeUnit }) {
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
         <div style={{ fontSize: 13, color: C.text3, maxWidth: 460 }}>
-          O sistema emite um boleto por mês até o fim do prazo. No vencimento, o contrato é sinalizado para você renovar/atualizar os valores.
+          {MODO_REAL
+            ? <>O sistema provisiona uma conta a receber por mês até o fim do prazo (sem boleto). Para cobrar de verdade, use <b>Cobranças</b> ou <b>Assinaturas</b>. No vencimento, o contrato é sinalizado para você renovar/atualizar os valores.</>
+            : "O sistema emite um boleto por mês até o fim do prazo. No vencimento, o contrato é sinalizado para você renovar/atualizar os valores."}
         </div>
-        <Btn onClick={() => setNovo(true)} disabled={!bankAccounts.length}><Plus size={16} /> Novo contrato</Btn>
+        <Btn onClick={() => setNovo(true)} disabled={!MODO_REAL && !bankAccounts.length}><Plus size={16} /> Novo contrato</Btn>
       </div>
 
       {/* Notificação ao financeiro */}
@@ -816,13 +826,13 @@ function Contratos({ store, activeUnit }) {
         <div style={{ display: "flex", alignItems: "flex-start", gap: 10, background: C.amberPale, border: `1px solid ${C.amber}55`, borderRadius: 12, padding: "12px 14px", marginBottom: 16 }}>
           <AlertTriangle size={18} color={C.amber} style={{ flexShrink: 0, marginTop: 1 }} />
           <div style={{ fontSize: 13, color: C.text2 }}>
-            <b>{vencendo.length} contrato{vencendo.length > 1 ? "s" : ""} chegou ao fim do prazo.</b> A emissão de boletos foi interrompida — revise e <b>atualize os valores</b> para renovar.
+            <b>{vencendo.length} contrato{vencendo.length > 1 ? "s" : ""} chegou ao fim do prazo.</b> {MODO_REAL ? "As parcelas deixaram de ser provisionadas" : "A emissão de boletos foi interrompida"} — revise e <b>atualize os valores</b> para renovar.
           </div>
         </div>
       )}
 
       {contratos.length === 0 ? (
-        <Card><Empty icon={FileSignature} title="Nenhum contrato" sub="Cadastre um contrato mensal para emitir boletos recorrentes automaticamente." /></Card>
+        <Card><Empty icon={FileSignature} title="Nenhum contrato" sub={MODO_REAL ? "Cadastre um contrato mensal para provisionar as parcelas no financeiro." : "Cadastre um contrato mensal para emitir boletos recorrentes automaticamente."} /></Card>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {contratos.map((c) => {
@@ -855,7 +865,7 @@ function Contratos({ store, activeUnit }) {
                 {/* progresso do contrato */}
                 <div style={{ marginTop: 12 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: C.text3, marginBottom: 4 }}>
-                    <span>Mês {Math.min(decorridos, c.meses)} de {c.meses}{!venceu && !encerrado ? ` · próximo boleto em ${MESES[Math.min(MES_ATUAL + 1, fim)]}` : ""}</span>
+                    <span>Mês {Math.min(decorridos, c.meses)} de {c.meses}{!venceu && !encerrado ? ` · ${MODO_REAL ? "próxima parcela" : "próximo boleto"} em ${MESES[Math.min(MES_ATUAL + 1, fim)]}` : ""}</span>
                     <span>{MESES[c.mesInicial]}–{MESES[fim]}</span>
                   </div>
                   <div style={{ height: 7, borderRadius: 6, background: C.cream2, overflow: "hidden" }}>
@@ -901,7 +911,7 @@ function ContratoForm({ bankAccounts, planos = [], onSalvar }) {
     const p = planos.find((x) => x.id === id);
     setF((s) => ({ ...s, planoId: id, plano: p ? p.nome : s.plano, valorMensal: p && p.preco ? String(p.preco) : s.valorMensal }));
   };
-  const valido = f.cliente.trim() && f.plano.trim() && +f.valorMensal > 0 && f.bankAccountId;
+  const valido = f.cliente.trim() && f.plano.trim() && +f.valorMensal > 0 && (MODO_REAL || f.bankAccountId);
   const ate = Math.min(f.mesInicial + (+f.meses) - 1, 11);
 
   return (
@@ -923,11 +933,13 @@ function ContratoForm({ bankAccounts, planos = [], onSalvar }) {
         <Field label="Valor mensal (R$)"><input type="number" min="0" step="0.01" value={f.valorMensal} onChange={set("valorMensal")} style={inp} placeholder="0,00" /></Field>
         <Field label="Dia de vencimento"><input value={f.diaVencimento} onChange={set("diaVencimento")} style={inp} placeholder="10" /></Field>
       </div>
-      <Field label="Conta emissora dos boletos">
-        <select value={f.bankAccountId} onChange={set("bankAccountId")} style={inp}>
-          {bankAccounts.map((b) => <option key={b.id} value={b.id}>{b.apelido} · {b.tipo === "franqueador" ? "Franqueador" : "Franqueado"}</option>)}
-        </select>
-      </Field>
+      {!MODO_REAL && (
+        <Field label="Conta emissora dos boletos">
+          <select value={f.bankAccountId} onChange={set("bankAccountId")} style={inp}>
+            {bankAccounts.map((b) => <option key={b.id} value={b.id}>{b.apelido} · {b.tipo === "franqueador" ? "Franqueador" : "Franqueado"}</option>)}
+          </select>
+        </Field>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Field label="Início (competência)">
           <select value={f.mesInicial} onChange={(e) => setF({ ...f, mesInicial: +e.target.value })} style={inp}>
@@ -939,10 +951,10 @@ function ContratoForm({ bankAccounts, planos = [], onSalvar }) {
         </Field>
       </div>
       <div style={{ fontSize: 12, color: C.text3, background: C.cafePale, borderRadius: 9, padding: "9px 12px", marginBottom: 14, display: "flex", alignItems: "center", gap: 7 }}>
-        <Barcode size={14} color={C.cafe} /> Emite {Math.min(f.meses, MESES.length - f.mesInicial)} boletos ({MESES[f.mesInicial]}–{MESES[ate]}), 1 por mês.
+        <Barcode size={14} color={C.cafe} /> {MODO_REAL ? "Provisiona" : "Emite"} {Math.min(f.meses, MESES.length - f.mesInicial)} {MODO_REAL ? "parcelas" : "boletos"} ({MESES[f.mesInicial]}–{MESES[ate]}), 1 por mês.
       </div>
       <Btn style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.5 }} onClick={() => valido && onSalvar({ ...f, valorMensal: +f.valorMensal, meses: +f.meses })}>
-        <FileSignature size={16} /> Criar contrato e emitir boletos
+        <FileSignature size={16} /> {MODO_REAL ? "Criar contrato" : "Criar contrato e emitir boletos"}
       </Btn>
     </>
   );
@@ -968,7 +980,7 @@ function RenovarForm({ contrato, onSalvar }) {
         <input type="number" min="1" max="12" value={meses} onChange={(e) => setMeses(Math.max(1, Math.min(12, +e.target.value)))} style={inp} />
       </Field>
       <Btn style={{ width: "100%", justifyContent: "center" }} onClick={() => onSalvar({ valorMensal: +valorMensal, meses: +meses })}>
-        <RefreshCw size={16} /> Renovar e emitir novos boletos
+        <RefreshCw size={16} /> {MODO_REAL ? "Renovar e provisionar as parcelas" : "Renovar e emitir novos boletos"}
       </Btn>
     </>
   );
