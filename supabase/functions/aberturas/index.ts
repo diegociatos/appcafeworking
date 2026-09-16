@@ -39,15 +39,50 @@ import { caminhoDocumento } from "../_shared/ciclo.ts";
 import { hojeBRT } from "../_shared/venda.ts";
 import { padraoEmail } from "../_shared/reservaCliente.ts";
 import { ipDaReq, registrarAuditoria } from "../_shared/audit.ts";
+import { getNotifProvider, renderTemplate } from "../_shared/notify/index.ts";
 import {
   type DocAbertura, DOCS_CONTABILIDADE, formatarCNPJ, normalizarDados, normalizarResultado, type PapelAbertura,
   pendenciasDaConclusao, pendenciasDoEnvio, podeMudarStatus, STATUS_ABERTURA, STATUS_EDITAVEL_CLIENTE, STATUS_EM_ANDAMENTO,
   validarArquivoAbertura,
 } from "../_shared/abertura.ts";
 import {
-  type Acesso, acessoDoUsuario, avisarClienteAbertura, avisarContabilidade, BUCKET_ABERTURA, criarAbertura, ehDono,
+  type Acesso, acessoDoUsuario, avisarClienteAbertura, avisarContabilidade, BUCKET_ABERTURA, criarAbertura, ehDono, emailsDaContabilidade,
   LINK_ABERTURAS_EQUIPE, type Linha, nomeUnidade, papelDoTime, registrarEvento,
 } from "../_shared/aberturas.ts";
+
+/**
+ * E-mail de teste para a contabilidade da unidade (caixa fixa + logins de
+ * contabilidade), para confirmar que o aviso chega. Só equipe ou admin.
+ * Devolve o resultado do envio por destinatário.
+ */
+async function testarEmailContabilidade(req: Request, admin: SupabaseClient, usuario: { id: string; email: string }, body: Linha, ac: Acesso) {
+  const unidadeId = String(body?.unidade_id || "");
+  if (papelDoTime(ac, unidadeId) === null || papelDoTime(ac, unidadeId) === "contabilidade") {
+    return json({ error: "Só a equipe da unidade pode testar este aviso." }, 403, req);
+  }
+  const unidade = await nomeUnidade(admin, unidadeId);
+  const resultados: { para: string; ok: boolean; erro?: string }[] = [];
+  for (const para of await emailsDaContabilidade(admin, unidadeId)) {
+    const msg = renderTemplate("aviso_equipe", {
+      email: para,
+      assunto: "Teste de aviso de abertura de empresa (pode ignorar)",
+      linhas: [
+        "Este é um e-mail de teste do sistema do CafeWorking.",
+        `A cada nova abertura de empresa contratada na unidade ${unidade.nome}, você recebe um aviso como este, com os dados do cliente.`,
+        "Para acompanhar os processos, entre no sistema pelo botão abaixo com o seu login de Contabilidade e abra o menu Abertura de empresas.",
+        "Se este e-mail chegou no spam, marque como \"não é spam\" para os próximos avisos chegarem na caixa de entrada.",
+      ],
+      link: LINK_ABERTURAS_EQUIPE,
+    });
+    const envio = await getNotifProvider("email").enviar({ ...msg, para });
+    resultados.push({ para, ok: envio.ok, ...(envio.ok ? {} : { erro: envio.erro }) });
+  }
+  await registrarAuditoria(admin, {
+    acao: "abertura.testar_email_contabilidade", unidade_id: unidadeId, ator_id: usuario.id, ator_email: usuario.email,
+    entidade: "unidade", entidade_id: unidadeId, detalhe: { resultados }, ip: ipDaReq(req),
+  });
+  return json({ ok: resultados.length > 0 && resultados.every((r) => r.ok), resultados }, 200, req);
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const VALIDADE_LINK_S = 600;
@@ -560,6 +595,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const acao = String(body?.acao || "");
     if (acao === "criar") return await criar(req, admin, usuario, body, await acesso());
+    if (acao === "testar_email_contabilidade") return await testarEmailContabilidade(req, admin, usuario, body, await acesso());
 
     const a = await carregar(admin, body?.id);
     if (!a) return json({ error: NAO_ENCONTRADO }, 404, req);
