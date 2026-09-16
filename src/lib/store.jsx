@@ -514,7 +514,8 @@ export function StoreProvider({ children }) {
     setCorrespondencias((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } : c)));
   /**
    * "Notificar cliente": manda o e-mail de correspondência de verdade e só marca
-   * como notificada quando o envio deu certo. Devolve o resultado para a tela.
+   * como notificada quando o e-mail saiu de verdade (na demonstração nada sai,
+   * então não marca). Devolve o resultado para a tela.
    */
   const notificarCorrespondencia = async (id) => {
     const co = correspondencias.find((c) => c.id === id);
@@ -523,7 +524,7 @@ export function StoreProvider({ children }) {
       cliente: co.cliente, clienteId: co.clienteId, email: co.clienteEmail, evento: "correspondencia",
       dados: { remetente: co.remetente, tipo: co.tipo },
     });
-    if (r.status === "enviado" || r.status === "demonstracao") {
+    if (r.status === "enviado") {
       updateCorrespondencia(id, { status: "notificado", urgente: false, notificadoEm: new Date().toISOString() });
     }
     return r;

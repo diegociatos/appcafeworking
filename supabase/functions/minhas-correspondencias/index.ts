@@ -12,7 +12,9 @@
 //   • doc.clienteEmail = e-mail do login, ou
 //   • registro antigo sem id/e-mail: nome igual ao do cadastro, e só quando esse
 //     nome é único na unidade (evita entregar a carta de um homônimo).
-// A lista não traz o arquivo (pode ser grande); o anexo sai por id.
+// A lista não traz o arquivo; o anexo sai por id. Arquivo novo fica no bucket
+// privado `correspondencias` (doc.anexo.caminho) e vai como link assinado de 10
+// minutos; registro antigo com a imagem embutida (doc.anexo.url) sai como antes.
 // ============================================================================
 
 import { handleOptions, json } from "../_shared/cors.ts";
@@ -21,6 +23,10 @@ import { usuarioDoReq } from "../_shared/assinaturas.ts";
 import { clientesDoEmail, erroInterno, type Linha, nomesDasUnidades } from "../_shared/clienteArea.ts";
 
 const STATUS_VALIDOS = ["aguardando", "digitalizada", "notificado", "retirada"];
+const BUCKET = "correspondencias";
+const VALIDADE_LINK_S = 600;
+
+const temArquivo = (c: Linha) => Boolean(c.anexo?.caminho || c.anexo?.url);
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -69,8 +75,17 @@ Deno.serve(async (req) => {
     if (pedido) {
       const c = minhas.find((m) => m._id === pedido);
       if (!c) return json({ error: "Correspondência não encontrada." }, 404, req);
-      if (!c.anexo?.url) return json({ error: "Esta correspondência não tem arquivo digitalizado." }, 404, req);
-      return json({ anexo: { nome: c.anexo.nome || "correspondencia", tipo: c.anexo.tipo || "", url: c.anexo.url } }, 200, req);
+      if (!temArquivo(c)) return json({ error: "Esta correspondência não tem arquivo digitalizado." }, 404, req);
+      const nome = c.anexo.nome || "correspondencia";
+      if (c.anexo.caminho) {
+        const caminho = String(c.anexo.caminho);
+        // o arquivo precisa estar na pasta da unidade da própria correspondência
+        if (!caminho.startsWith(`${c._unidade}/`)) return json({ error: "Esta correspondência não tem arquivo digitalizado." }, 404, req);
+        const { data: link, error: eLink } = await admin.storage.from(BUCKET).createSignedUrl(caminho, VALIDADE_LINK_S);
+        if (eLink || !link?.signedUrl) throw new Error(`storage: ${eLink?.message || "sem link"}`);
+        return json({ anexo: { nome, tipo: c.anexo.tipo || "", url: link.signedUrl, expira_em_s: VALIDADE_LINK_S } }, 200, req);
+      }
+      return json({ anexo: { nome, tipo: c.anexo.tipo || "", url: c.anexo.url } }, 200, req);
     }
 
     const nomes = await nomesDasUnidades(admin, unidades);
@@ -83,7 +98,7 @@ Deno.serve(async (req) => {
       status: STATUS_VALIDOS.includes(c.status) ? c.status : "aguardando",
       urgente: !!c.urgente,
       recebido_em: typeof c.recebidoEm === "string" ? c.recebidoEm : null,
-      tem_anexo: !!c.anexo?.url,
+      tem_anexo: temArquivo(c),
       anexo_tipo: c.anexo?.tipo || "",
     })).sort((a, b) => String(b.recebido_em || "").localeCompare(String(a.recebido_em || "")));
 
