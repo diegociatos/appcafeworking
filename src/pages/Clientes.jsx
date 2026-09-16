@@ -428,6 +428,79 @@ function CreditosCliente({ cli }) {
       <input value={aj.motivo} onChange={(e) => setAj({ ...aj, motivo: e.target.value })} placeholder="Motivo do ajuste (auditável)" style={{ ...inp, padding: "8px 10px", marginTop: 6 }} aria-label="Motivo do ajuste" />
       {feito && <div style={{ fontSize: 11.5, color: C.green, marginTop: 6 }}>{feito}</div>}
       <div style={{ fontSize: 10.5, color: C.text4, marginTop: 6 }}>{mov} movimentação(ões) registradas.</div>
+      <HorasSalaMes cli={cli} />
+    </div>
+  );
+}
+
+// Cliente antigo (sem assinatura pelo site) tem saldo zero de horas: a equipe
+// lança as horas de sala do mês. Grava em creditos_ledger (auditado no banco) e
+// a reserva pela recepção consome essas horas antes de cobrar excedente.
+const TIPOS_HORAS = { sala_reuniao: "Sala de reunião", coworking: "Coworking (estação compartilhada)" };
+const mesAtualISO = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }).slice(0, 7);
+const mesBR = (iso) => { const [a, m] = String(iso).split("-"); return `${m}/${a}`; };
+
+function HorasSalaMes({ cli }) {
+  const { lancarHorasSalaMes, ledgerDe, saldoCreditos } = useStore();
+  const [f, setF] = useState({ tipo: "sala_reuniao", horas: "", mes: mesAtualISO(), motivo: "" });
+  const [estado, setEstado] = useState({ salvando: false, erro: "", ok: "" });
+  const [repetido, setRepetido] = useState(null); // lançamentos anteriores do mesmo mês/tipo
+  const horas = Math.floor(Number(f.horas));
+  const valido = horas > 0 && horas <= 200 && /^\d{4}-\d{2}$/.test(f.mes) && f.motivo.trim().length >= 5;
+  const referencia = `horas_mes:${f.mes}:${f.tipo}`;
+
+  const gravar = async () => {
+    setRepetido(null);
+    setEstado({ salvando: true, erro: "", ok: "" });
+    try {
+      await lancarHorasSalaMes(cli, f.tipo, horas, `Horas de sala ${mesBR(f.mes)} · ${f.motivo.trim()}`, referencia);
+      setEstado({ salvando: false, erro: "", ok: `${horas} h de ${TIPOS_HORAS[f.tipo].toLowerCase()} lançadas para ${mesBR(f.mes)}.` });
+      setF((p) => ({ ...p, horas: "", motivo: "" }));
+    } catch (e) {
+      setEstado({ salvando: false, erro: mensagemDe(e, "Não foi possível lançar as horas. Nada foi gravado; tente de novo."), ok: "" });
+    }
+  };
+  const pedirLancamento = () => {
+    if (!valido || estado.salvando) return;
+    const anteriores = ledgerDe(cli.id).filter((e) => e.referenciaId === referencia);
+    if (anteriores.length) { setRepetido(anteriores); return; }
+    gravar();
+  };
+
+  return (
+    <div style={{ marginTop: 14, background: C.cream, borderRadius: 12, padding: 12 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Lançar horas de sala do mês</div>
+      <div style={{ fontSize: 11.5, color: C.text3, margin: "2px 0 10px" }}>
+        Para cliente antigo, sem assinatura pelo site. Saldo atual: {saldoCreditos(cli.id, f.tipo)} h de {TIPOS_HORAS[f.tipo].toLowerCase()}.
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 0.8fr 1fr", gap: 6 }}>
+        <select value={f.tipo} onChange={(e) => setF({ ...f, tipo: e.target.value })} style={{ ...inp, padding: "8px 10px" }} aria-label="Tipo de sala">
+          {Object.entries(TIPOS_HORAS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+        <input type="number" min="1" max="200" step="1" value={f.horas} onChange={(e) => setF({ ...f, horas: e.target.value })} placeholder="Horas" style={{ ...inp, padding: "8px 10px" }} aria-label="Quantidade de horas" />
+        <input type="month" value={f.mes} onChange={(e) => setF({ ...f, mes: e.target.value })} style={{ ...inp, padding: "8px 10px" }} aria-label="Mês de referência" />
+      </div>
+      <input value={f.motivo} onChange={(e) => setF({ ...f, motivo: e.target.value })} maxLength={200} placeholder="Motivo (ex.: contrato antigo prevê 4 h/mês)" style={{ ...inp, padding: "8px 10px", marginTop: 6 }} aria-label="Motivo do lançamento" />
+      {!cli.email && (
+        <div style={{ fontSize: 11.5, color: C.amber, marginTop: 6 }}>
+          Cliente sem e-mail: as horas valem nas reservas feitas pela recepção, mas o cliente não as vê no app.
+        </div>
+      )}
+      {repetido && (
+        <div role="alert" style={{ fontSize: 12, color: C.amber, background: C.amberPale, borderRadius: 8, padding: "8px 10px", marginTop: 8 }}>
+          Já foram lançadas {repetido.reduce((s, e) => s + (e.quantidade || 0), 0)} h de {TIPOS_HORAS[f.tipo].toLowerCase()} em {mesBR(f.mes)} para este cliente. Lançar mais {horas} h mesmo assim?
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <button type="button" onClick={gravar} style={{ fontSize: 12, fontWeight: 600, color: "#fff", background: C.amber, border: "none", borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>Lançar mesmo assim</button>
+            <button type="button" onClick={() => setRepetido(null)} style={{ fontSize: 12, fontWeight: 600, color: C.text2, background: "#fff", border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>Cancelar</button>
+          </div>
+        </div>
+      )}
+      <Btn variant="teal" style={{ width: "100%", marginTop: 8, fontSize: 13, padding: "9px 12px", opacity: valido ? 1 : 0.5 }} disabled={estado.salvando || !!repetido} onClick={pedirLancamento}>
+        {estado.salvando ? "Lançando…" : "Lançar horas"}
+      </Btn>
+      {!valido && (f.horas || f.motivo) && <div style={{ fontSize: 11, color: C.text4, marginTop: 5 }}>Informe as horas (1 a 200) e o motivo (mínimo 5 letras).</div>}
+      {estado.erro && <div role="alert" style={{ fontSize: 12, color: C.red, marginTop: 6 }}>{estado.erro}</div>}
+      {estado.ok && <div role="status" style={{ fontSize: 12, color: C.green, marginTop: 6 }}>{estado.ok}</div>}
     </div>
   );
 }

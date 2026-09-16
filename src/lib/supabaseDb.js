@@ -212,6 +212,12 @@ export async function insertCreditoDb(entry) {
   if (!entry?.id || !entry?.unidadeId) return null;
   return await writeJson("creditos_ledger", "POST", creditoToRow(entry), "return=minimal");
 }
+/** Igual a insertCreditoDb, mas LANÇA em falha: para a tela confirmar que gravou
+ *  (lançamento de horas do mês). O gatilho do banco registra a auditoria. */
+export async function inserirCreditoOuFalhar(entry) {
+  if (!entry?.id || !entry?.unidadeId) throw new Error("Lançamento sem cliente ou unidade.");
+  return writeOrThrow("creditos_ledger", "POST", creditoToRow(entry), "return=minimal");
+}
 
 // Sala (camelCase do store) → linha da tabela relacional salas.
 function salaToRow(s) {

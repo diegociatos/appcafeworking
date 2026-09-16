@@ -19,7 +19,7 @@ import { boletosApi } from "./boletosApi.js";
 import { nfseApi } from "./nfseApi.js";
 import {
   upsertConfigFiscal, insertCliente, patchCliente, deleteClienteDb,
-  putAppState, delAppState, upsertSalaDb, deleteSalaDb, insertCreditoDb,
+  putAppState, delAppState, upsertSalaDb, deleteSalaDb, insertCreditoDb, inserirCreditoOuFalhar,
 } from "./supabaseDb.js";
 import { getCurrentCompetencia, parseDateToCompetencia } from "./dateUtils.js";
 import { legacyReservaToDateRange, dateRangeToLegacy, temConflito, TZ } from "./reservas.js";
@@ -420,6 +420,8 @@ export function StoreProvider({ children }) {
       ...r, id: resp.reserva.id, unidadeId, startAt, endAt, base: r.base ?? null,
       status: "confirmada", valor: valorFinal, origem: r.origem || "recepcao",
       paymentStatus: resp.reserva.payment_status || "pendente", vista: (r.origem || "recepcao") !== "app",
+      // horas cobertas pelo plano e excedente a cobrar (mostrado no detalhe da reserva)
+      ...(resp.credito ? { credito: resp.credito } : {}),
     };
     setReservas((rs) => [...rs, nova]);
     // Reflete o consumo de crédito no ledger local (o débito já foi gravado no
@@ -884,6 +886,20 @@ export function StoreProvider({ children }) {
   };
   const ajustarCredito = (unidadeId, clienteId, tipo, quantidade, motivo) =>
     lancarCredito(unidadeId, clienteId, tipo, quantidade, "ajuste_manual", motivo);
+  // Horas de sala do mês para cliente antigo (sem assinatura online). Diferente
+  // do lancarCredito, espera o banco gravar e lança o erro para a tela mostrar.
+  // referenciaId = "horas_mes:AAAA-MM:tipo" (a tela avisa lançamento repetido).
+  const lancarHorasSalaMes = async (cliente, tipo, horas, motivo, referenciaId) => {
+    const reg = {
+      id: "cl_" + Date.now() + Math.floor(Math.random() * 1000), unidadeId: cliente.unidadeId, clienteId: cliente.id,
+      clienteEmail: (cliente.email || "").trim().toLowerCase() || null, tipo,
+      quantidade: horas, saldoApos: saldoCreditos(cliente.id, tipo) + horas,
+      origem: "horas_mes", motivo, referenciaId, createdAt: new Date().toISOString(),
+    };
+    if (REAL) await inserirCreditoOuFalhar(reg);
+    setCreditLedger((ls) => [reg, ...ls]);
+    return reg;
+  };
 
   // Boletos / contas bancárias --------------------------------------------
   // ⚠️ Demonstração: em produção, addBankAccount manda a credencial pro Vault
@@ -1302,7 +1318,7 @@ export function StoreProvider({ children }) {
       configFiscal, configFiscalDe, updateConfigFiscal, salvarConfigFiscal, notasFiscais, notasFiscaisDe, emitirNFSe, cancelarNF, salvarCertificadoFiscal,
       planos, planosDe, addPlano, updatePlano, removePlano,
       recibos, recibosDe, emitirRecibo, removeRecibo,
-      creditLedger, CREDITO_TIPOS, ledgerDe, saldoCreditos, saldosCliente, concederCreditosPlano, consumirCredito, ajustarCredito,
+      creditLedger, CREDITO_TIPOS, ledgerDe, saldoCreditos, saldosCliente, concederCreditosPlano, consumirCredito, ajustarCredito, lancarHorasSalaMes,
       configVenda, setConfigVenda,
       syncErrors,
     }),
