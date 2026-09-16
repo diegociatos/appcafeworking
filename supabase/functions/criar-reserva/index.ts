@@ -77,12 +77,31 @@ Deno.serve(async (req) => {
     let clienteNome = String(b.cliente_nome).slice(0, 200);
     let clienteId: string | null = b.cliente_id ?? null;
 
+    // Reserva da equipe para cliente do cadastro: o saldo também conta os
+    // lançamentos pelo id do cadastro (cliente antigo sem e-mail, ou horas do
+    // mês lançadas antes de o e-mail ser cadastrado). O id precisa ser da unidade.
+    let idDoCadastro: string | null = null;
+    if (!comoCliente && clienteId) {
+      const { data: cadId } = await admin.from("clientes").select("id")
+        .eq("id", clienteId).eq("unidade_id", b.unidade_id).maybeSingle();
+      idDoCadastro = cadId?.id ?? null;
+    }
+
     // Saldo de horas do plano (antes de reservar, para o cliente não reservar sem cobertura).
     const saldoDoPlano = async () => {
-      if (!alvoEmail || !tipoCred) return 0;
-      const { data: movs } = await admin.from("creditos_ledger").select("quantidade")
-        .eq("unidade_id", b.unidade_id).ilike("cliente_email", padraoEmail(alvoEmail)).eq("tipo", tipoCred);
-      return (movs || []).reduce((s: number, m: { quantidade: number }) => s + Number(m.quantidade || 0), 0);
+      if (!tipoCred || (!alvoEmail && !idDoCadastro)) return 0;
+      const movs = new Map<string, number>(); // por id do lançamento: sem contar duas vezes
+      if (alvoEmail) {
+        const { data } = await admin.from("creditos_ledger").select("id, quantidade")
+          .eq("unidade_id", b.unidade_id).ilike("cliente_email", padraoEmail(alvoEmail)).eq("tipo", tipoCred);
+        for (const m of data || []) movs.set(m.id, Number(m.quantidade || 0));
+      }
+      if (idDoCadastro) {
+        const { data } = await admin.from("creditos_ledger").select("id, quantidade")
+          .eq("unidade_id", b.unidade_id).eq("cliente_id", idDoCadastro).eq("tipo", tipoCred);
+        for (const m of data || []) movs.set(m.id, Number(m.quantidade || 0));
+      }
+      return [...movs.values()].reduce((s, q) => s + q, 0);
     };
 
     if (comoCliente) {
@@ -139,14 +158,14 @@ Deno.serve(async (req) => {
     // Nunca derruba a reserva: qualquer erro aqui apenas mantém o valor cheio.
     let credito: Record<string, unknown> | null = null;
     try {
-      if (alvoEmail && tipoCred) {
+      if ((alvoEmail || idDoCadastro) && tipoCred) {
         const horas = Math.max(1, Math.ceil((new Date(b.end_at).getTime() - new Date(b.start_at).getTime()) / 3_600_000));
         const saldo = await saldoDoPlano();
         const calc = calcularReserva(horas, saldo, valorHora);
         if (calc.cobertas > 0) {
           await admin.from("creditos_ledger").insert({
             id: "cl_" + Date.now() + Math.floor(Math.random() * 1000),
-            unidade_id: b.unidade_id, cliente_id: clienteId, cliente_email: alvoEmail,
+            unidade_id: b.unidade_id, cliente_id: clienteId, cliente_email: alvoEmail || null,
             tipo: tipoCred, quantidade: -calc.cobertas, saldo_apos: saldo - calc.cobertas,
             origem: "consumo", motivo: `Reserva ${sala.nome || sala.tipo || ""}`.trim(), referencia_id: data?.id ?? null,
             created_by: auth.user.id,

@@ -19,7 +19,7 @@ import { boletosApi } from "./boletosApi.js";
 import { nfseApi } from "./nfseApi.js";
 import {
   upsertConfigFiscal, insertCliente, patchCliente, deleteClienteDb,
-  putAppState, delAppState, upsertSalaDb, deleteSalaDb, insertCreditoDb,
+  putAppState, delAppState, upsertSalaDb, deleteSalaDb, insertCreditoDb, inserirCreditoOuFalhar,
 } from "./supabaseDb.js";
 import { getCurrentCompetencia, parseDateToCompetencia, anoDoLancamento } from "./dateUtils.js";
 import { legacyReservaToDateRange, dateRangeToLegacy, temConflito, TZ } from "./reservas.js";
@@ -29,7 +29,7 @@ import { mapCobrancaDb } from "./recebimentosOnline.js";
 import {
   PERFIS, SECOES, gerarDadosBoleto,
   seedUnidades, seedFranqueados, seedUsuarios, seedContas, seedLancamentos,
-  seedCategorias, seedCatalogo, seedCorresp, seedConversas, seedPedidos,
+  seedCategorias, seedCatalogo, seedCorresp, seedPedidos,
   seedSalas, seedProdutos, seedBankAccounts, seedBoletos, seedContratos,
   seedEstoque, seedPatrimonio, seedConfigFiscal, seedNotasFiscais, seedPlanos,
 } from "./storeSeeds.js";
@@ -69,7 +69,6 @@ export function StoreProvider({ children }) {
   const [categorias, setCategorias] = useState(seedCategorias);   // chart of accounts (global) — mantém
   const [pedidos, setPedidos] = useState(seedOr(seedPedidos));
   const [correspondencias, setCorrespondencias] = useState(seedOr(seedCorresp));
-  const [conversas, setConversas] = useState(seedOr(seedConversas));
   const [salas, setSalas] = useState(seedOr(seedSalas));
   const [produtos, setProdutos] = useState(seedProdutos);
   const [bankAccounts, setBankAccounts] = useState(seedOr(seedBankAccounts));
@@ -199,7 +198,6 @@ export function StoreProvider({ children }) {
   useSync("contratos", contratos);
   useSync("correspondencias", correspondencias);
   useSync("pedidos", pedidos);
-  useSync("conversas", conversas);
   useSync("leads", leads);
   useSync("eventos", eventos);
   useSync("planos", planos);
@@ -427,6 +425,8 @@ export function StoreProvider({ children }) {
       ...r, id: resp.reserva.id, unidadeId, startAt, endAt, base: r.base ?? null,
       status: "confirmada", valor: valorFinal, origem: r.origem || "recepcao",
       paymentStatus: resp.reserva.payment_status || "pendente", vista: (r.origem || "recepcao") !== "app",
+      // horas cobertas pelo plano e excedente a cobrar (mostrado no detalhe da reserva)
+      ...(resp.credito ? { credito: resp.credito } : {}),
     };
     setReservas((rs) => [...rs, nova]);
     // Reflete o consumo de crédito no ledger local (o débito já foi gravado no
@@ -519,7 +519,8 @@ export function StoreProvider({ children }) {
     setCorrespondencias((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } : c)));
   /**
    * "Notificar cliente": manda o e-mail de correspondência de verdade e só marca
-   * como notificada quando o envio deu certo. Devolve o resultado para a tela.
+   * como notificada quando o e-mail saiu de verdade (na demonstração nada sai,
+   * então não marca). Devolve o resultado para a tela.
    */
   const notificarCorrespondencia = async (id) => {
     const co = correspondencias.find((c) => c.id === id);
@@ -528,7 +529,7 @@ export function StoreProvider({ children }) {
       cliente: co.cliente, clienteId: co.clienteId, email: co.clienteEmail, evento: "correspondencia",
       dados: { remetente: co.remetente, tipo: co.tipo },
     });
-    if (r.status === "enviado" || r.status === "demonstracao") {
+    if (r.status === "enviado") {
       updateCorrespondencia(id, { status: "notificado", urgente: false, notificadoEm: new Date().toISOString() });
     }
     return r;
@@ -545,20 +546,6 @@ export function StoreProvider({ children }) {
   };
   const updateEvento = (id, patch) => setEventos((es) => es.map((e) => (e.id === id ? { ...e, ...patch } : e)));
   const removeEvento = (id) => setEventos((es) => es.filter((e) => e.id !== id));
-
-  // Chat / conversas (cliente <-> recepção) --------------------------------
-  const conversasDe = (unidadeId) => conversas.filter((c) => c.unidadeId === unidadeId);
-  const enviarMensagemCliente = (unidadeId, cliente, txt) => {
-    setConversas((cs) => {
-      const existe = cs.find((c) => c.unidadeId === unidadeId && c.cliente === cliente);
-      if (existe) {
-        return cs.map((c) => (c.id === existe.id ? { ...c, online: true, unread: (c.unread || 0) + 1, msgs: [...c.msgs, { de: "cli", txt, h: "agora" }] } : c));
-      }
-      return [...cs, { id: "cv" + Date.now(), unidadeId, cliente, online: true, unread: 1, msgs: [{ de: "cli", txt, h: "agora" }] }];
-    });
-  };
-  const responderConversa = (id, txt) => setConversas((cs) => cs.map((c) => (c.id === id ? { ...c, msgs: [...c.msgs, { de: "adm", txt, h: "Agora" }] } : c)));
-  const marcarConversaLida = (id) => setConversas((cs) => cs.map((c) => (c.id === id ? { ...c, unread: 0 } : c)));
 
   // Financeiro: contas bancárias -------------------------------------------
   const addConta = (unidadeId, c) => setContas((cs) => [...cs, { id: "cb" + Date.now() + Math.floor(Math.random() * 1000), unidadeId, saldo: 0, ...c }]);
@@ -921,6 +908,20 @@ export function StoreProvider({ children }) {
   };
   const ajustarCredito = (unidadeId, clienteId, tipo, quantidade, motivo) =>
     lancarCredito(unidadeId, clienteId, tipo, quantidade, "ajuste_manual", motivo);
+  // Horas de sala do mês para cliente antigo (sem assinatura online). Diferente
+  // do lancarCredito, espera o banco gravar e lança o erro para a tela mostrar.
+  // referenciaId = "horas_mes:AAAA-MM:tipo" (a tela avisa lançamento repetido).
+  const lancarHorasSalaMes = async (cliente, tipo, horas, motivo, referenciaId) => {
+    const reg = {
+      id: "cl_" + Date.now() + Math.floor(Math.random() * 1000), unidadeId: cliente.unidadeId, clienteId: cliente.id,
+      clienteEmail: (cliente.email || "").trim().toLowerCase() || null, tipo,
+      quantidade: horas, saldoApos: saldoCreditos(cliente.id, tipo) + horas,
+      origem: "horas_mes", motivo, referenciaId, createdAt: new Date().toISOString(),
+    };
+    if (REAL) await inserirCreditoOuFalhar(reg);
+    setCreditLedger((ls) => [reg, ...ls]);
+    return reg;
+  };
 
   // Boletos / contas bancárias --------------------------------------------
   // ⚠️ Demonstração: em produção, addBankAccount manda a credencial pro Vault
@@ -1242,7 +1243,7 @@ export function StoreProvider({ children }) {
       apply("contas", setContas); apply("catalogo", setCatalogo); apply("estoque", setEstoque);
       apply("patrimonio", setPatrimonio); apply("contratos", setContratos);
       apply("correspondencias", setCorrespondencias); apply("pedidos", setPedidos);
-      apply("conversas", setConversas); apply("leads", setLeads); apply("eventos", setEventos);
+      apply("leads", setLeads); apply("eventos", setEventos);
       apply("planos", setPlanos); apply("recibos", setRecibos);
       // Docs globais (doc único) — carrega UMA VEZ por carregamento de página.
       // Re-hidratações (refresh de sessão) NÃO recarregam, para não sobrescrever
@@ -1325,7 +1326,6 @@ export function StoreProvider({ children }) {
       addReserva, criarReserva, removeReserva, marcarReservasVistas,
       pedidos, addPedido, updatePedido, removePedido, pedidosDe,
       correspondencias, addCorrespondencia, updateCorrespondencia, notificarCorrespondencia, removeCorrespondencia, correspondenciasDe,
-      conversas, conversasDe, enviarMensagemCliente, responderConversa, marcarConversaLida,
       salasDe, produtosDe, unidadesDe,
       contas, lancamentos, catalogo, categorias,
       addConta, updateConta, removeConta, contasDe,
@@ -1343,7 +1343,7 @@ export function StoreProvider({ children }) {
       cobrancas, cobrancasDe,
       planos, planosDe, addPlano, updatePlano, removePlano,
       recibos, recibosDe, emitirRecibo, removeRecibo,
-      creditLedger, CREDITO_TIPOS, ledgerDe, saldoCreditos, saldosCliente, concederCreditosPlano, consumirCredito, ajustarCredito,
+      creditLedger, CREDITO_TIPOS, ledgerDe, saldoCreditos, saldosCliente, concederCreditosPlano, consumirCredito, ajustarCredito, lancarHorasSalaMes,
       configVenda, setConfigVenda,
       syncErrors,
     }),
@@ -1351,7 +1351,7 @@ export function StoreProvider({ children }) {
     // memorizamos o value apenas pelos ESTADOS. Incluir as funções nas deps
     // anularia o useMemo (novo objeto a cada render) — comportamento indesejado.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, configFiscal, notasFiscais, cobrancas, planos, recibos, creditLedger, configVenda, syncErrors, reservas, leads, crmEtapas, crmOrigens, cobrancaTemplate, eventos, pedidos, correspondencias, conversas, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail]
+    [unidades, franqueados, usuarios, clientes, salas, produtos, bankAccounts, boletos, contratos, estoque, patrimonio, configFiscal, notasFiscais, cobrancas, planos, recibos, creditLedger, configVenda, syncErrors, reservas, leads, crmEtapas, crmOrigens, cobrancaTemplate, eventos, pedidos, correspondencias, contas, lancamentos, catalogo, categorias, activeUnit, viewAs, perfil, meuPerfil, notificacaoPrefs, notificacoesEmail]
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

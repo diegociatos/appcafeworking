@@ -14,7 +14,7 @@ const ROLE_NOTA = { contabilidade: "Login externo da contabilidade: não vê fin
 const MOD_LABEL = {
   dash: "Dashboard", franqueados: "Franquias", crm: "CRM", unidades: "Unidades",
   reservas: "Reservas", corresp: "Correspondências", pdv: "Cafeteria/PDV", clientes: "Clientes",
-  chat: "Chat", financeiro: "Financeiro", eventos: "Eventos", equipe: "Equipe", area: "Portal do cliente",
+  financeiro: "Financeiro", eventos: "Eventos", equipe: "Equipe", area: "Portal do cliente",
   aberturas: "Abertura de empresas", assinaturas: "Assinaturas", planos: "Planos", salas: "Salas",
 };
 

@@ -1,28 +1,95 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Plus, Users, Briefcase, ChevronRight, ChevronLeft, FileText,
   Building, Mail, Phone, Upload, Download, FileCheck, FileClock,
-  AlertCircle, MapPin, Edit3, Trash2, Search, X,
+  AlertCircle, MapPin, Edit3, Trash2, Search, X, Send, Smartphone, Clock,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Empty, Modal, Field, ConfirmDialog } from "../components/ui.jsx";
 import { C, serif, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 import { buscarCnpj, buscarCep } from "../lib/lookup.js";
 import { textoDesde } from "../lib/unidadeNome.js";
+import { acessoClienteApi, situacaoAcesso } from "../lib/acessoClienteApi.js";
+import { mensagemDe } from "../lib/erros.js";
+
+// Quem envia o acesso ao app (a Edge Function confere de novo): admin, master e recepção.
+const PERFIS_QUE_CONVIDAM = ["franqueador", "master", "recepcao"];
+const dataCurta = (iso) => (iso ? new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "");
+const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export default function Clientes() {
-  const { clientes, addCliente, updateCliente, removeCliente, unidades, planosDe } = useStore();
+  const { clientes, addCliente, updateCliente, removeCliente, unidades, planosDe, perfil } = useStore();
   const [sel, setSel] = useState(null);
   const [editar, setEditar] = useState(null); // null | {} novo | cliente em edição
   const [excluir, setExcluir] = useState(null);
   const [busca, setBusca] = useState("");
+
+  // Acesso ao app: quem já tem login (por unidade) e envio do convite.
+  const podeConvidar = acessoClienteApi.configured && PERFIS_QUE_CONVIDAM.includes(perfil);
+  const [acessos, setAcessos] = useState(null); // Map "unidade|email" → situação | null (não carregado)
+  const [erroAcessos, setErroAcessos] = useState("");
+  const [versaoAcessos, setVersaoAcessos] = useState(0);
+  const [convites, setConvites] = useState({}); // clienteId → { enviando } | { ok, msg }
+  const [confirmarLote, setConfirmarLote] = useState(false);
+  const [lote, setLote] = useState(null); // { total, feitos, falhas: [{ nome, erro }], rodando }
+  const unidadesDosClientes = [...new Set(clientes.map((c) => c.unidadeId).filter(Boolean))].sort().join("|");
+  useEffect(() => {
+    if (!acessoClienteApi.configured || perfil === "cliente" || !unidadesDosClientes) return undefined;
+    let vivo = true;
+    Promise.all(unidadesDosClientes.split("|").map((u) => acessoClienteApi.acessos(u)))
+      .then((mapas) => {
+        if (!vivo) return;
+        const todos = new Map();
+        mapas.forEach((m) => m.forEach((v, k) => todos.set(k, v)));
+        setAcessos(todos); setErroAcessos("");
+      })
+      .catch((e) => { if (vivo) { setAcessos(null); setErroAcessos(mensagemDe(e)); } });
+    return () => { vivo = false; };
+  }, [unidadesDosClientes, versaoAcessos, perfil]);
+
+  const convidar = async (c) => {
+    setConvites((s) => ({ ...s, [c.id]: { enviando: true } }));
+    try {
+      await acessoClienteApi.convidar(c.id);
+      setConvites((s) => ({ ...s, [c.id]: { ok: true, msg: `Acesso enviado para ${c.email}.` } }));
+      setVersaoAcessos((v) => v + 1);
+    } catch (e) {
+      setConvites((s) => ({ ...s, [c.id]: { ok: false, msg: mensagemDe(e) } }));
+    }
+  };
+  const semAcesso = acessos ? clientes.filter((c) => situacaoAcesso(c, acessos).tipo === "sem_acesso") : [];
+  const enviarLote = async () => {
+    setConfirmarLote(false);
+    const alvo = semAcesso.slice();
+    setLote({ total: alvo.length, feitos: 0, falhas: [], rodando: true });
+    for (const c of alvo) {
+      try {
+        await acessoClienteApi.convidar(c.id);
+        setLote((l) => ({ ...l, feitos: l.feitos + 1 }));
+      } catch (e) {
+        setLote((l) => ({ ...l, feitos: l.feitos + 1, falhas: [...l.falhas, { nome: c.nome, erro: mensagemDe(e) }] }));
+      }
+      await esperar(600); // respeita o limite de envios por segundo do provedor de e-mail
+    }
+    setLote((l) => ({ ...l, rodando: false }));
+    setVersaoAcessos((v) => v + 1);
+  };
+
   const cli = clientes.find((c) => c.id === sel);
   const termo = busca.trim().toLowerCase();
   const lista = clientes
     .filter((c) => !termo || `${c.nome || ""} ${c.cnpj || ""} ${c.plano || ""}`.toLowerCase().includes(termo))
     .slice()
     .sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"));
-  if (cli) return <ClienteDetalhe cli={cli} onBack={() => setSel(null)} onEditar={() => { setSel(null); setEditar(cli); }} onExcluir={() => { setSel(null); setExcluir(cli); }} />;
+  if (cli) {
+    return (
+      <ClienteDetalhe
+        cli={cli} onBack={() => setSel(null)} onEditar={() => { setSel(null); setEditar(cli); }} onExcluir={() => { setSel(null); setExcluir(cli); }}
+        acesso={acessos ? situacaoAcesso(cli, acessos) : { tipo: cli.email ? "desconhecido" : "sem_email" }}
+        podeConvidar={podeConvidar} convite={convites[cli.id]} onConvidar={() => convidar(cli)}
+      />
+    );
+  }
 
   return (
     <div>
@@ -30,11 +97,40 @@ export default function Clientes() {
         title="Clientes"
         sub="Contratos, planos, documentos, faturas, reservas e histórico completo."
         action={
-          <Btn onClick={() => setEditar({})}>
-            <Plus size={16} /> Novo cliente
-          </Btn>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            {podeConvidar && semAcesso.length > 0 && (
+              <Btn variant="ghost" disabled={lote?.rodando} onClick={() => setConfirmarLote(true)}>
+                <Send size={15} /> Enviar acesso a todos com e-mail e sem login ({semAcesso.length})
+              </Btn>
+            )}
+            <Btn onClick={() => setEditar({})}>
+              <Plus size={16} /> Novo cliente
+            </Btn>
+          </div>
         }
       />
+      {podeConvidar && erroAcessos && (
+        <div role="status" style={{ fontSize: 12.5, color: C.amber, marginBottom: 12 }}>
+          Não foi possível verificar quem já tem acesso ao app: {erroAcessos}
+        </div>
+      )}
+      {lote && (
+        <Card style={{ marginBottom: 14, padding: 14 }}>
+          <div role="status" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 13.5, color: C.text2 }}>
+              {lote.rodando
+                ? <>Enviando acesso ao app… <b>{lote.feitos}</b> de <b>{lote.total}</b></>
+                : <>Envio concluído: <b style={{ color: C.green }}>{lote.total - lote.falhas.length}</b> enviado(s){lote.falhas.length ? <>, <b style={{ color: C.red }}>{lote.falhas.length}</b> com problema</> : ""}.</>}
+            </div>
+            {!lote.rodando && <button type="button" onClick={() => setLote(null)} className="cw-btn" aria-label="Fechar resumo do envio" style={{ color: C.text3, padding: 4 }}><X size={15} /></button>}
+          </div>
+          {lote.falhas.length > 0 && (
+            <ul style={{ margin: "8px 0 0", paddingLeft: 18, fontSize: 12.5, color: C.red }}>
+              {lote.falhas.map((f, i) => <li key={i}><b>{f.nome}</b>: {f.erro}</li>)}
+            </ul>
+          )}
+        </Card>
+      )}
       {clientes.length > 0 && (
         <div style={{ position: "relative", marginBottom: 14 }}>
           <Search size={16} color={C.text4} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
@@ -53,6 +149,8 @@ export default function Clientes() {
       <Card style={{ padding: 0, overflow: "hidden" }}>
         {lista.map((c, i) => {
           const novos = c.docs.filter((d) => d.status === "novo").length;
+          const acesso = acessos ? situacaoAcesso(c, acessos) : null;
+          const convite = convites[c.id];
           return (
             <div
               key={c.id}
@@ -88,6 +186,9 @@ export default function Clientes() {
                 <div style={{ fontSize: 12, color: C.text3 }}>
                   CNPJ {c.cnpj} · desde {textoDesde(c.desde)}
                 </div>
+                {convite?.msg && !convite.enviando && (
+                  <div role="status" style={{ fontSize: 12, marginTop: 3, color: convite.ok ? C.green : C.red }}>{convite.msg}</div>
+                )}
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <Badge color={C.cafe}>{c.plano}</Badge>
@@ -103,8 +204,15 @@ export default function Clientes() {
                 >
                   {c.status}
                 </Badge>
+                <BadgeAcesso acesso={acesso} />
               </div>
-              <div style={{ display: "flex", gap: 2 }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: "flex", gap: 2, alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
+                {podeConvidar && acesso?.tipo === "sem_acesso" && (
+                  <button onClick={() => convidar(c)} disabled={convite?.enviando || lote?.rodando} title={convite?.msg || "Enviar acesso ao app"} aria-label={`Enviar acesso ao app para ${c.nome}`} className="cw-btn"
+                    style={{ color: convite && !convite.enviando ? (convite.ok ? C.green : C.red) : C.teal, padding: 6, opacity: convite?.enviando ? 0.5 : 1 }}>
+                    <Send size={16} />
+                  </button>
+                )}
                 <button onClick={() => setEditar(c)} title="Editar" aria-label={`Editar ${c.nome}`} className="cw-btn" style={{ color: C.text3, padding: 6 }}><Edit3 size={16} /></button>
                 <button onClick={() => setExcluir(c)} title="Excluir" aria-label={`Excluir ${c.nome}`} className="cw-btn" style={{ color: C.red, padding: 6 }}><Trash2 size={16} /></button>
               </div>
@@ -128,6 +236,56 @@ export default function Clientes() {
         onConfirmar={() => { removeCliente(excluir.id); setExcluir(null); }}
         onCancelar={() => setExcluir(null)}
       />
+
+      <ConfirmDialog
+        aberto={confirmarLote}
+        perigo={false}
+        titulo="Enviar acesso ao app?"
+        mensagem={`${semAcesso.length} cliente(s) com e-mail e sem login vão receber um e-mail para criar a senha e entrar no app. Quem já tem acesso não recebe de novo. Clientes sem e-mail ficam de fora.`}
+        textoConfirmar={`Enviar para ${semAcesso.length}`}
+        onConfirmar={enviarLote}
+        onCancelar={() => setConfirmarLote(false)}
+      />
+    </div>
+  );
+}
+
+function BadgeAcesso({ acesso }) {
+  if (!acesso) return null;
+  if (acesso.tipo === "ativo") return <Badge color={C.green} bg={C.greenPale}><Smartphone size={11} /> Usa o app</Badge>;
+  if (acesso.tipo === "convidado") return <Badge color={C.blue} bg={C.bluePale}><Clock size={11} /> Acesso enviado</Badge>;
+  if (acesso.tipo === "sem_acesso") return <Badge color={C.text3} bg={C.cream2}>Sem acesso ao app</Badge>;
+  return null;
+}
+
+function AcessoApp({ cli, acesso, podeConvidar, convite, onConvidar }) {
+  const texto = {
+    ativo: `Usa o app. Último acesso em ${dataCurta(acesso.ultimoLogin)}.`,
+    convidado: acesso.convidadoEm
+      ? `Acesso enviado em ${dataCurta(acesso.convidadoEm)}. O cliente ainda não entrou.`
+      : "Tem login, mas ainda não entrou no app.",
+    sem_acesso: "Ainda não tem acesso ao app.",
+    sem_email: "Sem e-mail no cadastro. Cadastre o e-mail para enviar o acesso ao app.",
+    desconhecido: "Não foi possível verificar o acesso ao app agora.",
+  }[acesso.tipo];
+  const botao = podeConvidar && (acesso.tipo === "sem_acesso" || acesso.tipo === "convidado");
+  return (
+    <div style={{ marginTop: 16, borderTop: `1px solid ${C.border2}`, paddingTop: 14 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: C.text3, letterSpacing: 0.3, marginBottom: 8 }}>ACESSO AO APP</div>
+      <div style={{ fontSize: 13, color: acesso.tipo === "sem_email" ? C.amber : C.text2 }}>{texto}</div>
+      {botao && (
+        <Btn variant={acesso.tipo === "sem_acesso" ? "teal" : "ghost"} style={{ width: "100%", marginTop: 10, fontSize: 13, padding: "9px 12px" }} disabled={convite?.enviando} onClick={onConvidar}>
+          <Send size={14} /> {convite?.enviando ? "Enviando…" : acesso.tipo === "sem_acesso" ? "Enviar acesso ao app" : "Reenviar acesso"}
+        </Btn>
+      )}
+      {botao && !convite && (
+        <div style={{ fontSize: 11, color: C.text4, marginTop: 6 }}>
+          {cli.nome} recebe em {cli.email} um e-mail para criar a senha e ver plano, faturas, reservas e correspondências.
+        </div>
+      )}
+      {convite && !convite.enviando && (
+        <div role="status" style={{ fontSize: 12, marginTop: 8, color: convite.ok ? C.green : C.red }}>{convite.msg}</div>
+      )}
     </div>
   );
 }
@@ -270,11 +428,84 @@ function CreditosCliente({ cli }) {
       <input value={aj.motivo} onChange={(e) => setAj({ ...aj, motivo: e.target.value })} placeholder="Motivo do ajuste (auditável)" style={{ ...inp, padding: "8px 10px", marginTop: 6 }} aria-label="Motivo do ajuste" />
       {feito && <div style={{ fontSize: 11.5, color: C.green, marginTop: 6 }}>{feito}</div>}
       <div style={{ fontSize: 10.5, color: C.text4, marginTop: 6 }}>{mov} movimentação(ões) registradas.</div>
+      <HorasSalaMes cli={cli} />
     </div>
   );
 }
 
-function ClienteDetalhe({ cli, onBack, onEditar, onExcluir }) {
+// Cliente antigo (sem assinatura pelo site) tem saldo zero de horas: a equipe
+// lança as horas de sala do mês. Grava em creditos_ledger (auditado no banco) e
+// a reserva pela recepção consome essas horas antes de cobrar excedente.
+const TIPOS_HORAS = { sala_reuniao: "Sala de reunião", coworking: "Coworking (estação compartilhada)" };
+const mesAtualISO = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }).slice(0, 7);
+const mesBR = (iso) => { const [a, m] = String(iso).split("-"); return `${m}/${a}`; };
+
+function HorasSalaMes({ cli }) {
+  const { lancarHorasSalaMes, ledgerDe, saldoCreditos } = useStore();
+  const [f, setF] = useState({ tipo: "sala_reuniao", horas: "", mes: mesAtualISO(), motivo: "" });
+  const [estado, setEstado] = useState({ salvando: false, erro: "", ok: "" });
+  const [repetido, setRepetido] = useState(null); // lançamentos anteriores do mesmo mês/tipo
+  const horas = Math.floor(Number(f.horas));
+  const valido = horas > 0 && horas <= 200 && /^\d{4}-\d{2}$/.test(f.mes) && f.motivo.trim().length >= 5;
+  const referencia = `horas_mes:${f.mes}:${f.tipo}`;
+
+  const gravar = async () => {
+    setRepetido(null);
+    setEstado({ salvando: true, erro: "", ok: "" });
+    try {
+      await lancarHorasSalaMes(cli, f.tipo, horas, `Horas de sala ${mesBR(f.mes)} · ${f.motivo.trim()}`, referencia);
+      setEstado({ salvando: false, erro: "", ok: `${horas} h de ${TIPOS_HORAS[f.tipo].toLowerCase()} lançadas para ${mesBR(f.mes)}.` });
+      setF((p) => ({ ...p, horas: "", motivo: "" }));
+    } catch (e) {
+      setEstado({ salvando: false, erro: mensagemDe(e, "Não foi possível lançar as horas. Nada foi gravado; tente de novo."), ok: "" });
+    }
+  };
+  const pedirLancamento = () => {
+    if (!valido || estado.salvando) return;
+    const anteriores = ledgerDe(cli.id).filter((e) => e.referenciaId === referencia);
+    if (anteriores.length) { setRepetido(anteriores); return; }
+    gravar();
+  };
+
+  return (
+    <div style={{ marginTop: 14, background: C.cream, borderRadius: 12, padding: 12 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Lançar horas de sala do mês</div>
+      <div style={{ fontSize: 11.5, color: C.text3, margin: "2px 0 10px" }}>
+        Para cliente antigo, sem assinatura pelo site. Saldo atual: {saldoCreditos(cli.id, f.tipo)} h de {TIPOS_HORAS[f.tipo].toLowerCase()}.
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 0.8fr 1fr", gap: 6 }}>
+        <select value={f.tipo} onChange={(e) => setF({ ...f, tipo: e.target.value })} style={{ ...inp, padding: "8px 10px" }} aria-label="Tipo de sala">
+          {Object.entries(TIPOS_HORAS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+        <input type="number" min="1" max="200" step="1" value={f.horas} onChange={(e) => setF({ ...f, horas: e.target.value })} placeholder="Horas" style={{ ...inp, padding: "8px 10px" }} aria-label="Quantidade de horas" />
+        <input type="month" value={f.mes} onChange={(e) => setF({ ...f, mes: e.target.value })} style={{ ...inp, padding: "8px 10px" }} aria-label="Mês de referência" />
+      </div>
+      <input value={f.motivo} onChange={(e) => setF({ ...f, motivo: e.target.value })} maxLength={200} placeholder="Motivo (ex.: contrato antigo prevê 4 h/mês)" style={{ ...inp, padding: "8px 10px", marginTop: 6 }} aria-label="Motivo do lançamento" />
+      {!cli.email && (
+        <div style={{ fontSize: 11.5, color: C.amber, marginTop: 6 }}>
+          Cliente sem e-mail: as horas valem nas reservas feitas pela recepção, mas o cliente não as vê no app.
+        </div>
+      )}
+      {repetido && (
+        <div role="alert" style={{ fontSize: 12, color: C.amber, background: C.amberPale, borderRadius: 8, padding: "8px 10px", marginTop: 8 }}>
+          Já foram lançadas {repetido.reduce((s, e) => s + (e.quantidade || 0), 0)} h de {TIPOS_HORAS[f.tipo].toLowerCase()} em {mesBR(f.mes)} para este cliente. Lançar mais {horas} h mesmo assim?
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <button type="button" onClick={gravar} style={{ fontSize: 12, fontWeight: 600, color: "#fff", background: C.amber, border: "none", borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>Lançar mesmo assim</button>
+            <button type="button" onClick={() => setRepetido(null)} style={{ fontSize: 12, fontWeight: 600, color: C.text2, background: "#fff", border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>Cancelar</button>
+          </div>
+        </div>
+      )}
+      <Btn variant="teal" style={{ width: "100%", marginTop: 8, fontSize: 13, padding: "9px 12px", opacity: valido ? 1 : 0.5 }} disabled={estado.salvando || !!repetido} onClick={pedirLancamento}>
+        {estado.salvando ? "Lançando…" : "Lançar horas"}
+      </Btn>
+      {!valido && (f.horas || f.motivo) && <div style={{ fontSize: 11, color: C.text4, marginTop: 5 }}>Informe as horas (1 a 200) e o motivo (mínimo 5 letras).</div>}
+      {estado.erro && <div role="alert" style={{ fontSize: 12, color: C.red, marginTop: 6 }}>{estado.erro}</div>}
+      {estado.ok && <div role="status" style={{ fontSize: 12, color: C.green, marginTop: 6 }}>{estado.ok}</div>}
+    </div>
+  );
+}
+
+function ClienteDetalhe({ cli, onBack, onEditar, onExcluir, acesso, podeConvidar, convite, onConvidar }) {
   const [docs, setDocs] = useState(cli.docs);
   return (
     <div>
@@ -363,6 +594,7 @@ function ClienteDetalhe({ cli, onBack, onEditar, onExcluir }) {
               </div>
             </div>
           )}
+          {acessoClienteApi.configured && <AcessoApp cli={cli} acesso={acesso} podeConvidar={podeConvidar} convite={convite} onConvidar={onConvidar} />}
           <CreditosCliente cli={cli} />
         </Card>
 

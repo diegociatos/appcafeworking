@@ -57,6 +57,22 @@ Deno.test("documentos_aprovados e documentos_reprovados", () => {
   assertStringIncludes(nao.html, "equipe");
 });
 
+Deno.test("convite_acesso explica o app, leva a criar a senha e escapa o nome", () => {
+  const m = renderTemplate("convite_acesso", {
+    cliente: "Mendes <b>Advocacia</b>", email: "contato@mendes.com.br", unidade: "Luxemburgo",
+    linkSenha: "https://auth.exemplo/verify?token=1&type=recovery&redirect_to=https://app/?acesso=novo",
+  });
+  assertEquals(m.para, "contato@mendes.com.br");
+  assertStringIncludes(m.assunto, "acesso ao app");
+  assertStringIncludes(m.html, "Criar minha senha");
+  assertStringIncludes(m.html, "token=1&amp;type=recovery");
+  for (const item of ["Seu plano", "Faturas", "Reservas", "Correspondências", "Esqueci minha senha"]) assertStringIncludes(m.html, item);
+  assertEquals(m.html.includes("<b>Advocacia</b>"), false);
+  assertStringIncludes(m.html, "Mendes &lt;b&gt;Advocacia&lt;/b&gt;");
+  const semLink = renderTemplate("convite_acesso", { cliente: "Ana", email: "a@x.com", linkSenha: "" });
+  assertStringIncludes(semLink.html, "Entrar no app");
+});
+
 Deno.test("aviso_equipe lista as linhas escapadas", () => {
   const m = renderTemplate("aviso_equipe", { email: "equipe@x.com", assunto: "Cancelamento", linhas: ["Cliente: <b>Rui</b>", "Plano: Pro"] });
   assertEquals(m.assunto, "[CafeWorking] Cancelamento");

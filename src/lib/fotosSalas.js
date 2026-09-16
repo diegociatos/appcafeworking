@@ -23,7 +23,8 @@ function carregarImagem(arquivo) {
   });
 }
 
-async function reduzir(arquivo) {
+/** Reduz a imagem (File ou Blob) para no máximo 1600 px em WebP. Usada também nas correspondências. */
+export async function reduzir(arquivo) {
   const img = await carregarImagem(arquivo);
   const escala = Math.min(1, LADO_MAX / Math.max(img.naturalWidth, img.naturalHeight));
   const canvas = document.createElement("canvas");

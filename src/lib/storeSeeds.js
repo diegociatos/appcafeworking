@@ -19,13 +19,13 @@ export const PERFIS = {
   master: {
     label: "Master (coworking)",
     cor: "#B8862F",
-    modules: ["dash", "equipe", "crm", "planos", "assinaturas", "aberturas", "unidades", "salas", "patrimonio", "reservas", "corresp", "pdv", "kds", "catalogo", "estoque", "clientes", "chat", "financeiro", "boletos", "cobrancas", "notafiscal", "eventos", "auditoria"],
+    modules: ["dash", "equipe", "crm", "planos", "assinaturas", "aberturas", "unidades", "salas", "patrimonio", "reservas", "corresp", "pdv", "kds", "catalogo", "estoque", "clientes", "financeiro", "boletos", "cobrancas", "notafiscal", "eventos", "auditoria"],
     landing: "dash",
   },
   recepcao: {
     label: "Recepção",
     cor: "#335C81",
-    modules: ["salas", "reservas", "pdv", "kds", "catalogo", "estoque", "crm", "assinaturas", "aberturas", "corresp", "clientes", "chat"],
+    modules: ["salas", "reservas", "pdv", "kds", "catalogo", "estoque", "crm", "assinaturas", "aberturas", "corresp", "clientes"],
     landing: "reservas",
   },
   financeiro: {
@@ -152,21 +152,6 @@ export const seedCorresp = [
   { id: "co2", unidadeId: "lux", cliente: "Ciatos Log Transportes", remetente: "DET-MG", tipo: "Notificação", descricao: "Auto de infração de trânsito do veículo da frota.", recebido: "Ontem 16:40", status: "digitalizada", urgente: false, anexo: anexoFoto("corr2") },
   { id: "co3", unidadeId: "est", cliente: "Consultoria RM", remetente: "Banco Itaú", tipo: "Extrato", descricao: "Extrato bancário mensal.", recebido: "26/05 11:20", status: "notificado", urgente: false, anexo: anexoFoto("corr3") },
   { id: "co4", unidadeId: "lux", cliente: "Mendes Advocacia", remetente: "Tribunal de Justiça MG", tipo: "Intimação", descricao: "Intimação para audiência do processo 0012345.", recebido: "25/05 14:00", status: "retirada", urgente: false, anexo: anexoFoto("corr4") },
-];
-
-// Conversas do chat (cliente <-> recepção), por unidade
-export const seedConversas = [
-  { id: "cv1", unidadeId: "lux", cliente: "Ciatos Log Transportes", online: true, unread: 1, msgs: [
-    { de: "adm", txt: "Olá! Aqui é a recepção do CafeWorking. Como podemos ajudar?", h: "08:40" },
-    { de: "cli", txt: "Bom dia! Chegou alguma correspondência pra gente?", h: "08:42" },
-  ] },
-  { id: "cv2", unidadeId: "lux", cliente: "Mendes Advocacia", online: true, unread: 1, msgs: [
-    { de: "cli", txt: "Preciso da Sala Master quinta às 14h, é possível?", h: "Ontem" },
-  ] },
-  { id: "cv3", unidadeId: "est", cliente: "TechBH Software", online: false, unread: 0, msgs: [
-    { de: "cli", txt: "Valeu pelo café hoje! 🙌", h: "Seg" },
-    { de: "adm", txt: "Disponha! Qualquer coisa estamos aqui.", h: "Seg" },
-  ] },
 ];
 
 // Pedidos da cafeteria (feitos pelo cliente no app → chegam na recepção)

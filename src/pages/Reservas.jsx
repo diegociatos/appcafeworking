@@ -28,6 +28,40 @@ const horaFim = (inicio, dur) => {
 };
 import { useStore } from "../lib/store.jsx";
 
+// Mesma regra da Edge Function criar-reserva (_shared/reservaCliente.ts):
+// tipo da sala → tipo de crédito do plano, e quanto o saldo cobre.
+const tipoCreditoSala = (tipoSala) => {
+  const t = String(tipoSala || "").toLowerCase();
+  if (t.includes("reuni")) return "sala_reuniao";
+  if (t.includes("compartilh") || t.includes("cowork")) return "coworking";
+  return null;
+};
+const NOME_CREDITO = { sala_reuniao: "sala de reunião", coworking: "coworking" };
+const previaCredito = (horas, saldo, valorHora) => {
+  const h = Math.max(0, Math.floor(Number(horas) || 0));
+  const cobertas = Math.min(Math.max(0, Math.floor(Number(saldo) || 0)), h);
+  const excedente = h - cobertas;
+  return { horas: h, cobertas, excedente, valorExcedente: Math.round(excedente * Math.max(0, Number(valorHora) || 0) * 100) / 100 };
+};
+
+/** Aviso do excedente a cobrar (valorHora 0: horas além do plano sem preço definido). */
+function AvisoExcedente({ credito, valorHora, style }) {
+  if (!credito || !(credito.excedente > 0)) return null;
+  return (
+    <div role="alert" style={{ display: "flex", gap: 8, alignItems: "flex-start", background: C.amberPale, color: C.amber, border: `1px solid ${C.amber}55`, borderRadius: 10, padding: "10px 12px", fontSize: 13, ...style }}>
+      <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+      <div>
+        {credito.valorExcedente > 0
+          ? <b>Excedente de {fmt(credito.valorExcedente)} a cobrar do cliente</b>
+          : <b>{credito.excedente} h além das horas do plano a combinar com o cliente</b>}
+        <div style={{ fontSize: 12, marginTop: 2, color: C.text2 }}>
+          {credito.cobertas > 0 ? `${credito.cobertas} h cobertas pelo plano, ` : "Sem horas do plano para cobrir, "}
+          {credito.excedente} h excedente{credito.valorExcedente > 0 && valorHora > 0 ? ` × ${fmt(valorHora)}` : ""}. O valor entra no financeiro como a receber; nenhuma cobrança é enviada ao cliente.
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function Reservas() {
   const { activeUnit, unidadeAtiva, salasDe, clientesDe, reservas, criarReserva, removeReserva, marcarReservasVistas, addLancamento } = useStore();
@@ -37,6 +71,7 @@ export default function Reservas() {
   const [detalhe, setDetalhe] = useState(null);
   const [semanaRef, setSemanaRef] = useState(() => new Date()); // data âncora (semana/mês/ano exibido)
   const [visao, setVisao] = useState("semana"); // semana | mes | ano
+  const [avisoReserva, setAvisoReserva] = useState(null); // { cliente, sala, credito, valorHora } após reservar
   const dias = DIAS;
 
   // Datas reais da semana EXIBIDA (segunda a domingo) para rotular cada dia e
@@ -104,6 +139,13 @@ export default function Reservas() {
           </div>
         }
       />
+      {avisoReserva && (
+        <div style={{ position: "relative", marginBottom: 14 }}>
+          <AvisoExcedente credito={avisoReserva.credito} valorHora={avisoReserva.valorHora} style={{ paddingRight: 36 }} />
+          <div style={{ fontSize: 12, color: C.text3, marginTop: 4 }}>Reserva de {avisoReserva.cliente} na {avisoReserva.sala} criada.</div>
+          <button type="button" onClick={() => setAvisoReserva(null)} className="cw-btn" aria-label="Fechar aviso de excedente" style={{ position: "absolute", top: 8, right: 8, color: C.amber, padding: 4, fontSize: 16, lineHeight: 1 }}>×</button>
+        </div>
+      )}
       {visao === "semana" && salasReservaveis.length > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 14, marginBottom: 16 }}>
           <MiniKpi label={`Ocupação · ${dias[diaSel]}`} valor={`${ocupacaoDia}%`} icon={Percent} cor={C.teal} />
@@ -326,6 +368,10 @@ export default function Reservas() {
           onSave={async (nr) => {
             const res = await criarReserva({ ...nr, cor: C.teal2 });
             if (!res || res.ok === false) { alert(res?.error || "Não foi possível reservar."); return; }
+            const salaNova = salasUnidade.find((s) => s.id === nr.sala);
+            setAvisoReserva(res.credito?.excedente > 0
+              ? { cliente: nr.cliente, sala: salaNova?.nome || "sala", credito: res.credito, valorHora: Number(salaNova?.valorHora || 0) }
+              : null);
             setDiaSel(nr.dia);
             setModal(null);
           }}
@@ -481,6 +527,7 @@ function ReservaDetalhe({ reserva, sala, dias, onComplemento, onCancelar }) {
           Valor da reserva: <b style={{ color: C.cafe }}>{fmt(reserva.valor || 0)}</b> · já lançado no financeiro (a receber)
         </div>
       </div>
+      <AvisoExcedente credito={reserva.credito} valorHora={vh} style={{ marginBottom: 16 }} />
 
       <div style={{ background: C.tealPale, border: `1px solid ${C.tealLine}`, borderRadius: 12, padding: 14, marginBottom: 16 }}>
         <div style={{ fontSize: 14, fontWeight: 600, color: C.teal, marginBottom: 4 }}>Usou mais que o contratado?</div>
@@ -516,7 +563,13 @@ function NovaReservaModal({ salas, clientes, dias, datasSemana = [], semanaInici
   });
   const salaSel = salas.find((s) => s.id === f.sala);
   const compart = (salaSel?.bases || 0) > 0; // sala compartilhada → reserva por base
-  const clienteNome = f.modo === "cadastrado" ? (clientes.find((c) => c.id === f.clienteId)?.nome || "") : f.nome.trim();
+  const { saldoCreditos } = useStore();
+  const clienteSel = f.modo === "cadastrado" ? clientes.find((c) => c.id === f.clienteId) : null;
+  const clienteNome = f.modo === "cadastrado" ? (clienteSel?.nome || "") : f.nome.trim();
+  // Prévia do consumo das horas do plano (o servidor recalcula e é quem vale).
+  const tipoCred = tipoCreditoSala(salaSel?.tipo);
+  const saldoPlano = clienteSel && tipoCred ? Math.max(0, saldoCreditos(clienteSel.id, tipoCred)) : 0;
+  const previa = clienteSel && tipoCred ? previaCredito(f.dur, saldoPlano, salaSel?.valorHora) : null;
   // Datas reais do bloco escolhido (na semana exibida) → conflito por DATA/HORA.
   const startDate = dataDoSlot(semanaInicio, f.dia, f.inicio);
   const endDate = new Date(startDate); endDate.setHours(startDate.getHours() + f.dur);
@@ -644,6 +697,13 @@ function NovaReservaModal({ salas, clientes, dias, datasSemana = [], semanaInici
         </Field>
       )}
 
+      {previa && (
+        <div style={{ fontSize: 12.5, color: C.text2, marginBottom: 8 }}>
+          Plano do cliente: <b>{saldoPlano} h</b> de {NOME_CREDITO[tipoCred]}. Esta reserva usa {previa.cobertas} h do plano.
+        </div>
+      )}
+      {previa && <AvisoExcedente credito={previa} valorHora={Number(salaSel?.valorHora || 0)} style={{ marginBottom: 12 }} />}
+
       {conflito ? (
         <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.redPale, color: C.red, borderRadius: 10, padding: "10px 12px", fontSize: 13, marginBottom: 12 }}>
           <AlertCircle size={16} /> Conflito: <b>{salaSel?.nome}</b> já está reservada nesse horário para <b>{conflito.cliente}</b>.
@@ -662,7 +722,7 @@ function NovaReservaModal({ salas, clientes, dias, datasSemana = [], semanaInici
         variant="teal"
         disabled={!podeSalvar}
         style={{ width: "100%", justifyContent: "center", opacity: podeSalvar ? 1 : 0.5 }}
-        onClick={() => podeSalvar && onSave({ sala: f.sala, dia: f.dia, inicio: f.inicio, dur: f.dur, base: f.base, cliente: clienteNome, avulso: f.modo === "avulso", observacao: f.modo === "avulso" ? f.motivo.trim() : "", telefone: f.telefone, email: f.email, startAt: startDate.toISOString(), endAt: endDate.toISOString() })}
+        onClick={() => podeSalvar && onSave({ sala: f.sala, dia: f.dia, inicio: f.inicio, dur: f.dur, base: f.base, cliente: clienteNome, clienteId: clienteSel?.id || null, avulso: f.modo === "avulso", observacao: f.modo === "avulso" ? f.motivo.trim() : "", telefone: f.modo === "avulso" ? f.telefone : (clienteSel?.tel || ""), email: f.modo === "avulso" ? f.email : (clienteSel?.email || ""), startAt: startDate.toISOString(), endAt: endDate.toISOString() })}
       >
         <CheckCircle2 size={17} /> Confirmar reserva
       </Btn>

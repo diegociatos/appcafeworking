@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Plus, PackageCheck, MessageCircle, AlertCircle, Paperclip, Filter,
   CheckCircle2, Trash2, Download, FileText,
 } from "lucide-react";
-import { Card, Badge, Btn, PageHead, Modal, Field, Empty, FileInput } from "../components/ui.jsx";
+import { Card, Badge, Btn, PageHead, Modal, Field, Empty, FileInput, ConfirmDialog } from "../components/ui.jsx";
 import { C, serif, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
+import { enviarAnexoCorrespondencia, linkAnexoCorrespondencia, removerAnexoCorrespondencia } from "../lib/correspondenciasArquivo.js";
+import { mensagemDe } from "../lib/erros.js";
 
 const STATUS = {
   aguardando: { c: C.amber, bg: C.amberPale, l: "Aguardando retirada" },
@@ -15,21 +17,29 @@ const STATUS = {
 };
 const TIPOS = ["Notificação", "Intimação", "Extrato", "Carta", "Boleto", "Encomenda", "Outro"];
 
-function baixarAnexo(anexo) {
-  if (!anexo?.url) return;
-  const a = document.createElement("a");
-  a.href = anexo.url;
-  a.download = anexo.nome || "anexo";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+// Anexo antigo embutido (base64) baixa pelo <a download>; o do Storage abre o
+// link assinado com download (o navegador ignora `download` em outra origem).
+async function baixarAnexo(anexo) {
+  if (!anexo) return;
+  if (!anexo.caminho) {
+    if (!anexo.url) return;
+    const a = document.createElement("a");
+    a.href = anexo.url;
+    a.download = anexo.nome || "anexo";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    return;
+  }
+  const url = await linkAnexoCorrespondencia(anexo, { baixar: true });
+  window.open(url, "_blank", "noopener");
 }
 const recebidaEm = (c) => (c.recebidoEm
   ? new Date(c.recebidoEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
   : c.recebido || "");
 const AVISO = {
   enviado: [C.green, "E-mail enviado ao cliente."],
-  demonstracao: [C.text3, "Demonstração: nenhum e-mail foi enviado."],
+  demonstracao: [C.text3, "Demonstração: nenhum e-mail foi enviado e a correspondência continua como não notificada."],
   ignorado: [C.amber, "O cliente escolheu não receber este tipo de aviso."],
   sem_email: [C.red, "Cliente sem e-mail no cadastro. Atualize em Clientes e notifique de novo."],
   erro: [C.red, "O e-mail não saiu. Tente de novo em instantes."],
@@ -47,6 +57,13 @@ export default function Correspondencias() {
   const [filtro, setFiltro] = useState("todas");
   const [modal, setModal] = useState(false);
   const [anexoAberto, setAnexoAberto] = useState(null);
+  const [excluir, setExcluir] = useState(null);
+  const confirmarExclusao = () => {
+    const alvo = excluir;
+    setExcluir(null);
+    removeCorrespondencia(alvo.id);
+    removerAnexoCorrespondencia(alvo.anexo);
+  };
 
   const corresp = correspondenciasDe(activeUnit);
   const filtrada =
@@ -101,7 +118,7 @@ export default function Correspondencias() {
                   </div>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     {c.urgente && <Badge color={C.red} bg={C.redPale}><AlertCircle size={11} /> Urgente</Badge>}
-                    <button onClick={() => removeCorrespondencia(c.id)} className="cw-btn" style={{ color: C.text4, padding: 4 }} title="Excluir"><Trash2 size={15} /></button>
+                    <button onClick={() => setExcluir(c)} className="cw-btn" style={{ color: C.text4, padding: 4 }} title="Excluir" aria-label={`Excluir correspondência de ${c.cliente}`}><Trash2 size={15} /></button>
                   </div>
                 </div>
                 <div style={{ fontFamily: serif, fontSize: 18, color: C.text, lineHeight: 1.2 }}>{c.cliente}</div>
@@ -118,8 +135,8 @@ export default function Correspondencias() {
                       <MessageCircle size={14} /> {avisos[c.id]?.enviando ? "Enviando e-mail…" : "Notificar cliente"}
                     </Btn>
                   )}
-                  {c.status === "notificado" && (
-                    <Btn style={{ flex: 1, justifyContent: "center", padding: "9px 10px", fontSize: 12, background: C.green }} onClick={() => updateCorrespondencia(c.id, { status: "retirada" })}>
+                  {c.status !== "retirada" && (
+                    <Btn style={{ flex: 1, justifyContent: "center", padding: "9px 10px", fontSize: 12, background: C.green }} onClick={() => updateCorrespondencia(c.id, { status: "retirada", retiradaEm: new Date().toISOString() })}>
                       <CheckCircle2 size={14} /> Confirmar retirada
                     </Btn>
                   )}
@@ -140,32 +157,69 @@ export default function Correspondencias() {
         <Modal title="Registrar correspondência" onClose={() => setModal(false)}>
           <RegistrarForm
             unidadeNome={unidadeAtiva?.nome}
-            onSave={(dados) => { addCorrespondencia(activeUnit, dados); setModal(false); }}
+            onSave={async (dados) => {
+              // O arquivo sobe antes de gravar o registro: se o envio falhar, nada é criado.
+              const id = "co" + Date.now();
+              const anexo = await enviarAnexoCorrespondencia(activeUnit, id, dados.anexo);
+              addCorrespondencia(activeUnit, { ...dados, id, anexo });
+              setModal(false);
+            }}
           />
         </Modal>
       )}
 
-      {anexoAberto && (
-        <Modal title={`${anexoAberto.tipo} · ${anexoAberto.cliente}`} onClose={() => setAnexoAberto(null)}>
-          {anexoAberto.anexo ? (
-            <>
-              {ehImagem(anexoAberto.anexo) ? (
-                <img src={anexoAberto.anexo.url} alt="anexo" onError={(e) => (e.currentTarget.style.display = "none")} style={{ width: "100%", borderRadius: 12, background: C.cream2 }} />
-              ) : (
-                <div style={{ background: C.cream, borderRadius: 12, padding: 24, textAlign: "center" }}>
-                  <FileText size={40} color={C.teal} />
-                  <div style={{ fontSize: 13, color: C.text2, marginTop: 8 }}>{anexoAberto.anexo.nome}</div>
-                </div>
-              )}
-              {anexoAberto.descricao && <div style={{ fontSize: 13, color: C.text2, marginTop: 12 }}>{anexoAberto.descricao}</div>}
-              <Btn style={{ width: "100%", justifyContent: "center", marginTop: 14 }} onClick={() => baixarAnexo(anexoAberto.anexo)}><Download size={16} /> Baixar anexo</Btn>
-            </>
-          ) : (
-            <Empty icon={Paperclip} title="Sem anexo" sub="Esta correspondência não tem arquivo." />
-          )}
-        </Modal>
-      )}
+      {anexoAberto && <AnexoModal corresp={anexoAberto} onClose={() => setAnexoAberto(null)} />}
+
+      <ConfirmDialog
+        aberto={!!excluir}
+        titulo="Excluir correspondência?"
+        mensagem={excluir ? `A correspondência de ${excluir.remetente || "remetente não informado"} para ${excluir.cliente} será apagada, junto com o arquivo digitalizado, e some da área do cliente. Esta ação não pode ser desfeita.` : ""}
+        onConfirmar={confirmarExclusao}
+        onCancelar={() => setExcluir(null)}
+      />
     </div>
+  );
+}
+
+function AnexoModal({ corresp, onClose }) {
+  const anexo = corresp.anexo;
+  const [link, setLink] = useState({ url: anexo?.caminho ? "" : anexo?.url || "", erro: "", carregando: !!anexo?.caminho });
+  const [baixando, setBaixando] = useState("");
+  useEffect(() => {
+    if (!anexo?.caminho) return undefined;
+    let vivo = true;
+    linkAnexoCorrespondencia(anexo)
+      .then((url) => vivo && setLink({ url, erro: "", carregando: false }))
+      .catch((e) => vivo && setLink({ url: "", erro: mensagemDe(e), carregando: false }));
+    return () => { vivo = false; };
+  }, [anexo]);
+  const baixar = () => {
+    setBaixando("");
+    baixarAnexo(anexo).catch((e) => setBaixando(mensagemDe(e)));
+  };
+
+  return (
+    <Modal title={`${corresp.tipo} · ${corresp.cliente}`} onClose={onClose}>
+      {anexo ? (
+        <>
+          {link.carregando && <div role="status" style={{ fontSize: 13, color: C.text3, padding: "18px 0", textAlign: "center" }}>Abrindo arquivo…</div>}
+          {link.erro && <div role="alert" style={{ fontSize: 13, color: C.red, padding: "10px 0" }}>{link.erro}</div>}
+          {!link.carregando && !link.erro && (ehImagem(anexo) ? (
+            <img src={link.url} alt={`Digitalização: ${corresp.tipo || "correspondência"} de ${corresp.remetente || "remetente"}`} onError={(e) => (e.currentTarget.style.display = "none")} style={{ width: "100%", borderRadius: 12, background: C.cream2 }} />
+          ) : (
+            <div style={{ background: C.cream, borderRadius: 12, padding: 24, textAlign: "center" }}>
+              <FileText size={40} color={C.teal} />
+              <div style={{ fontSize: 13, color: C.text2, marginTop: 8 }}>{anexo.nome}</div>
+            </div>
+          ))}
+          {corresp.descricao && <div style={{ fontSize: 13, color: C.text2, marginTop: 12 }}>{corresp.descricao}</div>}
+          <Btn style={{ width: "100%", justifyContent: "center", marginTop: 14 }} disabled={link.carregando} onClick={baixar}><Download size={16} /> Baixar anexo</Btn>
+          {baixando && <div role="alert" style={{ fontSize: 12, color: C.red, marginTop: 8 }}>{baixando}</div>}
+        </>
+      ) : (
+        <Empty icon={Paperclip} title="Sem anexo" sub="Esta correspondência não tem arquivo." />
+      )}
+    </Modal>
   );
 }
 
@@ -173,9 +227,24 @@ function RegistrarForm({ unidadeNome, onSave }) {
   const { clientesDe } = useStore();
   const clientesUnidade = clientesDe(unidadeNome);
   const [f, setF] = useState({ clienteId: clientesUnidade[0]?.id || "", remetente: "", tipo: "Notificação", descricao: "", urgente: false, anexo: null });
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState("");
   const escolhido = clientesUnidade.find((c) => c.id === f.clienteId);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const valido = escolhido && f.remetente.trim();
+  const salvar = async () => {
+    if (!valido || salvando) return;
+    setSalvando(true); setErro("");
+    try {
+      await onSave({
+        ...f, cliente: escolhido.nome, clienteId: escolhido.id, clienteEmail: (escolhido.email || "").trim().toLowerCase() || null,
+        recebidoEm: new Date().toISOString(),
+      });
+    } catch (e) {
+      setErro(mensagemDe(e));
+      setSalvando(false);
+    }
+  };
 
   return (
     <>
@@ -217,11 +286,9 @@ function RegistrarForm({ unidadeNome, onSave }) {
         <input type="checkbox" checked={f.urgente} onChange={(e) => setF({ ...f, urgente: e.target.checked })} />
         Marcar como urgente
       </label>
-      <Btn style={{ width: "100%", justifyContent: "center" }} onClick={() => valido && onSave({
-        ...f, cliente: escolhido.nome, clienteId: escolhido.id, clienteEmail: (escolhido.email || "").trim().toLowerCase() || null,
-        recebidoEm: new Date().toISOString(),
-      })}>
-        Registrar recebimento
+      {erro && <div role="alert" style={{ fontSize: 12.5, color: C.red, marginBottom: 10 }}>{erro}</div>}
+      <Btn style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.5 }} disabled={salvando} onClick={salvar}>
+        {salvando ? (f.anexo ? "Enviando arquivo…" : "Registrando…") : "Registrar recebimento"}
       </Btn>
     </>
   );
