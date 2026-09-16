@@ -33,7 +33,7 @@ MODELOS = [
     (LUXEMBURGO, "sala_privativa", "Contrato de sala privativa", "sala_privativa_luxemburgo_v1.txt"),
     (LUXEMBURGO, "abertura_empresa", "Contrato de abertura de empresa", "abertura_empresa_luxemburgo_v1.txt"),
     (LUXEMBURGO, "sala_hora", "Termo de reserva de sala de reunião por hora", "sala_hora_luxemburgo_v1.txt"),
-    (ESTORIL, "endereco_fiscal", "Contrato de endereço fiscal e comercial", "endereco_fiscal_estoril_v1.txt"),
+    (ESTORIL, "endereco_fiscal", "Contrato de endereço fiscal e comercial", "endereco_fiscal_estoril_v2.txt"),
 ]
 
 
