@@ -251,7 +251,7 @@ export default function App() {
     >
       <style>{`
         @media (max-width: 1050px) {
-          .cw-sidebar { transform: translateX(-100%); position: fixed; z-index: 50; }
+          .cw-sidebar { transform: translateX(-100%); position: fixed !important; z-index: 50; }
           .cw-sidebar.open { transform: translateX(0); }
           .cw-burger { display: flex !important; }
           .cw-grid-stack { grid-template-columns: 1fr !important; }
