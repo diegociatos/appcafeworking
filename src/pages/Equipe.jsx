@@ -5,14 +5,17 @@ import { C, serif, inp } from "../lib/theme.js";
 import { useStore, PERFIS } from "../lib/store.jsx";
 import { onboardApi } from "../lib/onboardApi.js";
 
-// Perfis que podem ser atribuídos a um usuário da equipe
-const ROLES = ["master", "recepcao", "financeiro"];
-const ROLE_LABEL = { master: "Gerente", recepcao: "Recepção", financeiro: "Financeiro" };
+// Perfis que podem ser atribuídos a um usuário da equipe. "contabilidade" é o
+// login da contabilidade parceira: só vê os processos de abertura de empresa.
+const ROLES = ["master", "recepcao", "financeiro", "contabilidade"];
+const ROLE_LABEL = { master: "Gerente", recepcao: "Recepção", financeiro: "Financeiro", contabilidade: "Contabilidade parceira" };
+const ROLE_NOTA = { contabilidade: "Login externo da contabilidade: não vê financeiro, clientes, salas nem reservas." };
 
 const MOD_LABEL = {
   dash: "Dashboard", franqueados: "Franquias", crm: "CRM", unidades: "Unidades",
   reservas: "Reservas", corresp: "Correspondências", pdv: "Cafeteria/PDV", clientes: "Clientes",
   chat: "Chat", financeiro: "Financeiro", eventos: "Eventos", equipe: "Equipe", area: "Portal do cliente",
+  aberturas: "Abertura de empresas", assinaturas: "Assinaturas", planos: "Planos", salas: "Salas",
 };
 
 const modulosDoPerfil = (perfil) =>
@@ -273,6 +276,7 @@ function UsuarioForm({ inicial, unidades, onSave, loading, erro, novo }) {
                   <div style={{ fontSize: 11.5, color: C.text3, marginTop: 2 }}>
                     Acessa: {modulosDoPerfil(r).join(" · ")}
                   </div>
+                  {ROLE_NOTA[r] && <div style={{ fontSize: 11.5, color: C.text4, marginTop: 2 }}>{ROLE_NOTA[r]}</div>}
                 </div>
               </button>
             );

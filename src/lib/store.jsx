@@ -1078,8 +1078,8 @@ export function StoreProvider({ children }) {
 
   // PRODUÇÃO: aplica o perfil/unidade do usuário LOGADO a partir dos vínculos
   // (unidade_members). Sem vínculos = admin da plataforma (franqueador).
-  const ROLE_PERFIL = { franqueador: "franqueador", admin: "franqueador", master: "master", financeiro: "financeiro", recepcao: "recepcao", cliente: "cliente" };
-  const CARGO_LABEL = { franqueador: "Administrador", master: "Master", financeiro: "Financeiro", recepcao: "Recepção", cliente: "Cliente" };
+  const ROLE_PERFIL = { franqueador: "franqueador", admin: "franqueador", master: "master", financeiro: "financeiro", recepcao: "recepcao", cliente: "cliente", contabilidade: "contabilidade" };
+  const CARGO_LABEL = { franqueador: "Administrador", master: "Master", financeiro: "Financeiro", recepcao: "Recepção", cliente: "Cliente", contabilidade: "Contabilidade" };
   // Atualiza a identidade exibida (rodapé do menu) com o usuário REALMENTE logado.
   const _aplicarIdentidade = (ident, perfilKey) => {
     if (!ident) return;

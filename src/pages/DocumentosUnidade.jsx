@@ -1,12 +1,13 @@
 // Aba "Documentos do endereço fiscal" da unidade (equipe): IPTU, alvará ou
-// dispensa, modelo de anuência e comprovante do imóvel. O cliente só recebe estes
+// dispensa, modelo de anuência, comprovante do imóvel, AVCB e habite-se, com o
+// número de cada um (o índice cadastral do IPTU vai para a abertura de empresa). O cliente só recebe estes
 // arquivos na área dele quando o endereço fiscal está ativo e os documentos da
 // empresa foram aprovados.
 import { useEffect, useState } from "react";
 import { FileText, Upload, Trash2, ExternalLink, Loader2 } from "lucide-react";
 import { Card, Badge, Btn, Field, Empty, ConfirmDialog } from "../components/ui.jsx";
 import { C, serif, inp } from "../lib/theme.js";
-import { documentosUnidadeApi, TIPOS_KIT, TAMANHO_MAX_KIT } from "../lib/documentosUnidadeApi.js";
+import { documentosUnidadeApi, TIPOS_KIT, TAMANHO_MAX_KIT, ROTULO_NUMERO_KIT } from "../lib/documentosUnidadeApi.js";
 import { mensagemDe } from "../lib/erros.js";
 
 const dataBR = (iso) => (iso ? String(iso).slice(0, 10).split("-").reverse().join("/") : "");
@@ -14,7 +15,7 @@ const dataBR = (iso) => (iso ? String(iso).slice(0, 10).split("-").reverse().joi
 export default function DocumentosUnidade({ unidade }) {
   const [docs, setDocs] = useState(null);
   const [erro, setErro] = useState("");
-  const [f, setF] = useState({ tipo: "iptu", titulo: "", validade: "", arquivo: null });
+  const [f, setF] = useState({ tipo: "iptu", titulo: "", numero: "", validade: "", arquivo: null });
   const [enviando, setEnviando] = useState(false);
   const [msg, setMsg] = useState("");
   const [remover, setRemover] = useState(null);
@@ -32,7 +33,7 @@ export default function DocumentosUnidade({ unidade }) {
     setErro("");
     try {
       await documentosUnidadeApi.enviar(unidade.id, f);
-      setF({ tipo: f.tipo, titulo: "", validade: "", arquivo: null });
+      setF({ tipo: f.tipo, titulo: "", numero: "", validade: "", arquivo: null });
       setInputKey((k) => k + 1);
       setMsg("Documento enviado. Ele já aparece para os clientes com endereço fiscal aprovado nesta unidade.");
       carregar();
@@ -81,6 +82,9 @@ export default function DocumentosUnidade({ unidade }) {
         <Field label="Nome que o cliente vai ver">
           <input value={f.titulo} onChange={(e) => setF({ ...f, titulo: e.target.value })} style={inp} placeholder="Ex.: IPTU 2026 · Rua ..." aria-label="Nome do documento" maxLength={200} />
         </Field>
+        <Field label={`${ROTULO_NUMERO_KIT[f.tipo] || "Número / índice cadastral"} ${f.tipo === "iptu" ? "(usado na abertura de empresa)" : "(opcional)"}`}>
+          <input value={f.numero} onChange={(e) => setF({ ...f, numero: e.target.value })} style={inp} placeholder={f.tipo === "iptu" ? "Ex.: 008.123.004.0012" : "Número do documento"} aria-label="Número ou índice cadastral" maxLength={100} />
+        </Field>
         <Field label="Válido até (opcional)">
           <input type="date" value={f.validade} onChange={(e) => setF({ ...f, validade: e.target.value })} style={inp} aria-label="Válido até" />
         </Field>
@@ -109,7 +113,7 @@ export default function DocumentosUnidade({ unidade }) {
               <FileText size={18} color={C.teal} aria-hidden="true" />
               <div style={{ flex: 1, minWidth: 160 }}>
                 <div style={{ fontSize: 14, fontWeight: 600 }}>{d.titulo}</div>
-                <div style={{ fontSize: 12, color: C.text3 }}>{TIPOS_KIT[d.tipo] || d.tipo} · enviado em {dataBR(d.created_at)}{d.validade ? ` · válido até ${dataBR(d.validade)}` : ""}</div>
+                <div style={{ fontSize: 12, color: C.text3 }}>{TIPOS_KIT[d.tipo] || d.tipo}{d.numero ? ` · nº ${d.numero}` : ""} · enviado em {dataBR(d.created_at)}{d.validade ? ` · válido até ${dataBR(d.validade)}` : ""}</div>
               </div>
               {d.validade && d.validade < new Date().toISOString().slice(0, 10) && <Badge color={C.red}>Vencido</Badge>}
               <Btn variant="ghost" onClick={() => abrir(d)} style={{ padding: "6px 10px", fontSize: 13 }}><ExternalLink size={14} /> Abrir</Btn>

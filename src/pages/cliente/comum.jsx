@@ -1,11 +1,12 @@
 // ============================================================================
 // Peças comuns das telas do cliente: carregamento, erro com "tentar de novo",
-// aviso, seção, interruptor acessível e o cartão "Fale com a recepção".
+// aviso, seção, interruptor acessível, número copiável e o cartão "Fale com a
+// recepção".
 // Fontes a partir de 12px, botões de verdade e rótulos para leitor de tela.
 // ============================================================================
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, RefreshCw, MessageCircle, Mail, Clock } from "lucide-react";
+import { Loader2, RefreshCw, MessageCircle, Mail, Clock, Copy, Check } from "lucide-react";
 import { Card, Btn } from "../../components/ui.jsx";
 import { C, serif } from "../../lib/theme.js";
 import { mensagemDe } from "../../lib/erros.js";
@@ -100,6 +101,29 @@ export function CartaoRecepcao({ titulo = "Fale com a recepção", texto, mensag
         <Clock size={14} aria-hidden="true" /> Atendimento: {CONTATO.horario}.
       </div>
     </Card>
+  );
+}
+
+/** Número do documento (índice cadastral do IPTU...) com botão de copiar. */
+export function NumeroCopiavel({ rotulo, numero }) {
+  const [copiado, setCopiado] = useState(false);
+  const copiar = async () => {
+    try {
+      await navigator.clipboard.writeText(numero);
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2000);
+    } catch {
+      setCopiado(false);
+    }
+  };
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap", fontSize: 13, color: C.text2, marginTop: 3 }}>
+      {rotulo}: <b style={{ fontFamily: "monospace", fontSize: 14, userSelect: "all" }}>{numero}</b>
+      <button type="button" onClick={copiar} aria-label={`Copiar ${rotulo.toLowerCase()}`} title="Copiar"
+        style={{ display: "inline-flex", alignItems: "center", gap: 4, color: copiado ? C.green : C.teal, fontSize: 12, fontWeight: 600, padding: "2px 6px", borderRadius: 6 }}>
+        {copiado ? <Check size={13} aria-hidden="true" /> : <Copy size={13} aria-hidden="true" />} {copiado ? "Copiado" : "Copiar"}
+      </button>
+    </span>
   );
 }
 

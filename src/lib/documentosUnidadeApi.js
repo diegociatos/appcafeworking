@@ -21,7 +21,18 @@ export const TIPOS_KIT = {
   alvara: "Alvará ou dispensa de alvará",
   anuencia_modelo: "Modelo da declaração de anuência",
   comprovante_imovel: "Comprovante do imóvel",
+  avcb: "AVCB (Corpo de Bombeiros)",
+  habite_se: "Habite-se",
+  autorizacao_proprietario: "Autorização do proprietário",
   outro: "Outro documento",
+};
+
+/** Tipos em que o número importa (a abertura de empresa usa o índice cadastral do IPTU). */
+export const ROTULO_NUMERO_KIT = {
+  iptu: "Índice cadastral do IPTU",
+  avcb: "Número do AVCB",
+  habite_se: "Número do habite-se",
+  alvara: "Número do alvará",
 };
 
 async function token() {
@@ -57,12 +68,12 @@ export const documentosUnidadeApi = {
   listar: async (unidadeId) => {
     const t = await token();
     return pedir(
-      `/rest/v1/unidade_documentos?select=id,tipo,titulo,nome_arquivo,mime,bytes,validade,storage_path,created_at&unidade_id=eq.${encodeURIComponent(unidadeId)}&order=tipo.asc,created_at.desc`,
+      `/rest/v1/unidade_documentos?select=id,tipo,titulo,numero,nome_arquivo,mime,bytes,validade,storage_path,created_at&unidade_id=eq.${encodeURIComponent(unidadeId)}&order=tipo.asc,created_at.desc`,
       { headers: { apikey: ANON, authorization: `Bearer ${t}` } }, "kit-listar",
     );
   },
 
-  enviar: async (unidadeId, { tipo, titulo, validade, arquivo }) => {
+  enviar: async (unidadeId, { tipo, titulo, numero, validade, arquivo }) => {
     if (!TIPOS_KIT[tipo]) throw new Error("Escolha o tipo do documento.");
     if (!String(titulo || "").trim()) throw new Error("Dê um nome ao documento.");
     if (!arquivo) throw new Error("Escolha o arquivo.");
@@ -83,6 +94,7 @@ export const documentosUnidadeApi = {
         body: JSON.stringify({
           unidade_id: unidadeId, tipo, titulo: String(titulo).trim().slice(0, 200), nome_arquivo: String(arquivo.name).slice(0, 200),
           mime: arquivo.type, bytes: arquivo.size, storage_path: caminho, validade: validade || null,
+          numero: String(numero || "").trim().slice(0, 100) || null,
         }),
       }, "kit-registro");
       return linhas?.[0];

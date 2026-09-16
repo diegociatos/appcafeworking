@@ -19,13 +19,13 @@ export const PERFIS = {
   master: {
     label: "Master (coworking)",
     cor: "#B8862F",
-    modules: ["dash", "equipe", "crm", "planos", "assinaturas", "unidades", "salas", "patrimonio", "reservas", "corresp", "pdv", "kds", "catalogo", "estoque", "clientes", "chat", "financeiro", "boletos", "cobrancas", "notafiscal", "eventos", "auditoria"],
+    modules: ["dash", "equipe", "crm", "planos", "assinaturas", "aberturas", "unidades", "salas", "patrimonio", "reservas", "corresp", "pdv", "kds", "catalogo", "estoque", "clientes", "chat", "financeiro", "boletos", "cobrancas", "notafiscal", "eventos", "auditoria"],
     landing: "dash",
   },
   recepcao: {
     label: "Recepção",
     cor: "#335C81",
-    modules: ["salas", "reservas", "pdv", "kds", "catalogo", "estoque", "crm", "assinaturas", "corresp", "clientes", "chat"],
+    modules: ["salas", "reservas", "pdv", "kds", "catalogo", "estoque", "crm", "assinaturas", "aberturas", "corresp", "clientes", "chat"],
     landing: "reservas",
   },
   financeiro: {
@@ -39,8 +39,16 @@ export const PERFIS = {
     cor: "#6E4E3B",
     // Cafeteria e chat saíram do cliente: dependiam de app_state (o cliente não
     // grava lá) e descartavam o pedido/mensagem. Contato real em cli_contato.
-    modules: ["cli_inicio", "cli_plano", "cli_reservar", "cli_faturas", "cli_docs", "cli_fiscal", "cli_contato", "cli_notif", "cli_conta"],
+    modules: ["cli_inicio", "cli_plano", "cli_abertura", "cli_reservar", "cli_faturas", "cli_docs", "cli_fiscal", "cli_contato", "cli_notif", "cli_conta"],
     landing: "cli_inicio",
+  },
+  // Contabilidade parceira (Ciatos Contabilidade): login próprio que só acompanha
+  // os processos de abertura de empresa das unidades vinculadas.
+  contabilidade: {
+    label: "Contabilidade (parceira)",
+    cor: "#5B4E7A",
+    modules: ["aberturas"],
+    landing: "aberturas",
   },
 };
 

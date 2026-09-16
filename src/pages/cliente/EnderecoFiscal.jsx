@@ -4,15 +4,21 @@ import { Building2, FileText, ExternalLink, Upload, Search, CheckCircle2 } from 
 import { Card, Badge, Btn, PageHead, Empty } from "../../components/ui.jsx";
 import { C, serif } from "../../lib/theme.js";
 import { clienteApi } from "../../lib/clienteApi.js";
-import { Carregando, ErroCarga, Aviso, CartaoRecepcao, useDados, dataBR } from "./comum.jsx";
+import { Carregando, ErroCarga, Aviso, CartaoRecepcao, NumeroCopiavel, useDados, dataBR } from "./comum.jsx";
 
 const TIPO_DOC = {
   iptu: "IPTU do imóvel",
   alvara: "Alvará ou dispensa de alvará",
   anuencia_modelo: "Modelo da declaração de anuência",
   comprovante_imovel: "Comprovante do imóvel",
+  avcb: "AVCB (Corpo de Bombeiros)",
+  habite_se: "Habite-se",
+  autorizacao_proprietario: "Autorização do proprietário",
   outro: "Documento",
 };
+
+const ROTULO_NUMERO = { iptu: "Índice cadastral", avcb: "Nº do AVCB", habite_se: "Nº do habite-se", alvara: "Nº do alvará" };
+
 
 const PASSOS = [
   { id: 1, icon: Upload, titulo: "Envie os documentos da empresa", sub: "Cartão CNPJ, contrato social e documento dos sócios, em Meu plano." },
@@ -101,6 +107,7 @@ export default function EnderecoFiscal({ go }) {
                     <div style={{ flex: 1, minWidth: 180 }}>
                       <div style={{ fontSize: 15, fontWeight: 600 }}>{d.titulo}</div>
                       <div style={{ fontSize: 13, color: C.text3 }}>{TIPO_DOC[d.tipo] || "Documento"}{d.validade ? ` · válido até ${dataBR(d.validade)}` : ""}</div>
+                      {d.numero && <NumeroCopiavel rotulo={ROTULO_NUMERO[d.tipo] || "Número"} numero={d.numero} />}
                     </div>
                     <a href={d.url} target="_blank" rel="noreferrer" className="cw-btn"
                       style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 13px", borderRadius: 12, fontSize: 13, fontWeight: 600, color: C.text2, border: `1px solid ${C.border}`, background: C.white }}>
