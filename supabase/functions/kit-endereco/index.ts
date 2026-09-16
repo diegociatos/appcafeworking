@@ -75,7 +75,7 @@ Deno.serve(async (req) => {
       let etapa = info.etapa;
       if (etapa === "preparando") {
         const { data: docs, error: dErr } = await admin.from("unidade_documentos")
-          .select("id, tipo, titulo, nome_arquivo, mime, validade, storage_path, created_at")
+          .select("id, tipo, titulo, numero, nome_arquivo, mime, validade, storage_path, created_at")
           .eq("unidade_id", unidadeId).order("tipo").order("created_at", { ascending: false });
         if (dErr) throw new Error(`unidade_documentos: ${dErr.message}`);
         if (docs?.length) {

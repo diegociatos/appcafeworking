@@ -38,7 +38,8 @@ Deno.serve(async (req) => {
     const { data: pa } = await admin.from("platform_admins").select("user_id").eq("user_id", auth.user.id).maybeSingle();
     if (!pa) {
       const { data: mem } = await admin.from("unidade_members")
-        .select("unidade_id").eq("user_id", auth.user.id).eq("unidade_id", body.unidade_id).maybeSingle();
+        .select("unidade_id").eq("user_id", auth.user.id).eq("unidade_id", body.unidade_id)
+        .not("role", "in", "(cliente,contabilidade)").maybeSingle();
       if (!mem) return json({ error: "Sem acesso à configuração fiscal desta unidade" }, 403);
     }
 

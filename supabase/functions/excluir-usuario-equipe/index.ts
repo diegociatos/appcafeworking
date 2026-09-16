@@ -42,10 +42,10 @@ Deno.serve(async (req) => {
     const { data: usuario } = await admin.from("usuarios").select("*").eq("id", body.usuario_id).maybeSingle();
     if (!usuario) return json({ error: "Usuário não encontrado." }, 404);
 
-    // Autorização: admin da plataforma OU membro da unidade do usuário.
+    // Autorização: admin da plataforma OU master da unidade do usuário.
     const { data: pa } = await admin.from("platform_admins").select("user_id").eq("user_id", auth.user.id).maybeSingle();
     if (!pa) {
-      const { data: mem } = await admin.from("unidade_members").select("unidade_id").eq("user_id", auth.user.id).eq("unidade_id", usuario.unidade_id).maybeSingle();
+      const { data: mem } = await admin.from("unidade_members").select("unidade_id").eq("user_id", auth.user.id).eq("unidade_id", usuario.unidade_id).eq("role", "master").maybeSingle();
       if (!mem) return json({ error: "Você não pode excluir usuários desta unidade." }, 403);
     }
 

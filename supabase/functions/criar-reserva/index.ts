@@ -52,7 +52,8 @@ Deno.serve(async (req) => {
     const { data: pa } = await admin.from("platform_admins").select("user_id").eq("user_id", auth.user.id).maybeSingle();
     const { data: mems } = await admin.from("unidade_members").select("role").eq("user_id", auth.user.id).eq("unidade_id", b.unidade_id);
     const ehAdmin = Boolean(pa);
-    const ehStaff = (mems || []).some((m) => m.role !== "cliente");
+    // contabilidade parceira só acompanha aberturas de empresa: não reserva
+    const ehStaff = (mems || []).some((m) => m.role !== "cliente" && m.role !== "contabilidade");
     const ehCliente = (mems || []).some((m) => m.role === "cliente");
 
     if (!ehAdmin && !ehStaff && !ehCliente) {

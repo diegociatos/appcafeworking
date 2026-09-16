@@ -36,10 +36,10 @@ Deno.serve(async (req) => {
     if (!auth?.user) return json({ error: "Não autenticado" }, 401);
     const admin = adminClient();
 
-    // acesso à unidade (membro ou admin da plataforma)
+    // acesso à unidade (equipe ou admin da plataforma; cliente e contabilidade não)
     const { data: pa } = await admin.from("platform_admins").select("user_id").eq("user_id", auth.user.id).maybeSingle();
     if (!pa) {
-      const { data: mem } = await admin.from("unidade_members").select("unidade_id").eq("user_id", auth.user.id).eq("unidade_id", body.unidade_id).maybeSingle();
+      const { data: mem } = await admin.from("unidade_members").select("unidade_id").eq("user_id", auth.user.id).eq("unidade_id", body.unidade_id).not("role", "in", "(cliente,contabilidade)").maybeSingle();
       if (!mem) return json({ error: "Sem acesso a esta unidade." }, 403);
     }
 

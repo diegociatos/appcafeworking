@@ -2,7 +2,7 @@
 // Edge Function: criar-usuario-equipe (cria login de um membro da equipe)
 //
 // POST /functions/v1/criar-usuario-equipe
-// body: { nome, email, perfil (master|recepcao|financeiro), unidade_ids[], senha? }
+// body: { nome, email, perfil (master|recepcao|financeiro|contabilidade), unidade_ids[], senha? }
 //
 // Cria, com service_role:
 //   1. o login no Supabase Auth,
@@ -11,12 +11,15 @@
 //      com o papel escolhido (gerente=master).
 // Devolve o login + a senha temporária. Pode ser chamada pelo admin da
 // plataforma OU pelo master das unidades em questão.
+//
+// contabilidade: login da contabilidade parceira; só enxerga os processos de
+// abertura de empresa das unidades marcadas (is_unidade_contabilidade).
 // ============================================================================
 
 import { handleOptions, json } from "../_shared/cors.ts";
 import { userClient, adminClient } from "../_shared/supabaseAdmin.ts";
 
-const ROLES = ["master", "recepcao", "financeiro"];
+const ROLES = ["master", "recepcao", "financeiro", "contabilidade"];
 
 function gerarSenha(): string {
   const cs = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
@@ -45,10 +48,10 @@ Deno.serve(async (req) => {
     if (!auth?.user) return json({ error: "Não autenticado" }, 401);
     const admin = adminClient();
 
-    // Autorização: admin da plataforma OU membro de TODAS as unidades-alvo.
+    // Autorização: admin da plataforma OU master de TODAS as unidades-alvo.
     const { data: pa } = await admin.from("platform_admins").select("user_id").eq("user_id", auth.user.id).maybeSingle();
     if (!pa) {
-      const { data: mine } = await admin.from("unidade_members").select("unidade_id").eq("user_id", auth.user.id);
+      const { data: mine } = await admin.from("unidade_members").select("unidade_id").eq("user_id", auth.user.id).eq("role", "master");
       const meus = new Set((mine || []).map((m) => m.unidade_id));
       if (!body.unidade_ids.every((id: string) => meus.has(id))) {
         return json({ error: "Você só pode dar acesso a unidades que gerencia." }, 403);
