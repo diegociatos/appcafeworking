@@ -7,7 +7,7 @@ import { Card, Badge, Btn, PageHead } from "../components/ui.jsx";
 import { C, serif, fmt, fmtShort } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 import { getCurrentCompetencia, MESES_BR as MESES, noPeriodo } from "../lib/dateUtils.js";
-import { cobrancasJaLancadas, receitaOnlineNoMes } from "../lib/recebimentosOnline.js";
+import { cobrancasJaLancadas, competenciaBRT, receitaOnlineNoMes } from "../lib/recebimentosOnline.js";
 import { Store } from "lucide-react";
 
 const ICONS = { fatura: Receipt, corresp: Mail, sala: DoorOpen, lead: Target, estoque: AlertCircle };
@@ -23,11 +23,16 @@ export default function Dashboard({ go }) {
   const comp = getCurrentCompetencia();
   const daUnidade = (arr) => (arr || []).filter((x) => !x.unidadeId || x.unidadeId === ativo);
   const lancs = daUnidade(store.lancamentos);
+  const todosClientes = store.clientes || [];
   const clientes = daUnidade(store.clientes);
   const reservas = daUnidade(store.reservas).filter((r) => r.status !== "cancelada");
-  const pedidos = daUnidade(store.pedidos);
+  const todosPedidos = daUnidade(store.pedidos);
   const boletos = daUnidade(store.boletos);
   const leads = daUnidade(store.leads);
+  // Do MÊS CORRENTE (fuso de Brasília) — antes estes cartões somavam desde sempre.
+  const noMes = (comp2) => comp2 && comp2.ano === comp.ano && comp2.mes === comp.mes;
+  const pedidos = todosPedidos.filter((p) => noMes(competenciaBRT(p.createdAt || p.criadoEm)));
+  const reservasDoMes = reservas.filter((r) => noMes(competenciaBRT(r.startAt || r.start_at)));
   const salas = store.salasDe ? store.salasDe(ativo) : [];
   const contratos = store.contratosDe ? store.contratosDe(ativo).filter((c) => c.status === "ativo") : [];
   // Cobranças pagas no Asaas (vazio para quem a RLS não deixa ler).
@@ -60,7 +65,7 @@ export default function Dashboard({ go }) {
   const totalMembros = clientes.filter((c) => c.status !== "inativo").length;
   const salasTotal = salas.length;
   const ocupacao = salasTotal ? Math.round((salas.filter((s) => s.contratada).length / salasTotal) * 100) : 0;
-  const horasReservadas = reservas.reduce((s, r) => s + (r.dur || 0), 0);
+  const horasReservadas = reservasDoMes.reduce((s, r) => s + (r.dur || 0), 0);
 
   const cafeteriaMes = pedidos.reduce((s, p) => s + (p.total || 0), 0);
   const cmvMes = pedidos.reduce((s, p) => s + (p.cmvTotal || 0), 0);
@@ -72,7 +77,7 @@ export default function Dashboard({ go }) {
 
   // Top salas (por nº de reservas) e top produtos (por quantidade vendida).
   const nomeSala = (id) => salas.find((s) => s.id === id)?.nome || "Sala";
-  const topSalas = Object.entries(reservas.reduce((a, r) => ((a[r.sala] = (a[r.sala] || 0) + 1), a), {}))
+  const topSalas = Object.entries(reservasDoMes.reduce((a, r) => ((a[r.sala] = (a[r.sala] || 0) + 1), a), {}))
     .sort((a, b) => b[1] - a[1]).slice(0, 4).map(([id, n]) => ({ nome: nomeSala(id), n }));
   const topProdutos = Object.entries(pedidos.flatMap((p) => p.itens || []).reduce((a, it) => ((a[it.nome] = (a[it.nome] || 0) + (it.q || 1)), a), {}))
     .sort((a, b) => b[1] - a[1]).slice(0, 4).map(([nome, n]) => ({ nome, n }));
@@ -280,8 +285,8 @@ export default function Dashboard({ go }) {
       {/* Destaques operacionais */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 22 }} className="cw-grid-stack">
         {[
-          { titulo: "Salas mais reservadas", icon: DoorOpen, cor: C.cafe, itens: topSalas, vazio: "Sem reservas ainda.", acao: "reservas" },
-          { titulo: "Produtos mais vendidos", icon: Coffee, cor: C.amber, itens: topProdutos, vazio: "Sem vendas ainda.", acao: "pdv" },
+          { titulo: `Salas mais reservadas · ${MESES[comp.mes]}`, icon: DoorOpen, cor: C.cafe, itens: topSalas, vazio: "Sem reservas neste mês.", acao: "reservas" },
+          { titulo: `Produtos mais vendidos · ${MESES[comp.mes]}`, icon: Coffee, cor: C.amber, itens: topProdutos, vazio: "Sem vendas neste mês.", acao: "pdv" },
         ].map((p) => (
           <Card key={p.titulo} className="cw-fade cw-fade-4" style={{ cursor: "pointer" }} onClick={() => go(p.acao)}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
@@ -307,8 +312,13 @@ export default function Dashboard({ go }) {
           const salasU = store.salasDe ? store.salasDe(u.id) : [];
           const uSalas = salasU.length;
           const uOcup = uSalas ? Math.round((salasU.filter((s) => s.contratada).length / uSalas) * 100) : 0;
-          const uMembros = clientes.filter((c) => c.unidadeId === u.id && c.status !== "inativo").length;
-          const uReceita = lancs.filter((l) => l.unidadeId === u.id && l.tipo === "entrada" && l.status === "pago").reduce((s, l) => s + (l.valor || 0), 0);
+          // Usa as listas COMPLETAS: `clientes`/`lancs` já vêm filtrados pela
+          // unidade ativa e zeravam o cartão das outras unidades.
+          const uMembros = todosClientes.filter((c) => c.unidadeId === u.id && c.status !== "inativo").length;
+          // Receita do mês corrente (o rótulo diz o mês), não "desde sempre".
+          const uReceita = (store.lancamentos || [])
+            .filter((l) => l.unidadeId === u.id && l.tipo === "entrada" && l.status === "pago" && noPeriodo(l, comp.ano, comp.mes))
+            .reduce((s, l) => s + (l.valor || 0), 0);
           return (
           <Card
             key={u.id}
@@ -372,7 +382,7 @@ export default function Dashboard({ go }) {
                 <b>{uMembros}</b>
               </div>
               <div>
-                <span style={{ color: C.text3 }}>Receita </span>
+                <span style={{ color: C.text3 }}>Receita {MESES[comp.mes]} </span>
                 <b>{fmtShort(uReceita)}</b>
               </div>
             </div>

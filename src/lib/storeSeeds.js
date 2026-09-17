@@ -159,7 +159,7 @@ export const seedPedidos = [
   {
     id: "pd_seed1", unidadeId: "lux", cliente: "Mendes Advocacia", origem: "app",
     itens: [{ nome: "Cappuccino", preco: 12, q: 2, emoji: "☕" }, { nome: "Pão de Queijo", preco: 6.5, q: 3, emoji: "🧀" }],
-    total: 43.5, status: "recebido", hora: "09:12",
+    total: 43.5, status: "recebido", hora: "09:12", createdAt: new Date().toISOString(),
   },
 ];
 
