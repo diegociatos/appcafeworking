@@ -40,6 +40,25 @@ export function aceiteConfere(vigente: ContratoVigente, aceite: unknown): boolea
   return !!a && a.modelo_id === vigente.id && a.hash === vigente.hash;
 }
 
+/**
+ * Contrato de parceria da rede (docs/contratos-parceiros): publicado sem
+ * unidade, porque vale para todos os parceiros. null enquanto o texto não for
+ * publicado — a aprovação segue, sem registrar aceite, e a tela avisa.
+ */
+export const CATEGORIA_PARCERIA = "parceria";
+
+export async function contratoParceriaVigente(admin: SupabaseClient): Promise<ContratoVigente | null> {
+  const { data, error } = await admin
+    .from("contratos_modelos")
+    .select("id, unidade_id, categoria, versao, titulo, corpo, hash")
+    .eq("categoria", CATEGORIA_PARCERIA)
+    .eq("vigente", true)
+    .is("unidade_id", null)
+    .maybeSingle();
+  if (error) throw new Error(`contratos_modelos: ${error.message}`);
+  return (data as ContratoVigente | null) ?? null;
+}
+
 export interface DadosAceite {
   unidade_id: string;
   cliente_nome: string;
@@ -50,7 +69,7 @@ export interface DadosAceite {
   valor?: number | null;
   recorrencia?: string | null;
   prazo_minimo_meses?: number | null;
-  referencia_tipo: "signup" | "reserva";
+  referencia_tipo: "signup" | "reserva" | "parceria";
   referencia_id: string;
   origem: string;
 }

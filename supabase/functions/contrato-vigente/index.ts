@@ -7,11 +7,15 @@
 // Devolve a versão vigente do contrato da categoria, com o hash que o site
 // precisa mandar de volta no aceite. A versão da unidade tem preferência sobre
 // a geral.
+//
+// categoria=parceria: contrato do parceiro credenciado, publicado sem unidade
+// (a página "Seja parceiro" do site mostra o texto antes do aceite). Aqui o
+// unidade_id não é usado.
 // ============================================================================
 
 import { handleOptions, json } from "../_shared/cors.ts";
 import { adminClient } from "../_shared/supabaseAdmin.ts";
-import { contratoVigente } from "../_shared/contratos.ts";
+import { CATEGORIA_PARCERIA, contratoParceriaVigente, contratoVigente } from "../_shared/contratos.ts";
 import { categoriaValida } from "../_shared/venda.ts";
 
 Deno.serve(async (req) => {
@@ -27,6 +31,12 @@ Deno.serve(async (req) => {
       unidadeId = unidadeId || body?.unidade_id || "";
       categoria = categoria || body?.categoria || "";
     }
+    if (categoria === CATEGORIA_PARCERIA) {
+      const parceria = await contratoParceriaVigente(adminClient());
+      if (!parceria) return json({ error: "Contrato de parceria ainda não publicado.", codigo: "SEM_CONTRATO" }, 404, req);
+      return json({ contrato: parceria }, 200, req);
+    }
+
     if (!unidadeId) return json({ error: "unidade_id é obrigatório." }, 400, req);
     if (!categoriaValida(categoria)) return json({ error: "Categoria inválida." }, 400, req);
 

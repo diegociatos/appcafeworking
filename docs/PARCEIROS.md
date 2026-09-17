@@ -42,12 +42,46 @@ Decisões do Diego em 17/09/2026:
 - **E-mail ao parceiro** a cada contrato novo, reserva paga, abertura de empresa e cancelamento.
 - **Visão do parceiro:** "Meus repasses" por mês (bruto, 75%, garantia retida, líquido), sem ver dados de outras unidades.
 
-### Fase 2: entrada do parceiro
-- **Site:** página "Seja parceiro CafeWorking" com formulário (dados, endereço, fotos, IPTU/AVCB, serviços oferecidos) e aceite do contrato de parceria.
-- **Painel "Parceiros":** candidaturas e, na aprovação, criação da conta, da unidade com a tabela nacional, do login master, da subconta Asaas e do kit do endereço.
-- **Contratos:** o contrato do cliente de unidade parceira é preenchido com os dados do parceiro e a cláusula de responsabilidade.
+### Fase 2: entrada do parceiro — feita (20260923120000)
+- **Site:** `seja-parceiro.html` (repositório do site) explica o modelo e recebe a
+  candidatura; `assets/js/parceiro-form.js` valida documento e telefone, mostra o
+  contrato de parceria vigente e envia à Edge Function `parceiro-candidatura`
+  (pública, com Turnstile). Quem envia cai em `obrigado-parceiro.html` (noindex).
+- **Banco:** `parceiro_candidaturas` (só o admin da plataforma lê e move para
+  'em_analise'; aprovar e recusar são da Edge Function).
+- **Painel "Parceiros"** (`src/pages/Parceiros.jsx`): candidaturas por situação,
+  aprovar, recusar com motivo (e-mail ao candidato), checklist do que falta e
+  indicadores da rede.
+- **Aprovar** (`aprovar-parceiro`, idempotente e auditada): conta parceira 75/10
+  em `em_analise`, unidade "CafeWorking &lt;Cidade&gt;" com a tabela nacional,
+  login master com link de criar senha, aceite do contrato de parceria (categoria
+  `parceria`, quando houver texto publicado) e e-mail de boas-vindas com o que
+  falta. **Não ativa o parceiro:** ele só vende com o `asaas_wallet_id` em Contas.
+- **Kit do endereço:** o roteiro (IPTU com índice cadastral, autorização do
+  proprietário, AVCB) sai no checklist da tela e no e-mail; o envio continua em
+  Unidades → Documentos do endereço fiscal.
 
-### Fase 3: operação e vitrine nacional
-- **Vitrine:** páginas por cidade geradas no build ("Endereço fiscal em Cidade/UF") e busca de unidade por cidade no contratar.
-- **Prazo de correspondência:** avisar o cliente em até 1 dia útil, com alerta ao parceiro e à CafeWorking.
-- **Qualidade:** bloqueio de repasse com reclamação pendente e indicadores por parceiro (clientes, cancelamentos, prazo).
+### Fase 3: operação e vitrine nacional — parcial
+- **Vitrine:** `scripts/paginas-cidade.js` (site) gera no build uma página por
+  cidade com unidade pública vendendo endereço fiscal
+  (`/endereco-fiscal/<cidade>-<uf>`), com preço da tabela nacional, endereço, o
+  que está incluso, FAQ e botão de contratar já com a unidade. O `contratar.js`
+  aceita `?cidade=` e descobre a unidade. **feito**
+- **Prazo de correspondência:** `correspondencias_fora_prazo()` acha o que passou
+  de 1 dia útil em unidade parceira; a `rotina-diaria` avisa o parceiro e a
+  CafeWorking uma vez por correspondência (`parceiro_alertas`) e a tela
+  Correspondências marca o que está fora do prazo. **feito**
+- **Indicadores por parceiro** (`parceiro_indicadores()`): clientes ativos,
+  receita do mês, garantia acumulada e correspondências fora do prazo. **feito**
+- **Qualidade:** bloqueio de repasse com reclamação pendente. **pendente**
+
+### Pendências para o dono decidir
+1. **Publicar o contrato de parceria** (categoria `parceria`, sem unidade), a
+   partir de `docs/contratos-parceiros/`, depois da revisão da Ciatos Jurídico.
+   Enquanto não houver texto, a aprovação segue sem registrar o aceite e a tela
+   avisa.
+2. **Contrato do cliente de unidade parceira** com os dados do parceiro e a
+   cláusula de responsabilidade (hoje o texto vigente é o mesmo de qualquer
+   unidade).
+3. **Subconta Asaas do parceiro:** a carteira (`walletId`) continua informada à
+   mão em Contas. Criar a subconta por API exige decisão sobre o KYC.

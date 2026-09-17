@@ -8,6 +8,8 @@
 // 1. Avisa por e-mail a renovação do plano anual 30 dias antes (contrato 6.3)
 // 2. Encerra no Asaas os cancelamentos cujo aviso prévio terminou (7.3)
 // 3. Libera horários de sala segurados e não pagos
+// 4. Avisa o parceiro e a CafeWorking da correspondência que passou de 1 dia
+//    útil sem o cliente ser notificado (docs/PARCEIROS.md, fase 3)
 // Idempotente: rodar duas vezes no mesmo dia não repete aviso nem encerramento.
 // ============================================================================
 
@@ -18,6 +20,7 @@ import { credenciaisAsaas } from "../_shared/asaas.ts";
 import { emJanelaDeAvisoRenovacao, somarDias } from "../_shared/ciclo.ts";
 import { APP_URL, avisarCliente, avisarEquipe, encerrarAssinaturaAsaas, nomeDaUnidade } from "../_shared/assinaturas.ts";
 import { liberarSala } from "../_shared/disponibilidade.ts";
+import { avisarParceiro, linkParceiro } from "../_shared/parceirosDb.ts";
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Método não permitido" }, 405);
@@ -27,7 +30,7 @@ Deno.serve(async (req) => {
 
   const admin = adminClient();
   const hoje = hojeBRT();
-  const resumo = { avisos_renovacao: 0, encerradas: 0, reservas_liberadas: 0, erros: [] as string[] };
+  const resumo = { avisos_renovacao: 0, encerradas: 0, reservas_liberadas: 0, correspondencias_atrasadas: 0, erros: [] as string[] };
 
   // 1) aviso de renovação do anual
   try {
@@ -86,6 +89,40 @@ Deno.serve(async (req) => {
     resumo.reservas_liberadas = Number(data || 0);
   } catch (e) {
     resumo.erros.push(`reservas: ${(e as Error).message}`);
+  }
+
+  // 4) correspondência de unidade parceira fora do prazo de 1 dia útil
+  //    parceiro_alertas guarda o que já saiu: um aviso por correspondência.
+  try {
+    const { data, error } = await admin.rpc("correspondencias_fora_prazo", { p_unidade_id: null });
+    if (error) throw new Error(error.message);
+    const atrasadas = (data || []) as {
+      conta_id: string; unidade_id: string; unidade: string; item_id: string;
+      cliente: string; remetente: string; recebido_em: string; prazo_em: string; dias: number;
+    }[];
+    for (const c of atrasadas) {
+      // marca antes de avisar: duas rotinas juntas não mandam o mesmo e-mail duas vezes
+      const { error: iErr } = await admin.from("parceiro_alertas").insert({
+        conta_id: c.conta_id, unidade_id: c.unidade_id, tipo: "correspondencia_atrasada", referencia: c.item_id,
+        detalhe: `${c.cliente} · ${c.remetente} · recebida em ${c.recebido_em}, prazo ${c.prazo_em}`,
+      });
+      if (iErr) {
+        if (iErr.code === "23505") continue; // já avisado
+        throw new Error(`parceiro_alertas: ${iErr.message}`);
+      }
+      const linhas = [
+        `Cliente: ${c.cliente}`,
+        `Remetente: ${c.remetente}`,
+        `Recebida em ${c.recebido_em}; o aviso ao cliente vencia em ${c.prazo_em}.`,
+        c.dias > 0 ? `Está ${c.dias} dia(s) além do prazo.` : "Venceu hoje.",
+        "Abra Correspondências, confira o e-mail do cliente e clique em Notificar cliente.",
+      ];
+      await avisarParceiro(admin, c.unidade_id, `Correspondência fora do prazo em ${c.unidade}`, linhas, linkParceiro("corresp"));
+      await avisarEquipe(`Parceiro fora do prazo de correspondência: ${c.unidade}`, [...linhas, `Unidade: ${c.unidade_id}`], `${APP_URL}/?p=parceiros`);
+      resumo.correspondencias_atrasadas++;
+    }
+  } catch (e) {
+    resumo.erros.push(`correspondências: ${(e as Error).message}`);
   }
 
   if (resumo.erros.length) await avisarEquipe("Rotina diária com erros", resumo.erros);
