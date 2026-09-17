@@ -29,18 +29,38 @@ const origemCor = (o) => ORIGEM_COR[o] || C.cafe2;
 const origemIcon = (o) => ORIGEM_ICON[o] || Tag;
 
 export default function CRM({ go }) {
-  const { activeUnit, unidadeAtiva, leads: leadsAll, setLeads, crmEtapas: etapas, setCrmEtapas: setEtapas, crmOrigens: origens, setCrmOrigens: setOrigens, addCliente, planosDe } = useStore();
+  const { activeUnit, unidadeAtiva, leads: leadsAll, setLeads, crmEtapas: etapas, setCrmEtapas: setEtapas, crmOrigens: origens, setCrmOrigens: setOrigens, criarClienteConfirmado, planosDe } = useStore();
   const [convertido, setConvertido] = useState(null); // { cliente, lead }
+  const [convertendo, setConvertendo] = useState(null); // id do lead em conversão
+  const [erroConversao, setErroConversao] = useState(null); // { id, mensagem }
 
-  const converterEmCliente = (l) => {
+  /**
+   * Converte o lead em cliente. Só marca o lead como fechado e mostra o sucesso
+   * DEPOIS que a gravação confirmou — antes a tela dizia "convertido" mesmo
+   * quando o banco recusava e o cliente sumia no próximo recarregamento.
+   */
+  const converterEmCliente = async (l) => {
+    if (convertendo) return;
+    setConvertendo(l.id);
+    setErroConversao(null);
     const planos = planosDe ? planosDe(activeUnit) : [];
     const planoMatch = planos.find((p) => (l.interesse || "").toLowerCase().includes((p.nome || "").toLowerCase()) || (p.nome || "").toLowerCase().includes((l.interesse || "").toLowerCase()));
-    const cli = addCliente({
-      nome: l.nome, plano: planoMatch?.nome || l.interesse || "Plano", unidade: unidadeAtiva?.nome,
-      tel: l.tel || "", email: l.email || "", cnpj: l.documento || "", contato: l.nome, fiscal: false,
-    });
-    setLeads((ls) => ls.map((x) => (x.id === l.id ? { ...x, etapa: "fechado" } : x)));
-    setConvertido({ cliente: cli, lead: l });
+    try {
+      const cli = await criarClienteConfirmado({
+        nome: l.nome, plano: planoMatch?.nome || l.interesse || "Plano", unidade: unidadeAtiva?.nome,
+        unidadeId: activeUnit,
+        tel: l.tel || "", email: l.email || "", cnpj: l.documento || "", contato: l.nome, fiscal: false,
+      });
+      setLeads((ls) => ls.map((x) => (x.id === l.id ? { ...x, etapa: "fechado" } : x)));
+      setConvertido({ cliente: cli, lead: l });
+    } catch (e) {
+      setErroConversao({
+        id: l.id,
+        mensagem: e?.message || "Não foi possível criar o cliente agora. O lead continua onde estava; tente de novo.",
+      });
+    } finally {
+      setConvertendo(null);
+    }
   };
   // Funil por unidade: cada coworking tem seus próprios leads.
   const leads = leadsAll.filter((l) => l.unidadeId === activeUnit);
@@ -260,15 +280,23 @@ export default function CRM({ go }) {
                         </Badge>
                       </div>
                       {l.etapa !== "fechado" && (
-                        <button
-                          type="button"
-                          onMouseDown={(e) => e.stopPropagation()}
-                          onClick={() => converterEmCliente(l)}
-                          title="Cria o cliente, vincula a unidade e fecha o lead"
-                          style={{ width: "100%", marginTop: 10, padding: "7px 0", borderRadius: 9, border: `1px solid ${C.teal}`, background: C.tealPale, color: C.teal, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
-                        >
-                          + Converter em cliente
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={() => converterEmCliente(l)}
+                            disabled={convertendo === l.id}
+                            title="Cria o cliente, vincula a unidade e fecha o lead"
+                            style={{ width: "100%", marginTop: 10, padding: "7px 0", borderRadius: 9, border: `1px solid ${C.teal}`, background: C.tealPale, color: C.teal, fontSize: 12, fontWeight: 600, cursor: convertendo === l.id ? "default" : "pointer", opacity: convertendo === l.id ? 0.6 : 1 }}
+                          >
+                            {convertendo === l.id ? "Criando cliente…" : "+ Converter em cliente"}
+                          </button>
+                          {erroConversao?.id === l.id && (
+                            <div role="alert" style={{ marginTop: 6, fontSize: 11.5, color: C.red, background: C.redPale, borderRadius: 8, padding: "6px 8px", lineHeight: 1.4 }}>
+                              {erroConversao.mensagem}
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   );
