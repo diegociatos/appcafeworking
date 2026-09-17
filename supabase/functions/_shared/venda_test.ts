@@ -152,6 +152,19 @@ Deno.test("assinatura anual usa ciclo YEARLY", () => {
   });
   assertEquals(p.cycle, "YEARLY");
   assertEquals(p.billingType, "PIX");
+  assertEquals("split" in p, false, "unidade própria: sem split");
+});
+
+Deno.test("unidade parceira: split no corpo da assinatura e da cobrança", async () => {
+  const { comSplit } = await import("./venda.ts");
+  const split = [{ walletId: "0f1e2d3c-aaaa-bbbb-cccc-1234567890ab", percentualValue: 67.5 }];
+  const p = payloadAssinaturaAsaas({
+    customer: "c", valor: 149, descricao: "x", nextDueDate: "2026-09-14", externalReference: "assinatura:1", split,
+  });
+  assertEquals(p.split, split);
+  assertEquals(comSplit({ value: 10 }, split), { value: 10, split });
+  assertEquals(comSplit({ value: 10 }, []), { value: 10 });
+  assertEquals(comSplit({ value: 10 }, null), { value: 10 });
 });
 
 Deno.test("servicosDaVenda e avisoBonificados", async () => {

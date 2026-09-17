@@ -20,6 +20,12 @@
 // lógica do emitir-nfse (_shared/nfse/emitirNota.ts). Uma nota por cobrança;
 // falha nunca derruba o webhook, vira aviso à equipe com o motivo.
 //
+// Unidade parceira (docs/PARCEIROS.md): a cobrança guarda a divisão do split,
+// recalculada sobre o valor pago; a garantia retida entra no razão
+// parceiro_garantias (paga → retenção, estornada → estorno); a nota automática é
+// só da parte da CafeWorking; o parceiro recebe e-mail a cada venda ativada e
+// reserva paga.
+//
 // Tudo é idempotente: o Asaas reenvia eventos e manda PAYMENT_CONFIRMED e
 // PAYMENT_RECEIVED para o mesmo pagamento.
 //
@@ -31,7 +37,9 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { handleOptions, json } from "../_shared/cors.ts";
 import { adminClient } from "../_shared/supabaseAdmin.ts";
-import { garantirCobranca } from "../_shared/cobrancas.ts";
+import { atualizarCobranca, garantirCobranca } from "../_shared/cobrancas.ts";
+import { avisarParceiro, contaDaUnidade, lancarGarantia, linkParceiro } from "../_shared/parceirosDb.ts";
+import { ehContaParceira, linhaValorParceiro } from "../_shared/parceiros.ts";
 import { getNotifProvider, renderTemplate } from "../_shared/notify/index.ts";
 import { proximaCobranca } from "../_shared/ciclo.ts";
 import { avisarEquipe } from "../_shared/assinaturas.ts";
@@ -85,13 +93,7 @@ async function enviarBoasVindas(admin: SupabaseClient, ps: Linha) {
 // ---------------------------------------------------------------------------
 
 async function atualizarCobrancaExistente(admin: SupabaseClient, pay: Linha, status: string) {
-  const patch: Record<string, unknown> = { status };
-  if (status === "pago") {
-    patch.valor_pago = pay.value ?? null;
-    patch.pago_em = new Date().toISOString();
-  }
-  const { error } = await admin.from("cobrancas").update(patch).eq("asaas_payment_id", pay.id);
-  if (error) throw new Error(`cobrancas: ${error.message}`);
+  await atualizarCobranca(admin, pay, status); // recalcula a divisão do parceiro quando paga
 }
 
 /** Cliente da unidade pelo e-mail; cria se ainda não existir. */
@@ -137,6 +139,7 @@ async function cadastrarClienteDaReserva(admin: SupabaseClient, r: Linha) {
       `CPF/CNPJ: ${r.cliente_documento || "não informado"}`,
       "Reserva paga pelo link de reserva. O cadastro foi criado em Clientes.",
     ], `${APP_URL}/?p=clientes`);
+    // (o aviso ao parceiro sai em tratarReserva a cada reserva paga, cliente novo ou não)
   } catch (e) {
     console.error(`[reserva ${r.id}] cadastro do cliente:`, (e as Error).message);
   }
@@ -253,6 +256,24 @@ async function ativarCadastro(
       ...(servicos.abertura ? ["Abertura de empresa: o cliente preenche os dados e anexa os documentos no app; a Ciatos Contabilidade acompanha em Aberturas. Taxas oficiais por conta do cliente."] : []),
       ...(servicos.certificado ? ["Certificado digital e-CNPJ A1 (1 ano): emitir depois que o CNPJ existir; agendar a validação com o cliente."] : []),
     ], APP_URL);
+    // Unidade parceira: o parceiro fica sabendo do contrato novo (nunca lança)
+    const contaParceira = await contaDaUnidade(admin, ps.unidade_id).catch((e) => {
+      console.error(`aviso ao parceiro ${ps.id}:`, (e as Error).message);
+      return null;
+    });
+    if (ehContaParceira(contaParceira)) {
+      await avisarParceiro(admin, ps.unidade_id, `Novo contrato: ${ps.plano_nome}`, [
+        `Cliente: ${ps.nome}`,
+        `E-mail: ${ps.email}`,
+        `Telefone: ${ps.telefone || "não informado"}`,
+        `CPF/CNPJ: ${ps.documento || "não informado"}`,
+        `Plano: ${ps.plano_nome} (${ps.recorrencia || "mensal"})`,
+        linhaValorParceiro(Number(ps.valor), contaParceira),
+        ...(ps.turno ? [`Turno: ${ps.turno === "manha" ? "manhã (8h às 12h)" : "tarde (12h às 18h)"}`] : []),
+        ...(ps.categoria === "endereco_fiscal" ? ["Endereço fiscal: o cliente envia os documentos pelo app; confira em Assinaturas e contratos."] : []),
+        "Pagamento confirmado. O contrato está em Assinaturas e contratos no app.",
+      ], linkParceiro("assinaturas"), contaParceira);
+    }
     // Processo de abertura da empresa (idempotente; nunca derruba a ativação)
     if (servicos.abertura) await criarAberturaDaVenda(admin, ps, assinatura);
     try {
@@ -293,6 +314,27 @@ async function confirmarReservaPorEmail(admin: SupabaseClient, r: Linha) {
   }
 }
 
+/** Reserva paga em unidade parceira: e-mail ao parceiro. Nunca lança. */
+async function avisarParceiroReserva(admin: SupabaseClient, r: Linha, pay: Linha) {
+  try {
+    const conta = await contaDaUnidade(admin, r.unidade_id);
+    if (!ehContaParceira(conta)) return;
+    const { data: sala } = await admin.from("salas").select("nome").eq("id", r.sala_id).maybeSingle();
+    const fmt = (iso: string, o: Intl.DateTimeFormatOptions) => new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", ...o });
+    await avisarParceiro(admin, r.unidade_id, `Reserva paga: ${sala?.nome || "sala"} em ${fmt(r.start_at, { dateStyle: "short" })}`, [
+      `Sala: ${sala?.nome || r.sala_id}`,
+      `Quando: ${fmt(r.start_at, { dateStyle: "short", timeStyle: "short" })} às ${fmt(r.end_at, { timeStyle: "short" })}`,
+      `Cliente: ${r.cliente_nome || "—"} (${r.cliente_email || "sem e-mail"})`,
+      `Telefone: ${r.cliente_telefone || "não informado"}`,
+      `CPF/CNPJ: ${r.cliente_documento || "não informado"}`,
+      linhaValorParceiro(Number(pay.value), conta),
+      "Prepare a sala para o horário. A reserva já está na agenda do app.",
+    ], linkParceiro("reservas"), conta);
+  } catch (e) {
+    console.error(`[reserva ${r.id}] aviso ao parceiro:`, (e as Error).message);
+  }
+}
+
 async function tratarReserva(admin: SupabaseClient, reservaId: string, pay: Linha, status: string): Promise<string> {
   const { data: r } = await admin
     .from("reservas").select("id, unidade_id, sala_id, cliente_nome, cliente_email, cliente_documento, cliente_telefone, status, start_at, end_at")
@@ -317,6 +359,7 @@ async function tratarReserva(admin: SupabaseClient, reservaId: string, pay: Linh
     if (resultado === "confirmada") {
       await confirmarReservaPorEmail(admin, r);
       await cadastrarClienteDaReserva(admin, r);
+      await avisarParceiroReserva(admin, r, pay);
     }
     return `reserva_${resultado}`;
   }
@@ -434,6 +477,9 @@ Deno.serve(async (req) => {
     else if (pay.subscription) resultado = await tratarAssinatura(admin, pay, status);
     else resultado = await tratarAvulso(admin, pay, status);
 
+    // Razão de garantia do parceiro (idempotente; erro de banco responde 500 e o Asaas reenvia)
+    const garantia = await lancarGarantia(admin, pay.id, status);
+
     // Nota automática: depois da baixa, nunca falha o webhook.
     let nota: string | undefined;
     if (status === "pago" && !SEM_NOTA_AO_RECEBER.includes(resultado)) {
@@ -444,7 +490,7 @@ Deno.serve(async (req) => {
         nota = "nota_erro";
       }
     }
-    return json({ ok: true, status, resultado, ...(nota ? { nota } : {}) }, 200, req);
+    return json({ ok: true, status, resultado, ...(garantia ? { garantia } : {}), ...(nota ? { nota } : {}) }, 200, req);
   } catch (e) {
     console.error("asaas-webhook", ev, pay.id, (e as Error).message);
     return json({ error: (e as Error).message ?? "Erro interno" }, 500, req);

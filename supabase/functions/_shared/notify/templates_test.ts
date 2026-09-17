@@ -79,6 +79,19 @@ Deno.test("aviso_equipe lista as linhas escapadas", () => {
   assertStringIncludes(m.html, "Cliente: &lt;b&gt;Rui&lt;/b&gt;");
 });
 
+Deno.test("aviso_parceiro: linhas escapadas e rodapé de parceiro (sem preferências do cliente)", () => {
+  const m = renderTemplate("aviso_parceiro", {
+    email: "parceiro@x.com", assunto: "Novo contrato: Fiscal", linhas: ["Cliente: <b>Rui</b>"], link: "https://app.cafeworking.com.br/?p=assinaturas",
+  });
+  assertEquals(m.assunto, "[CafeWorking · Parceiros] Novo contrato: Fiscal");
+  assertStringIncludes(m.html, "Cliente: &lt;b&gt;Rui&lt;/b&gt;");
+  assertStringIncludes(m.html, "parceiro credenciado");
+  assertEquals(m.html.includes("é cliente do CafeWorking"), false);
+  assertStringIncludes(m.texto, "?p=assinaturas");
+  // os demais seguem com o rodapé do cliente
+  assertStringIncludes(renderTemplate("aviso_equipe", { email: "e@x.com", assunto: "A", linhas: [] }).html, "é cliente do CafeWorking");
+});
+
 Deno.test("assinatura_ativa não deixa o nome digitado virar HTML", () => {
   const m = renderTemplate("assinatura_ativa", {
     cliente: "<img src=x onerror=alert(1)>", email: "x@exemplo.com", plano: "Fiscal", unidade: "Lux", categoria: null, linkSenha: "",

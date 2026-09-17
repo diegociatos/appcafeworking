@@ -22,6 +22,7 @@ import {
 } from "../_shared/assinaturas.ts";
 import { ocuparSala } from "../_shared/disponibilidade.ts";
 import { podeMexerNoDinheiro, recusaSemFinanceiro } from "../_shared/permissoes.ts";
+import { avisarParceiro, linkParceiro } from "../_shared/parceirosDb.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -107,6 +108,11 @@ Deno.serve(async (req) => {
           `Cliente: ${a.cliente_nome} (${a.cliente_email})`, `Motivo: ${parecer}`, `Por: ${usuario.email}`,
           `Devolução: ${r.reembolso === "manual" ? `MANUAL, R$ ${r.valorManual.toFixed(2)}` : r.reembolso}`,
         ], APP_URL);
+        await avisarParceiro(admin, a.unidade_id, `Plano cancelado (documentos reprovados): ${a.plano_nome}`, [
+          `Cliente: ${a.cliente_nome} (${a.cliente_email})`,
+          `Motivo: ${parecer}`,
+          "O plano foi encerrado e o pagamento é devolvido ao cliente.",
+        ], linkParceiro("assinaturas"));
         return json({ ok: true, docs_status: "reprovado", reembolso: r.reembolso }, 200, req);
       }
       return json({ error: "Decisão inválida." }, 400, req);

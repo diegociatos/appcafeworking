@@ -10,6 +10,7 @@ import type { Evento } from "./notify/types.ts";
 import { APP_URL, avisarEquipe } from "./assinaturas.ts";
 import { nomeExibicaoUnidade } from "./unidadeNome.ts";
 import type { PapelAbertura } from "./abertura.ts";
+import { avisarParceiro, linkParceiro } from "./parceirosDb.ts";
 
 // deno-lint-ignore no-explicit-any
 export type Linha = Record<string, any>;
@@ -180,6 +181,18 @@ export async function criarAbertura(admin: SupabaseClient, dados: {
     "2. O cliente já recebeu o pedido para preencher os dados e anexar os documentos. Você recebe outro e-mail quando ele enviar.",
     "3. Se ainda não tiver login, peça à equipe do CafeWorking (atendimento@cafeworking.com.br).",
   ]);
+  // Unidade parceira: o parceiro acompanha a abertura (nunca lança; conta própria não recebe)
+  await avisarParceiro(admin, data.unidade_id, `Abertura de empresa: ${data.cliente_nome}`, [
+    dados.origem === "venda" ? "Uma abertura de empresa foi contratada e paga na sua unidade." : "Um processo de abertura de empresa foi aberto na sua unidade.",
+    `Cliente: ${data.cliente_nome}`,
+    `E-mail: ${data.cliente_email}`,
+    ...(dados.contato?.telefone ? [`Telefone: ${dados.contato.telefone}`] : []),
+    ...(dados.contato?.documento ? [`CPF/CNPJ: ${dados.contato.documento}`] : []),
+    ...(data.plano_nome ? [`Plano: ${data.plano_nome}`] : []),
+    data.usa_endereco_unidade
+      ? "Endereço da empresa: o endereço fiscal da sua unidade (a contabilidade usa o IPTU e o índice cadastral do kit da unidade)."
+      : "Endereço da empresa: endereço próprio do cliente.",
+  ], linkParceiro("aberturas"));
   return { abertura: data, criada: true };
 }
 

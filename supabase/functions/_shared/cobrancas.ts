@@ -6,9 +6,16 @@
 // nascem no Asaas, sem linha prévia no banco. Por isso: tenta atualizar; se não
 // existir, insere; se outra requisição inseriu no meio (índice único
 // cobrancas_asaas_payment_uk), atualiza de novo.
+//
+// Unidade parceira (docs/PARCEIROS.md): a linha guarda a divisão do split
+// (bruto, parte do parceiro, garantia, repasse, parte da CafeWorking) com os
+// percentuais do momento. Na criação usa o snapshot recebido, o de outra fatura
+// da mesma assinatura (o split da assinatura não muda no Asaas) ou a conta
+// atual. Quando paga, recalcula sobre o valor pago com o percentual gravado.
 // ============================================================================
 
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { camposDaDivisao, type SnapshotSplit, snapshotDaCobranca, snapshotDaConta } from "./parceiros.ts";
+import { type ClienteBanco, contaDaUnidade } from "./parceirosDb.ts";
 
 export interface DadosCobranca {
   unidade_id: string;
@@ -19,30 +26,64 @@ export interface DadosCobranca {
   assinatura_id?: string | null;
   reserva_id?: string | null;
   origem?: string | null;
+  /** Percentuais usados no split enviado ao Asaas (quem cria a cobrança sabe). */
+  split?: SnapshotSplit | null;
 }
 
 // deno-lint-ignore no-explicit-any
 type PagamentoAsaas = Record<string, any>;
 
+const COLUNAS_SPLIT = "parceiro_conta_id, asaas_wallet_id, split_parceiro_pct, split_garantia_pct";
+
+/** Snapshot para uma cobrança nova: explícito → outra fatura da assinatura → conta atual da unidade. */
+export async function snapshotParaCobranca(
+  admin: ClienteBanco, unidadeId: string, pay: PagamentoAsaas, explicito?: SnapshotSplit | null,
+): Promise<SnapshotSplit | null> {
+  if (explicito) return explicito;
+  if (pay.subscription) {
+    const { data, error } = await admin.from("cobrancas").select(COLUNAS_SPLIT)
+      .eq("asaas_subscription_id", pay.subscription).not("parceiro_conta_id", "is", null).limit(1).maybeSingle();
+    if (error) throw new Error(`cobrancas (split da assinatura): ${error.message}`);
+    const s = snapshotDaCobranca(data);
+    if (s) return s;
+  }
+  return snapshotDaConta(await contaDaUnidade(admin, unidadeId));
+}
+
+/**
+ * Atualiza a cobrança existente pelo payment id. Paga: grava valor_pago/pago_em
+ * e recalcula a divisão sobre o valor pago. Devolve quantas linhas mudou.
+ */
+export async function atualizarCobranca(admin: ClienteBanco, pay: PagamentoAsaas, status: string): Promise<number> {
+  const patch: Record<string, unknown> = { status };
+  if (status === "pago") {
+    patch.valor_pago = pay.value ?? null;
+    patch.pago_em = new Date().toISOString();
+    const { data: atual, error } = await admin.from("cobrancas").select(`${COLUNAS_SPLIT}, valor`)
+      .eq("asaas_payment_id", pay.id).maybeSingle();
+    if (error) throw new Error(`cobrancas select: ${error.message}`);
+    const s = snapshotDaCobranca(atual);
+    if (s) Object.assign(patch, camposDaDivisao(s, Number(pay.value) > 0 ? Number(pay.value) : Number(atual?.valor)));
+  }
+  const { data, error } = await admin.from("cobrancas").update(patch).eq("asaas_payment_id", pay.id).select("id");
+  if (error) throw new Error(`cobrancas update: ${error.message}`);
+  return (data || []).length;
+}
+
 export async function garantirCobranca(
-  admin: SupabaseClient, pay: PagamentoAsaas, status: string, dados: DadosCobranca,
+  admin: ClienteBanco, pay: PagamentoAsaas, status: string, dados: DadosCobranca,
 ): Promise<void> {
+  if (await atualizarCobranca(admin, pay, status)) return;
+
+  const valor = Number(pay.value);
+  if (!(valor > 0)) return; // cobrança sem valor não entra (check da tabela)
+
   const patch: Record<string, unknown> = { status };
   if (status === "pago") {
     patch.valor_pago = pay.value ?? null;
     patch.pago_em = new Date().toISOString();
   }
-
-  const atualizar = async () => {
-    const { data, error } = await admin.from("cobrancas").update(patch).eq("asaas_payment_id", pay.id).select("id");
-    if (error) throw new Error(`cobrancas update: ${error.message}`);
-    return (data || []).length;
-  };
-
-  if (await atualizar()) return;
-
-  const valor = Number(pay.value);
-  if (!(valor > 0)) return; // cobrança sem valor não entra (check da tabela)
+  const split = await snapshotParaCobranca(admin, dados.unidade_id, pay, dados.split);
 
   const { error } = await admin.from("cobrancas").insert({
     unidade_id: dados.unidade_id,
@@ -62,11 +103,12 @@ export async function garantirCobranca(
     origem: dados.origem ?? null,
     invoice_url: pay.invoiceUrl ?? null,
     boleto_url: pay.bankSlipUrl ?? null,
+    ...camposDaDivisao(split, valor),
     ...patch,
   });
   if (!error) return;
   if (error.code === "23505") {
-    await atualizar(); // outra entrega do webhook inseriu primeiro
+    await atualizarCobranca(admin, pay, status); // outra entrega do webhook inseriu primeiro
     return;
   }
   throw new Error(`cobrancas insert: ${error.message}`);

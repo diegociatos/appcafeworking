@@ -24,7 +24,8 @@ import { registrarAuditoria } from "../audit.ts";
 import { avisarEquipe } from "../assinaturas.ts";
 import { getNfseProvider, FiscalError, type ConfigFiscal, type EmitirNfseInput } from "./index.ts";
 import { modoEmissao, serieDps, MSG_SEM_CERTIFICADO } from "./dps.ts";
-import { avaliarEmissaoAoReceber, pedidoDaCobranca } from "./aoReceber.ts";
+import { avaliarEmissaoAoReceber, cobrancaDeParceiro, descricaoDaNota, pedidoDaCobranca, valorDaNota } from "./aoReceber.ts";
+import { MSG_SEM_UNIDADE_FISCAL, unidadeFiscalPlataforma } from "../parceirosDb.ts";
 
 // deno-lint-ignore no-explicit-any
 type Linha = Record<string, any>;
@@ -64,8 +65,27 @@ const recusa = (status: number, error: string, extra: Partial<Extract<ResultadoN
   ({ ok: false, status, error, ...extra });
 
 export async function emitirNotaFiscal(
-  admin: SupabaseClient, pedido: PedidoNota, ator: AtorNota, opcoes: { exigirReal?: boolean } = {},
+  admin: SupabaseClient, pedidoOriginal: PedidoNota, ator: AtorNota, opcoes: { exigirReal?: boolean } = {},
 ): Promise<ResultadoNota> {
+  let pedido = pedidoOriginal;
+  const cobrancaId = pedido.cobranca_id ? String(pedido.cobranca_id) : null;
+
+  // 0) cobrança de unidade parceira: a nota é da CafeWorking, só da parte dela,
+  //    pela config fiscal da CafeWorking (nunca pela do parceiro)
+  let cobParceiro: Linha | null = null;
+  if (cobrancaId) {
+    const { data: c, error: cErr } = await admin.from("cobrancas").select("*").eq("id", cobrancaId).maybeSingle();
+    if (cErr) return recusa(500, `Falha ao ler a cobrança: ${cErr.message}`);
+    if (c && cobrancaDeParceiro(c)) {
+      const fiscal = unidadeFiscalPlataforma();
+      if (!fiscal) return recusa(412, MSG_SEM_UNIDADE_FISCAL, { codigo: "SEM_UNIDADE_FISCAL_PLATAFORMA" });
+      if (pedido.unidade_id !== c.unidade_id && pedido.unidade_id !== fiscal) return recusa(400, "Cobrança não encontrada nesta unidade.");
+      cobParceiro = c;
+      pedido = { ...pedido, unidade_id: fiscal, valor: valorDaNota(c), descricao: descricaoDaNota(c, null) };
+      if (!(Number(pedido.valor) > 0)) return recusa(400, "A parte da CafeWorking nesta cobrança é zero.");
+    }
+  }
+
   // 1) config fiscal da unidade
   const { data: config, error: cfgErr } = await admin
     .from("config_fiscal").select("*").eq("unidade_id", pedido.unidade_id)
@@ -81,13 +101,12 @@ export async function emitirNotaFiscal(
   const simulada = modo.tipo === "simulada";
   if (simulada && opcoes.exigirReal) return recusa(412, MSG_SEM_CERTIFICADO, { codigo: "SEM_CERTIFICADO" });
 
-  // 3) cobrança vinculada: mesma unidade e ainda sem nota valendo
-  const cobrancaId = pedido.cobranca_id ? String(pedido.cobranca_id) : null;
+  // 3) cobrança vinculada: mesma unidade (ou parceira, emitida pela CafeWorking) e ainda sem nota valendo
   if (cobrancaId) {
     const { data: cob, error: cobErr } = await admin
       .from("cobrancas").select("id, unidade_id, nota_id").eq("id", cobrancaId).maybeSingle();
     if (cobErr) return recusa(500, `Falha ao ler a cobrança: ${cobErr.message}`);
-    if (!cob || cob.unidade_id !== config.unidade_id) return recusa(400, "Cobrança não encontrada nesta unidade.");
+    if (!cob || (cob.unidade_id !== config.unidade_id && !cobParceiro)) return recusa(400, "Cobrança não encontrada nesta unidade.");
     const { data: existentes, error: nfErr } = await admin
       .from("notas_fiscais").select("id").eq("cobranca_id", cobrancaId).in("status", ["processando", "autorizada"]).limit(1);
     if (nfErr) return recusa(500, `Falha ao conferir notas da cobrança: ${nfErr.message}`);
@@ -255,10 +274,20 @@ export async function emitirNotaAoReceber(admin: SupabaseClient, paymentId: stri
     if (!cob) return "nota_sem_cobranca";
     cobranca = cob;
 
-    const { data: config, error: cfgErr } = await admin.from("config_fiscal").select("*").eq("unidade_id", cob.unidade_id).maybeSingle();
-    if (cfgErr) throw new Error(`config_fiscal: ${cfgErr.message}`);
+    // Unidade parceira: vale a config fiscal (e o "emitir ao receber") da CafeWorking.
+    const parceiro = cobrancaDeParceiro(cob);
+    const unidadeEmitente = parceiro ? unidadeFiscalPlataforma() : cob.unidade_id;
+    let config: Linha | null = null;
+    if (unidadeEmitente) {
+      const { data, error: cfgErr } = await admin.from("config_fiscal").select("*").eq("unidade_id", unidadeEmitente).maybeSingle();
+      if (cfgErr) throw new Error(`config_fiscal: ${cfgErr.message}`);
+      config = data;
+    }
 
-    const avaliacao = avaliarEmissaoAoReceber(config, cob);
+    let avaliacao = avaliarEmissaoAoReceber(config, cob);
+    if (parceiro && !unidadeEmitente && cob.status === "pago" && !cob.nota_id && !cob.nota_status) {
+      avaliacao = { acao: "recusar", motivo: MSG_SEM_UNIDADE_FISCAL };
+    }
     if (avaliacao.acao === "ignorar") return "nota_ignorada";
 
     // Só uma entrega do webhook passa daqui para a mesma cobrança.

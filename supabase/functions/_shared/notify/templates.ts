@@ -24,8 +24,13 @@ const esc = (s: unknown) =>
 /** Link para uma tela da área do cliente (abre depois do login, se preciso). */
 export const linkApp = (tela?: string) => (tela ? `${APP_URL}/?p=${encodeURIComponent(tela)}` : `${APP_URL}/`);
 
-/** Layout base: cabeçalho com a marca + corpo + rodapé com as preferências de e-mail. */
-function layout(titulo: string, corpo: string, cta?: { label: string; url: string }) {
+const RODAPE_CLIENTE = `Você recebe este e-mail porque é cliente do CafeWorking.
+          <a href="${esc(linkApp("notificacoes"))}" style="color:#7A726B">Escolher quais e-mails receber</a>`;
+const RODAPE_PARCEIRO = `Você recebe este e-mail porque é parceiro credenciado da rede CafeWorking.
+          Para mudar quem recebe estes avisos, fale com a equipe da CafeWorking.`;
+
+/** Layout base: cabeçalho com a marca + corpo + rodapé (padrão: preferências de e-mail do cliente). */
+function layout(titulo: string, corpo: string, cta?: { label: string; url: string }, rodape = RODAPE_CLIENTE) {
   return `<!doctype html><html><body style="margin:0;background:${CREME};font-family:Georgia,'Times New Roman',serif;color:#1F1F1C">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${CREME};padding:24px 0">
     <tr><td align="center">
@@ -37,8 +42,7 @@ function layout(titulo: string, corpo: string, cta?: { label: string; url: strin
           ${cta ? `<div style="margin:22px 0 4px"><a href="${esc(cta.url)}" style="background:${MARCA};color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-size:15px;display:inline-block">${cta.label}</a></div>` : ""}
         </td></tr>
         <tr><td style="padding:16px 28px;border-top:1px solid rgba(0,0,0,.06);font-size:12px;color:#7A726B">
-          Você recebe este e-mail porque é cliente do CafeWorking.
-          <a href="${esc(linkApp("notificacoes"))}" style="color:#7A726B">Escolher quais e-mails receber</a>
+          ${rodape}
         </td></tr>
       </table>
     </td></tr>
@@ -289,6 +293,17 @@ const TEMPLATES: Record<Evento, (d: any) => Render> = {
       esc(d.assunto),
       ((d.linhas as string[]) || []).map((l) => esc(l)).join("<br>"),
       d.link ? { label: "Abrir no app", url: d.link } : undefined,
+    ),
+  }),
+  // Aviso ao parceiro da rede (venda, reserva paga, abertura, cancelamento)
+  aviso_parceiro: (d) => ({
+    assunto: `[CafeWorking · Parceiros] ${d.assunto}`,
+    texto: [d.assunto, ...((d.linhas as string[]) || []), ...(d.link ? [`Abrir no app: ${d.link}`] : [])].join("\n"),
+    html: layout(
+      esc(d.assunto),
+      ((d.linhas as string[]) || []).map((l) => esc(l)).join("<br>"),
+      d.link ? { label: "Abrir no app", url: d.link } : undefined,
+      RODAPE_PARCEIRO,
     ),
   }),
 };

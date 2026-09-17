@@ -218,12 +218,20 @@ export function referenciaExterna(ref: unknown): { tipo: "signup" | "assinatura"
   return m ? { tipo: m[1] as "signup" | "assinatura" | "reserva", id: m[2] } : { tipo: "outro", id: null };
 }
 
+/** Split da unidade parceira (parceiros.ts): vazio ou ausente = sem split. */
+type SplitPayload = { walletId: string; percentualValue: number }[] | null | undefined;
+
+/** Acrescenta o split ao corpo do Asaas só quando existe (unidade parceira). */
+export function comSplit<T extends Record<string, unknown>>(corpo: T, split: SplitPayload): T & { split?: NonNullable<SplitPayload> } {
+  return split && split.length ? { ...corpo, split } : corpo;
+}
+
 export function payloadAssinaturaAsaas(p: {
   customer: string; valor: number; descricao: string; nextDueDate: string; externalReference: string;
-  billingType?: string; ciclo?: "MONTHLY" | "YEARLY";
+  billingType?: string; ciclo?: "MONTHLY" | "YEARLY"; split?: SplitPayload;
 }) {
   const billingType = ["BOLETO", "PIX", "CREDIT_CARD", "UNDEFINED"].includes(p.billingType || "") ? p.billingType : "UNDEFINED";
-  return {
+  return comSplit({
     customer: p.customer,
     billingType,
     value: p.valor,
@@ -231,7 +239,7 @@ export function payloadAssinaturaAsaas(p: {
     cycle: p.ciclo === "YEARLY" ? "YEARLY" : "MONTHLY",
     description: p.descricao,
     externalReference: p.externalReference,
-  };
+  }, p.split);
 }
 
 // ---------------------------------------------------------------------------

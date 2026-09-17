@@ -16,6 +16,8 @@
 //  5. Com cobranca_id: a cobrança tem que ser da unidade e não ter nota valendo
 //     (409 NOTA_JA_EMITIDA), inclusive a automática do asaas-webhook.
 //  6. Chama o NfseProvider correto (adapter) e grava a nota.
+//  7. Cobrança de unidade parceira: só o admin da plataforma; a nota sai pela
+//     config fiscal da CafeWorking (UNIDADE_FISCAL_PLATAFORMA) com a parte dela.
 // A emissão em si mora em _shared/nfse/emitirNota.ts (mesma do webhook).
 // ============================================================================
 
@@ -45,6 +47,21 @@ Deno.serve(async (req) => {
     const admin = adminClient();
     if (!(await podeMexerNoDinheiro(admin, auth.user.id, body.unidade_id))) {
       return recusaSemFinanceiro("Emitir nota fiscal");
+    }
+
+    // Cobrança de unidade parceira: a nota é da CafeWorking (só a parte dela) e
+    // só o admin da plataforma emite à mão. O parceiro fatura a parte dele fora do app.
+    if (body.cobranca_id) {
+      const { data: cob } = await admin.from("cobrancas").select("parceiro_conta_id").eq("id", String(body.cobranca_id)).maybeSingle();
+      if (cob?.parceiro_conta_id) {
+        const { data: pa } = await admin.from("platform_admins").select("user_id").eq("user_id", auth.user.id).maybeSingle();
+        if (!pa) {
+          return json({
+            error: "Esta cobrança é de unidade parceira: a nota da CafeWorking sai pela CafeWorking. A sua parte você fatura pelo seu emissor.",
+            codigo: "NOTA_DA_CAFEWORKING",
+          }, 403);
+        }
+      }
     }
 
     const r = await emitirNotaFiscal(admin, {

@@ -28,6 +28,11 @@
 //
 // Se o mesmo e-mail já tem uma compra aguardando pagamento: é a mesma compra →
 // retoma (devolve o link de antes); é outra → descarta a anterior.
+//
+// Unidade de conta parceira (docs/PARCEIROS.md): só vende plano da tabela
+// nacional (doc.modelo), com o desconto anual padrão, pela conta Asaas da
+// CafeWorking e com split para a carteira do parceiro. Parceiro sem carteira ou
+// fora de 'ativo': recusa antes de criar qualquer coisa.
 // ============================================================================
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -39,8 +44,9 @@ import { verificarTurnstile } from "../_shared/turnstile.ts";
 import { aceiteConfere, contratoVigente, registrarAceite } from "../_shared/contratos.ts";
 import { turnoValido } from "../_shared/catalogo.ts";
 import { salasDoPlano } from "../_shared/disponibilidade.ts";
+import { regraDaUnidade } from "../_shared/parceirosDb.ts";
 import {
-  billingTypePara, categoriaValida, DESCONTO_ANUAL_PADRAO, descontoAnualValido, documentoValido, emailValido,
+  billingTypePara, categoriaValida, comSplit, DESCONTO_ANUAL_PADRAO, descontoAnualValido, documentoValido, emailValido,
   hojeBRT, normalizarDocumento, payloadAssinaturaAsaas, precoAnual,
 } from "../_shared/venda.ts";
 
@@ -129,8 +135,14 @@ Deno.serve(async (req) => {
     const { data: unidade } = await admin.from("unidades").select("id, franqueado_id, nome").eq("id", body.unidade_id).maybeSingle();
     if (!unidade) return json({ error: "Unidade inválida." }, 404, req);
 
+    // unidade parceira: nunca cobra sem split
+    const regra = await regraDaUnidade(admin, unidade.id);
+    if (regra.parceiro && !regra.ok) return json({ error: regra.erro, codigo: regra.codigo }, 412, req);
+    const split = regra.parceiro && regra.ok ? regra.split : null;
+
     const { data: planosRows } = await admin.from("app_state").select("doc").eq("entity", "planos").eq("unidade_id", unidade.id);
-    const plano = (planosRows || []).map((r) => r.doc).find((p) => p && p.id === body.plano_id && p.ativo !== false);
+    const plano = (planosRows || []).map((r) => r.doc)
+      .find((p) => p && p.id === body.plano_id && p.ativo !== false && (!regra.parceiro || p.modelo === true));
     if (!plano) return json({ error: "Plano indisponível." }, 404, req);
     if (origem === "site" && plano.venderNoSite !== true) return json({ error: "Plano indisponível para contratação online." }, 404, req);
     if (plano.sobConsulta === true) {
@@ -147,7 +159,8 @@ Deno.serve(async (req) => {
     else billingType = billingTypePara(periodicidade, body.forma);
     if (!billingType) return json({ error: "No plano anual, escolha PIX, boleto ou cartão." }, 400, req);
 
-    const valor = periodicidade === "anual" ? precoAnual(precoMensal, await descontoDaUnidade(admin, unidade.id)) : precoMensal;
+    const desconto = regra.parceiro ? DESCONTO_ANUAL_PADRAO : await descontoDaUnidade(admin, unidade.id);
+    const valor = periodicidade === "anual" ? precoAnual(precoMensal, desconto) : precoMensal;
     const prazoMinimo = periodicidade === "anual" ? 12 : Math.max(0, Math.floor(Number(plano.prazoMinimoMeses || 0)));
     const categoria = categoriaValida(plano.categoria) ? plano.categoria : null;
 
@@ -257,17 +270,17 @@ Deno.serve(async (req) => {
         const assinatura = await asaas(cred, "/subscriptions", "POST", payloadAssinaturaAsaas({
           customer: customer.id, valor, descricao, nextDueDate: hojeBRT(),
           externalReference: `assinatura:${pendingId}`, billingType,
-          ciclo: periodicidade === "anual" ? "YEARLY" : "MONTHLY",
+          ciclo: periodicidade === "anual" ? "YEARLY" : "MONTHLY", split,
         }));
         subscriptionId = assinatura.id;
         pagamento = await primeiraFatura(cred, assinatura.id);
         if (!pagamento) throw new Error("o Asaas não gerou a primeira fatura da assinatura");
       } else {
-        pagamento = await asaas(cred, "/payments", "POST", {
+        pagamento = await asaas(cred, "/payments", "POST", comSplit({
           customer: customer.id, billingType, value: valor,
           dueDate: hojeBRT(new Date(Date.now() + 2 * 864e5)),
           description: descricao, externalReference: `signup:${pendingId}`,
-        });
+        }, split));
       }
     } catch (e) {
       await desfazer();

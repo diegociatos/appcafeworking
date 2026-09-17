@@ -13,6 +13,10 @@
 // 4. o asaas-webhook confirma a reserva quando o pagamento entra.
 //
 // Não cria login: reserva avulsa não precisa de conta.
+//
+// Unidade de conta parceira: cobra pela conta Asaas da CafeWorking com split
+// para a carteira do parceiro; parceiro sem carteira ou fora de 'ativo' não
+// reserva online (recusa antes de segurar o horário).
 // ============================================================================
 
 import { handleOptions, json } from "../_shared/cors.ts";
@@ -22,8 +26,9 @@ import { asaas, cancelarNoAsaas, credenciaisAsaas, pixDoPagamento } from "../_sh
 import { verificarTurnstile } from "../_shared/turnstile.ts";
 import { aceiteConfere, contratoVigente, registrarAceite } from "../_shared/contratos.ts";
 import { garantirCobranca } from "../_shared/cobrancas.ts";
+import { regraDaUnidade } from "../_shared/parceirosDb.ts";
 import {
-  documentoValido, emailValido, hojeBRT, JANELA_PADRAO, normalizarDocumento, validarPeriodoReserva, valorReserva,
+  comSplit, documentoValido, emailValido, hojeBRT, JANELA_PADRAO, normalizarDocumento, validarPeriodoReserva, valorReserva,
 } from "../_shared/venda.ts";
 
 const MINUTOS_SEGURANDO = 30;
@@ -100,6 +105,10 @@ Deno.serve(async (req) => {
       return json({ error: "É preciso aceitar a versão atual do contrato.", codigo: "ACEITE_NECESSARIO", contrato }, 412, req);
     }
 
+    const regra = await regraDaUnidade(admin, body.unidade_id);
+    if (regra.parceiro && !regra.ok) return json({ error: regra.erro, codigo: regra.codigo }, 412, req);
+    const split = regra.parceiro && regra.ok ? regra.split : null;
+
     const cred = await credenciaisAsaas(admin, body.unidade_id);
     if (!cred) return json({ error: "Esta unidade ainda não habilitou pagamentos online." }, 412, req);
 
@@ -159,14 +168,14 @@ Deno.serve(async (req) => {
         name: String(body.nome).trim(), cpfCnpj: documento, email,
         mobilePhone: body.telefone ? String(body.telefone).replace(/\D/g, "") : undefined,
       });
-      pay = await asaas(cred, "/payments", "POST", {
+      pay = await asaas(cred, "/payments", "POST", comSplit({
         customer: customer.id,
         billingType: forma,
         value: valor,
         dueDate: hojeBRT(),
         description: descricao,
         externalReference: `reserva:${reservaId}`,
-      });
+      }, split));
     } catch (e) {
       await soltarHorario("falha_cobranca");
       return json({ error: `Não foi possível gerar o pagamento: ${(e as Error).message}` }, 502, req);
@@ -178,6 +187,7 @@ Deno.serve(async (req) => {
       await garantirCobranca(admin, pay, "pendente", {
         unidade_id: body.unidade_id, cliente: String(body.nome).trim(), cliente_email: email,
         cliente_documento: documento, descricao, reserva_id: reservaId, origem: "site",
+        split: regra.parceiro && regra.ok ? regra.snapshot : null,
       });
       await registrarAceite(admin, req, contrato, {
         unidade_id: body.unidade_id, cliente_nome: String(body.nome).trim(), cliente_email: email,

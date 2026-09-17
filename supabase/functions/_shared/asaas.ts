@@ -5,9 +5,20 @@
 // pela tela de integrações do app (Edge salvar-integracao). Sem Vault, cai no
 // secret ASAAS_API_KEY (+ ASAAS_AMBIENTE). Sem nenhum dos dois, a unidade não
 // vende online.
+//
+// Unidade de conta PARCEIRA (docs/PARCEIROS.md): sempre a credencial da
+// CafeWorking (Vault asaas_plataforma, senão o secret ASAAS_API_KEY). A chave
+// que o parceiro tenha gravado para a unidade é ignorada: a cobrança sai da
+// conta da CafeWorking com split para a carteira do parceiro.
 // ============================================================================
 
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { type ClienteBanco, unidadeEhParceira } from "./parceirosDb.ts";
+
+/** Pedaço do supabase-js usado aqui (o SupabaseClient encaixa; os testes usam um imitado). */
+// deno-lint-ignore no-explicit-any
+type ClienteAsaas = ClienteBanco & { rpc(fn: string, args?: Record<string, unknown>): any };
+
+export const REF_ASAAS_PLATAFORMA = "asaas_plataforma";
 
 export const ASAAS_BASE = {
   producao: "https://api.asaas.com/v3",
@@ -20,11 +31,22 @@ export interface CredAsaas {
   baseUrl: string;
 }
 
-export async function credenciaisAsaas(admin: SupabaseClient, unidadeId: string): Promise<CredAsaas | null> {
+/** Credencial da conta Asaas da CafeWorking (a que cobra com split). */
+export function credenciaisPlataforma(admin: ClienteAsaas): Promise<CredAsaas | null> {
+  return lerCredencial(admin, REF_ASAAS_PLATAFORMA);
+}
+
+export async function credenciaisAsaas(admin: ClienteAsaas, unidadeId: string): Promise<CredAsaas | null> {
+  // Erro ao ler a conta lança: melhor falhar do que cobrar parceiro com a chave errada.
+  if (await unidadeEhParceira(admin, unidadeId)) return credenciaisPlataforma(admin);
+  return lerCredencial(admin, `asaas_${unidadeId}`);
+}
+
+async function lerCredencial(admin: ClienteAsaas, ref: string): Promise<CredAsaas | null> {
   let apiKey = "";
   let ambiente = "producao";
   try {
-    const { data } = await admin.rpc("get_bank_credentials", { p_ref: `asaas_${unidadeId}` });
+    const { data } = await admin.rpc("get_bank_credentials", { p_ref: ref });
     if (data?.api_key) {
       apiKey = data.api_key;
       ambiente = data.ambiente || "producao";

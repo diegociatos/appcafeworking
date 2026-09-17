@@ -10,8 +10,17 @@
 // O certificado é conferido na emissão (emitirNotaFiscal com exigirReal).
 // ============================================================================
 
+import { descricaoNotaCafeWorking, snapshotDaCobranca, valorNotaCafeWorking } from "../parceiros.ts";
+
 // deno-lint-ignore no-explicit-any
 type Linha = Record<string, any>;
+
+/**
+ * Cobrança de unidade parceira: a nota é da CafeWorking, só da parte dela (25%
+ * do valor pago), emitida pela configuração fiscal da CafeWorking. A parte do
+ * parceiro não gera nota aqui.
+ */
+export const cobrancaDeParceiro = (cobranca: Linha | null | undefined) => !!snapshotDaCobranca(cobranca);
 
 export type AvaliacaoAoReceber =
   | { acao: "ignorar"; motivo: string }   // nada a fazer, sem aviso
@@ -39,8 +48,9 @@ export function avaliarEmissaoAoReceber(config: Linha | null | undefined, cobran
   return { acao: "emitir" };
 }
 
-/** Valor da nota = valor pago no Asaas (cai no valor da cobrança se não veio). */
+/** Valor da nota = valor pago no Asaas (cai no valor da cobrança se não veio); em parceiro, a parte da CafeWorking. */
 export function valorDaNota(cobranca: Linha): number {
+  if (cobrancaDeParceiro(cobranca)) return valorNotaCafeWorking(cobranca);
   const pago = Number(cobranca.valor_pago);
   if (Number.isFinite(pago) && pago > 0) return Math.round(pago * 100) / 100;
   const valor = Number(cobranca.valor);
@@ -49,18 +59,20 @@ export function valorDaNota(cobranca: Linha): number {
 
 /** Descrição da nota: plano/serviço da cobrança, senão o serviço padrão da unidade. */
 export function descricaoDaNota(cobranca: Linha, config: Linha | null | undefined): string {
+  if (cobrancaDeParceiro(cobranca)) return descricaoNotaCafeWorking(cobranca);
   const d = String(cobranca.descricao ?? "").trim();
   return d || String(config?.descricao_servico ?? "").trim() || "Serviço";
 }
 
 /**
  * Corpo da emissão (mesmo formato do emitir-nfse) a partir da cobrança e,
- * quando houver, do cadastro do cliente (endereço do tomador).
+ * quando houver, do cadastro do cliente (endereço do tomador). Em parceiro, a
+ * unidade emitente é a da config fiscal recebida (a da CafeWorking).
  */
 export function pedidoDaCobranca(cobranca: Linha, cliente: Linha | null | undefined, config: Linha | null | undefined) {
   const texto = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
   return {
-    unidade_id: String(cobranca.unidade_id),
+    unidade_id: String(cobrancaDeParceiro(cobranca) && config?.unidade_id ? config.unidade_id : cobranca.unidade_id),
     tomador: texto(cobranca.cliente) || texto(cliente?.nome) || "Cliente",
     tomador_documento: soDigitos(cobranca.cliente_documento),
     tomador_email: texto(cobranca.cliente_email) || texto(cliente?.email),

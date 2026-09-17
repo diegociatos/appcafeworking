@@ -22,6 +22,7 @@ import {
   APP_URL, avisarCliente, avisarEquipe, cancelarAgora, carregarAssinatura, ehEquipe, usuarioDoReq,
 } from "../_shared/assinaturas.ts";
 import { podeMexerNoDinheiro, recusaSemFinanceiro } from "../_shared/permissoes.ts";
+import { avisarParceiro, linkParceiro } from "../_shared/parceirosDb.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -67,6 +68,13 @@ Deno.serve(async (req) => {
         ...avisoBonificados(a),
         ...(motivo ? [`Motivo: ${motivo}`] : []),
       ], APP_URL);
+      await avisarParceiro(admin, a.unidade_id, `Cancelamento por arrependimento: ${a.plano_nome}`, [
+        `Cliente: ${a.cliente_nome} (${a.cliente_email})`,
+        `Plano: ${a.plano_nome}`,
+        "O plano foi encerrado hoje e o pagamento é devolvido ao cliente (a sua parte também sai do repasse).",
+        ...(a.categoria === "endereco_fiscal" ? ["Endereço fiscal: o cliente tem 30 dias para retirar o endereço do cadastro da empresa."] : []),
+        ...(motivo ? [`Motivo informado: ${motivo}`] : []),
+      ], linkParceiro("assinaturas"));
       return json({ ok: true, tipo: "arrependimento", cancela_em: hoje, reembolso: r.reembolso }, 200, req);
     }
 
@@ -87,6 +95,13 @@ Deno.serve(async (req) => {
       ...avisoBonificados(a),
       ...(motivo ? [`Motivo: ${motivo}`] : []),
     ], APP_URL);
+    await avisarParceiro(admin, a.unidade_id, `Cancelamento agendado para ${plano.cancelaEm.split("-").reverse().join("/")}: ${a.plano_nome}`, [
+      `Cliente: ${a.cliente_nome} (${a.cliente_email})`,
+      `Plano: ${a.plano_nome}`,
+      `O plano segue ativo até ${plano.cancelaEm.split("-").reverse().join("/")} (aviso prévio de 30 dias).`,
+      ...(a.categoria === "endereco_fiscal" ? ["Endereço fiscal: depois do encerramento, o cliente precisa retirar o endereço do cadastro da empresa."] : []),
+      ...(motivo ? [`Motivo informado: ${motivo}`] : []),
+    ], linkParceiro("assinaturas"));
 
     return json({ ok: true, tipo: "aviso_previo", cancela_em: plano.cancelaEm, requer_acerto: plano.requerAcerto }, 200, req);
   } catch (e) {

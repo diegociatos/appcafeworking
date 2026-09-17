@@ -41,7 +41,8 @@ export type Evento =
   | "abertura_pendencia"
   | "abertura_concluida"
   | "convite_acesso"
-  | "aviso_equipe";
+  | "aviso_equipe"
+  | "aviso_parceiro";
 
 export class NotifyError extends Error {
   constructor(message: string, public readonly canal: Canal, public readonly status?: number) {

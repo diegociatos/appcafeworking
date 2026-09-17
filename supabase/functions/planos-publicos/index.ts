@@ -11,7 +11,8 @@
 //
 // Resposta: { planos: PlanoPublico[], unidades?: {id,nome,cidade}[] }. Os planos
 // vêm do app_state (entity 'planos'); o desconto do anual, do doc 'configVenda'
-// de cada unidade.
+// de cada unidade. Unidade de conta parceira: só a tabela nacional, com o
+// desconto padrão, e nada enquanto o parceiro não puder vender.
 // ============================================================================
 
 import { handleOptions, json } from "../_shared/cors.ts";
@@ -19,6 +20,7 @@ import { adminClient } from "../_shared/supabaseAdmin.ts";
 import { categoriaValida, DESCONTO_ANUAL_PADRAO, descontoAnualValido } from "../_shared/venda.ts";
 import { ordenarPlanos, planoPublico, visivelNoSite } from "../_shared/catalogo.ts";
 import { salasDoPlano } from "../_shared/disponibilidade.ts";
+import { type RegraVenda, regraDeVenda } from "../_shared/parceiros.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -46,13 +48,35 @@ Deno.serve(async (req) => {
     const { data, error } = await consulta;
     if (error) return json({ error: error.message }, 500, req);
 
+    // Unidades de conta parceira: só a tabela nacional (doc.modelo), desconto
+    // anual padrão, e só quando o parceiro pode vender (ativo e com carteira).
+    let consultaUnidades = admin.from("unidades").select("id, franqueado_id");
+    if (unidadeId) consultaUnidades = consultaUnidades.eq("id", unidadeId);
+    const [{ data: unidadesConta, error: ucErr }, { data: contasParceiras, error: cpErr }] = await Promise.all([
+      consultaUnidades,
+      admin.from("contas").select("id, tipo, parceiro_percentual, garantia_percentual, asaas_wallet_id, parceiro_status").eq("tipo", "parceiro"),
+    ]);
+    if (ucErr || cpErr) return json({ error: (ucErr || cpErr)!.message }, 500, req);
+    const parceiraPorId = new Map((contasParceiras || []).map((c) => [c.id, c]));
+    const regraPorUnidade = new Map<string, RegraVenda>();
+    for (const u of unidadesConta || []) {
+      const conta = parceiraPorId.get(u.franqueado_id);
+      if (conta) regraPorUnidade.set(u.id, regraDeVenda(conta));
+    }
+    const vendivel = (unidade: string, doc: Record<string, unknown>) => {
+      const regra = regraPorUnidade.get(unidade);
+      return !regra || (regra.parceiro && regra.ok && doc.modelo === true);
+    };
+
     const descontoPorUnidade = new Map<string, number>();
     for (const r of data || []) {
-      if (r.entity === "configVenda") descontoPorUnidade.set(r.unidade_id, descontoAnualValido(r.doc?.descontoAnualPct));
+      if (r.entity === "configVenda" && !regraPorUnidade.has(r.unidade_id)) {
+        descontoPorUnidade.set(r.unidade_id, descontoAnualValido(r.doc?.descontoAnualPct));
+      }
     }
 
     const planos = (data || [])
-      .filter((r) => r.entity === "planos" && r.doc && r.doc.ativo !== false)
+      .filter((r) => r.entity === "planos" && r.doc && r.doc.ativo !== false && vendivel(r.unidade_id, r.doc))
       .map((r) => planoPublico(r.doc, r.unidade_id, descontoPorUnidade.get(r.unidade_id) ?? DESCONTO_ANUAL_PADRAO))
       .filter((p) => (soSite ? visivelNoSite(p) : !p.sobConsulta))
       .filter((p) => !categoria || p.categoria === categoria)
