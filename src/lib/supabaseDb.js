@@ -351,7 +351,15 @@ export async function deleteClienteDb(id) {
 }
 
 // Mapeiam as colunas do banco (snake_case) para o formato do store (camelCase).
-const mapConta = (r) => ({ id: r.id, nome: r.nome, master: r.master, email: r.email, documento: r.documento, telefone: r.telefone, plano: r.plano, mensalidade: Number(r.mensalidade || 0), criadoEm: r.criado_em });
+// Conta (coworking assinante). O contrato fica no bucket privado contratos-contas:
+// aqui só vem o nome/tipo; o download pede link assinado (onboardApi.linkContrato).
+export const mapConta = (r) => ({
+  id: r.id, nome: r.nome, master: r.master, email: r.email, documento: r.documento, telefone: r.telefone,
+  plano: r.plano, mensalidade: Number(r.mensalidade || 0), criadoEm: r.criado_em,
+  tipoPessoa: r.tipo_pessoa || undefined, nomeFantasia: r.nome_fantasia || "", responsavel: r.responsavel || "",
+  endereco: r.endereco || "", cidade: r.cidade || "", observacoes: r.observacoes || "",
+  contrato: r.contrato_path ? { nome: r.contrato_nome || "contrato", mime: r.contrato_mime, bytes: r.contrato_bytes, enviadoEm: r.contrato_enviado_em, noServidor: true } : null,
+});
 const mapUnidade = (r) => ({ id: r.id, franqueadoId: r.franqueado_id, nome: r.nome, endereco: r.endereco, cor: r.cor, salas: r.salas, ocupacao: r.ocupacao, membros: r.membros, receita: Number(r.receita || 0) });
 const mapUsuario = (r) => ({ id: r.id, unidadeId: r.unidade_id, nome: r.nome, email: r.email, perfil: r.perfil, ativo: r.ativo });
 // Cliente no formato das telas (cnpj + nome da unidade + docs). nomeDaUnidade

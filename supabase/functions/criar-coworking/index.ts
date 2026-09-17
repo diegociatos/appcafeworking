@@ -3,7 +3,10 @@
 //
 // POST /functions/v1/criar-coworking
 // body: { empresa, master_nome, master_email, documento?, telefone?, plano?,
-//         mensalidade?, unidade_nome, endereco?, senha? }
+//         mensalidade?, unidade_nome, endereco?, cidade?, senha?, tipo_pessoa?,
+//         nome_fantasia?, responsavel?, endereco_conta?, observacoes? }
+// A conta devolvida é a linha gravada (formato do banco). O contrato anexado na
+// tela é enviado em seguida pela Edge Function contas-plataforma.
 //
 // Só o ADMIN DA PLATAFORMA pode chamar. Cria, com service_role:
 //   1. o usuário master no Supabase Auth (login),
@@ -15,6 +18,7 @@
 
 import { handleOptions, json } from "../_shared/cors.ts";
 import { userClient, adminClient } from "../_shared/supabaseAdmin.ts";
+import { camposDaConta } from "../_shared/contasPlataforma.ts";
 
 // NFD decompõe acentos em base+marca; o filtro [^a-z0-9] remove as marcas.
 const slug = (s: string) =>
@@ -70,11 +74,20 @@ Deno.serve(async (req) => {
     // limpa em caso de falha parcial (best-effort)
     const rollback = async () => { try { await admin.auth.admin.deleteUser(userId); } catch (_) { /* noop */ } };
 
-    const { error: e1 } = await admin.from("contas").insert({
+    // Dados complementares da tela (tipo de pessoa, fantasia, endereço...). O
+    // contrato vai depois, pela contas-plataforma (Storage privado).
+    const extra = camposDaConta({
+      tipoPessoa: body.tipo_pessoa, nomeFantasia: body.nome_fantasia, responsavel: body.responsavel,
+      endereco: body.endereco_conta ?? body.endereco, cidade: body.cidade, observacoes: body.observacoes,
+    });
+    const complemento = extra.ok ? extra.campos : {};
+
+    const { data: contaCriada, error: e1 } = await admin.from("contas").insert({
       id: contaId, nome: body.empresa, master: body.master_nome, email,
       documento: body.documento || null, telefone: body.telefone || null,
       plano: body.plano || "Essencial", mensalidade: Number(body.mensalidade) || 0,
-    });
+      ...complemento,
+    }).select("*").single();
     if (e1) { await rollback(); return json({ error: `Falha ao criar a conta: ${e1.message}` }, 500); }
 
     const { error: e2 } = await admin.from("unidades").insert({
@@ -91,7 +104,7 @@ Deno.serve(async (req) => {
 
     return json({
       ok: true,
-      conta: { id: contaId, nome: body.empresa, master: body.master_nome, email, documento: body.documento || null, telefone: body.telefone || null, plano: body.plano || "Essencial", mensalidade: Number(body.mensalidade) || 0 },
+      conta: contaCriada,
       unidade: { id: unidadeId, franqueadoId: contaId, nome: body.unidade_nome, endereco: body.endereco || "" },
       login: { email, senha_temporaria: senha },
     }, 201);

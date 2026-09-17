@@ -7,7 +7,7 @@
 // Só o ADMIN DA PLATAFORMA pode chamar. Remove, com service_role e em ordem
 // de dependência, TODOS os dados da conta:
 //   app_state, notas_fiscais, boletos, config_fiscal, bank_accounts, clientes,
-//   usuarios, unidade_members → unidades → conta. Depois apaga os logins (Auth)
+//   usuarios, unidade_members → unidades → contrato no Storage → conta. Depois apaga os logins (Auth)
 //   dos usuários que ficaram sem nenhum outro vínculo.
 //
 // ⚠️ Destrutivo e irreversível.
@@ -15,6 +15,7 @@
 
 import { handleOptions, json } from "../_shared/cors.ts";
 import { userClient, adminClient } from "../_shared/supabaseAdmin.ts";
+import { BUCKET_CONTRATOS_CONTAS, idDeContaValido } from "../_shared/contasPlataforma.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -23,7 +24,7 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    if (!body?.conta_id) return json({ error: "Campo obrigatório ausente: conta_id" }, 400);
+    if (!idDeContaValido(body?.conta_id)) return json({ error: "Campo obrigatório ausente: conta_id" }, 400);
 
     const user = userClient(req);
     const { data: auth } = await user.auth.getUser();
@@ -61,6 +62,12 @@ Deno.serve(async (req) => {
       await del("unidade_members", "unidade_id", unidadeIds);
     }
     await del("unidades", "id", unidadeIds);
+    // Contrato(s) da conta no bucket privado (pasta <conta_id>/).
+    try {
+      const { data: arquivos } = await admin.storage.from(BUCKET_CONTRATOS_CONTAS).list(String(body.conta_id), { limit: 100 });
+      const caminhos = (arquivos || []).map((a) => `${body.conta_id}/${a.name}`);
+      if (caminhos.length) await admin.storage.from(BUCKET_CONTRATOS_CONTAS).remove(caminhos);
+    } catch (_) { /* best-effort */ }
     try { await admin.from("contas").delete().eq("id", body.conta_id); } catch (_) { /* noop */ }
 
     // Remove os logins que não têm mais nenhum vínculo (e não são admin).

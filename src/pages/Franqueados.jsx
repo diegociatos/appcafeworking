@@ -12,14 +12,33 @@ const PLANOS = [
 ];
 import { useStore } from "../lib/store.jsx";
 import { onboardApi } from "../lib/onboardApi.js";
+import { mapConta } from "../lib/supabaseDb.js";
 import { buscarCnpj } from "../lib/lookup.js";
 
-function baixarContrato(c) {
-  if (!c?.url) return;
-  const a = document.createElement("a");
-  a.href = c.url; a.download = c.nome || "contrato";
-  document.body.appendChild(a); a.click(); a.remove();
+// Contrato gravado no servidor: link assinado de 10 minutos. Na demonstração
+// (sem backend) o anexo continua só em memória, como data URL.
+async function baixarContrato(f) {
+  const c = f?.contrato;
+  if (!c) return;
+  if (c.url) {
+    const a = document.createElement("a");
+    a.href = c.url; a.download = c.nome || "contrato";
+    document.body.appendChild(a); a.click(); a.remove();
+    return;
+  }
+  // Abre a aba antes do await para o navegador não bloquear como pop-up.
+  const janela = window.open("", "_blank");
+  try {
+    const url = await onboardApi.linkContrato(f.id);
+    if (janela) janela.location.href = url; else window.open(url, "_blank", "noopener");
+  } catch (e) {
+    if (janela) janela.close();
+    alert(e.message || "Não foi possível abrir o contrato. Tente de novo.");
+  }
 }
+
+// O anexo do formulário é novo (ainda não foi para o servidor)?
+const contratoNovo = (c) => Boolean(c?.url && /^data:/.test(c.url));
 
 // CPF tem 11 dígitos; CNPJ tem 14
 const tipoDoc = (doc) => ((doc || "").replace(/\D/g, "").length > 11 ? "CNPJ" : "CPF");
@@ -50,10 +69,27 @@ export default function Franqueados({ go }) {
   };
 
   const salvarConta = async (dados) => {
-    if (modal?.id) { updateFranqueado(modal.id, dados); setModal(null); return; }
-    if (!onboardApi.configured) { addFranqueado(dados); setModal(null); return; }
+    if (!onboardApi.configured) {
+      if (modal?.id) updateFranqueado(modal.id, dados); else addFranqueado(dados);
+      setModal(null);
+      return;
+    }
     setErroForm(null); setSalvando(true);
     try {
+      if (modal?.id) {
+        // Edição: grava na tabela contas; o contrato vai para o Storage privado.
+        let conta = await onboardApi.salvarConta(modal.id, {
+          nome: dados.nome, master: dados.master, documento: dados.documento, telefone: dados.telefone,
+          plano: dados.plano, mensalidade: dados.mensalidade, tipoPessoa: dados.tipoPessoa, nomeFantasia: dados.nomeFantasia,
+          responsavel: dados.responsavel, endereco: dados.endereco, cidade: dados.cidade, observacoes: dados.observacoes,
+        });
+        updateFranqueado(modal.id, mapConta(conta));
+        if (contratoNovo(dados.contrato)) conta = await onboardApi.enviarContrato(modal.id, dados.contrato);
+        else if (!dados.contrato && modal.contrato) conta = await onboardApi.removerContrato(modal.id);
+        updateFranqueado(modal.id, mapConta(conta));
+        setModal(null);
+        return;
+      }
       const res = await onboardApi.criarCoworking({
         empresa: dados.nome,
         master_nome: dados.master || dados.responsavel || dados.nome,
@@ -64,12 +100,23 @@ export default function Franqueados({ go }) {
         endereco: [dados.endereco, dados.cidade].filter(Boolean).join(" · "),
         cidade: dados.cidade,
         senha: dados.senha || undefined,
+        tipo_pessoa: dados.tipoPessoa, nome_fantasia: dados.nomeFantasia, responsavel: dados.responsavel,
+        endereco_conta: dados.endereco, observacoes: dados.observacoes,
       });
-      adicionarCoworking({ conta: res.conta, unidade: res.unidade });
+      let conta = res.conta;
+      let avisoContrato = "";
+      if (contratoNovo(dados.contrato)) {
+        try {
+          conta = await onboardApi.enviarContrato(res.conta.id, dados.contrato);
+        } catch (e) {
+          avisoContrato = `O coworking foi criado, mas o contrato não foi salvo (${e.message || "falha no envio"}). Anexe de novo em Editar.`;
+        }
+      }
+      adicionarCoworking({ conta: mapConta(conta), unidade: res.unidade });
       setModal(null);
-      setCredenciais({ ...res.login, empresa: dados.nome });
+      setCredenciais({ ...res.login, empresa: dados.nome, avisoContrato });
     } catch (e) {
-      setErroForm(e.message || "Falha ao cadastrar.");
+      setErroForm(e.message || (modal?.id ? "Falha ao salvar a conta." : "Falha ao cadastrar."));
     } finally {
       setSalvando(false);
     }
@@ -161,7 +208,7 @@ export default function Franqueados({ go }) {
                       </span>
                     )}
                     {f.contrato && (
-                      <button onClick={() => baixarContrato(f.contrato)} className="cw-btn" style={{ display: "inline-flex", alignItems: "center", gap: 6, color: C.teal, fontWeight: 600 }} title="Baixar contrato">
+                      <button onClick={() => baixarContrato(f)} className="cw-btn" style={{ display: "inline-flex", alignItems: "center", gap: 6, color: C.teal, fontWeight: 600 }} title="Baixar contrato">
                         <Paperclip size={14} /> Contrato
                       </button>
                     )}
@@ -230,8 +277,8 @@ export default function Franqueados({ go }) {
       )}
 
       {modal && (
-        <Modal title={modal.id ? "Editar conta" : "Novo coworking (cria o login do master)"} onClose={() => setModal(null)}>
-          <FranqueadoForm inicial={modal} onSave={salvarConta} loading={salvando} erro={erroForm} novo={!modal.id && onboardApi.configured} />
+        <Modal title={modal.id ? "Editar conta" : "Novo coworking (cria o login do master)"} onClose={() => { if (!salvando) { setModal(null); setErroForm(null); } }}>
+          <FranqueadoForm inicial={modal} onSave={salvarConta} loading={salvando} erro={erroForm} novo={!modal.id && onboardApi.configured} real={onboardApi.configured} />
         </Modal>
       )}
 
@@ -272,6 +319,11 @@ function CredenciaisCriadas({ dados, onClose }) {
       <div style={{ fontSize: 13.5, color: C.text2, marginBottom: 14 }}>
         O login do master foi criado. <b>Repasse estes dados ao cliente</b> — a senha é temporária e ele pode trocá-la depois.
       </div>
+      {dados.avisoContrato && (
+        <div role="alert" style={{ fontSize: 12.5, color: C.red, background: C.redPale, borderRadius: 10, padding: "9px 12px", marginBottom: 14 }}>
+          {dados.avisoContrato}
+        </div>
+      )}
       <div style={{ background: C.cream2, borderRadius: 12, padding: 16, marginBottom: 14, fontSize: 14 }}>
         <Linha rotulo="Empresa" valor={dados.empresa} />
         <Linha rotulo="Login (e-mail)" valor={dados.email} />
@@ -298,7 +350,9 @@ function Linha({ rotulo, valor, mono }) {
   );
 }
 
-function FranqueadoForm({ inicial, onSave, loading, erro, novo }) {
+function FranqueadoForm({ inicial, onSave, loading, erro, novo, real }) {
+  // Na edição real o e-mail é o login do master (Auth): não muda por esta tela.
+  const emailTravado = Boolean(real && inicial.id);
   const [f, setF] = useState({
     tipoPessoa: inicial.tipoPessoa || "PJ",
     nome: inicial.nome || "",
@@ -381,7 +435,9 @@ function FranqueadoForm({ inicial, onSave, loading, erro, novo }) {
         <input value={f.master} onChange={set("master")} style={inp} placeholder="Ex: Diego Garcia" />
       </Field>
       <Field label="E-mail de acesso do master (será o login)">
-        <input type="email" value={f.email} onChange={set("email")} style={inp} placeholder="dono@coworking.com.br" />
+        <input type="email" value={f.email} onChange={set("email")} style={{ ...inp, ...(emailTravado ? { background: C.cream2, color: C.text3 } : {}) }}
+          placeholder="dono@coworking.com.br" readOnly={emailTravado} aria-readonly={emailTravado} />
+        {emailTravado && <div style={{ fontSize: 11, color: C.text4, marginTop: 4 }}>O e-mail é o login do master e não muda por aqui.</div>}
       </Field>
       {novo && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -412,7 +468,8 @@ function FranqueadoForm({ inicial, onSave, loading, erro, novo }) {
       </Field>
 
       <Field label="Contrato de assinatura (PDF ou imagem)">
-        <FileInput value={f.contrato} onChange={(v) => setF({ ...f, contrato: v })} label="Anexar contrato" />
+        <FileInput value={f.contrato} onChange={(v) => setF({ ...f, contrato: v })} label="Anexar contrato" accept="application/pdf,image/jpeg,image/png" />
+        {real && <div style={{ fontSize: 11, color: C.text4, marginTop: 4 }}>PDF, JPG ou PNG até 10 MB. Fica guardado em área privada; o download usa link temporário.</div>}
       </Field>
 
       <Field label="Observações">
@@ -428,7 +485,7 @@ function FranqueadoForm({ inicial, onSave, loading, erro, novo }) {
         <div style={{ fontSize: 12.5, color: C.red, marginBottom: 12 }}>{erro}</div>
       )}
       <Btn style={{ width: "100%", justifyContent: "center", opacity: (!valido || loading) ? 0.6 : 1 }} onClick={() => valido && !loading && onSave(f)}>
-        {loading ? "Criando…" : inicial.id ? "Salvar conta" : novo ? "Criar coworking + login" : "Cadastrar conta"}
+        {loading ? (inicial.id ? "Salvando…" : "Criando…") : inicial.id ? "Salvar conta" : novo ? "Criar coworking + login" : "Cadastrar conta"}
       </Btn>
     </>
   );
