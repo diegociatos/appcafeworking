@@ -3,7 +3,10 @@
 //
 // GET/POST /functions/v1/unidades-publicas   (deploy com --no-verify-jwt)
 // Devolve apenas o necessário para o cliente escolher cidade + unidade:
-//   [{ id, nome, cidade }]
+//   [{ id, nome, cidade, endereco }]
+// O endereço entra porque as páginas por cidade do site (fase 3 da rede de
+// parceiros) mostram onde fica a unidade; é o mesmo endereço que já aparece nas
+// páginas das unidades.
 // ============================================================================
 
 import { handleOptions, json } from "../_shared/cors.ts";
@@ -17,12 +20,14 @@ Deno.serve(async (req) => {
     const admin = adminClient();
     const { data, error } = await admin
       .from("unidades")
-      .select("id, nome, cidade")
+      .select("id, nome, cidade, endereco")
       .order("cidade", { ascending: true })
       .order("nome", { ascending: true });
     if (error) return json({ error: error.message }, 500);
     // Só unidades com cidade definida entram no seletor.
-    const unidades = (data || []).map((u) => ({ id: u.id, nome: u.nome, cidade: u.cidade || "Outra" }));
+    const unidades = (data || []).map((u) => ({
+      id: u.id, nome: u.nome, cidade: u.cidade || "Outra", endereco: u.endereco || "",
+    }));
     return json({ unidades }, 200);
   } catch (e) {
     console.error(e);

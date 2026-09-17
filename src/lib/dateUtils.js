@@ -103,4 +103,34 @@ export function competenciaComAno(data) {
   return parseDateToCompetencia(s);
 }
 
+// ---------------------------------------------------------------------------
+// Prazo de 1 dia útil da correspondência em unidade parceira (docs/PARCEIROS.md,
+// fase 3). Mesma regra da função proximo_dia_util do banco: sábado e domingo
+// saem; feriado não é tratado (joga a favor do parceiro).
+// ---------------------------------------------------------------------------
+
+/** Próximo dia útil depois de `data` (Date) — sábado e domingo pulam para segunda. */
+export function proximoDiaUtil(data) {
+  const d = new Date(data.getFullYear(), data.getMonth(), data.getDate() + 1);
+  if (d.getDay() === 6) d.setDate(d.getDate() + 2); // sábado → segunda
+  else if (d.getDay() === 0) d.setDate(d.getDate() + 1); // domingo → segunda
+  return d;
+}
+
+/**
+ * A correspondência passou do prazo de aviso ao cliente?
+ * Já notificada ou retirada: não. Sem data de recebimento: não dá para cobrar.
+ * Devolve { atrasada, prazo, dias } com `dias` além do prazo.
+ */
+export function prazoDaCorrespondencia(c, hoje = new Date()) {
+  const recebida = parseDateBR(String(c?.recebidoEm || "").slice(0, 10));
+  if (!recebida || c?.notificadoEm || ["notificado", "retirada"].includes(c?.status)) {
+    return { atrasada: false, prazo: null, dias: 0 };
+  }
+  const prazo = proximoDiaUtil(recebida);
+  const hojeZero = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+  const dias = Math.round((hojeZero - prazo) / 86400000);
+  return { atrasada: dias > 0, prazo, dias: Math.max(0, dias) };
+}
+
 export { MESES_BR };

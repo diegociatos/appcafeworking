@@ -9,6 +9,7 @@ import { useStore } from "../lib/store.jsx";
 import { enviarAnexoCorrespondencia, linkAnexoCorrespondencia, removerAnexoCorrespondencia } from "../lib/correspondenciasArquivo.js";
 import { mensagemDe } from "../lib/erros.js";
 import { urlSegura } from "../lib/html.js";
+import { prazoDaCorrespondencia } from "../lib/dateUtils.js";
 
 const STATUS = {
   aguardando: { c: C.amber, bg: C.amberPale, l: "Aguardando retirada" },
@@ -54,7 +55,7 @@ export function abrirRegistroCorrespondencia(clienteId) { registroPendente = cli
 const ehImagem = (anexo) => anexo && ((anexo.tipo || "").startsWith("image") || /^data:image|\.(png|jpe?g|webp|gif)$/i.test(anexo.url || ""));
 
 export default function Correspondencias() {
-  const { activeUnit, unidadeAtiva, correspondenciasDe, addCorrespondencia, updateCorrespondencia, notificarCorrespondencia, removeCorrespondencia } = useStore();
+  const { activeUnit, unidadeAtiva, correspondenciasDe, addCorrespondencia, updateCorrespondencia, notificarCorrespondencia, removeCorrespondencia, unidadeEhParceira } = useStore();
   const [avisos, setAvisos] = useState({}); // id → { status, erro, enviando }
   const notificar = async (id) => {
     setAvisos((a) => ({ ...a, [id]: { enviando: true } }));
@@ -74,15 +75,23 @@ export default function Correspondencias() {
   };
 
   const corresp = correspondenciasDe(activeUnit);
+  // Unidade parceira: o contrato dá 1 dia útil para avisar o cliente
+  // (docs/PARCEIROS.md, fase 3). A rotina diária cobra por e-mail; aqui a
+  // recepção vê na hora o que já passou do prazo.
+  const ehParceira = unidadeEhParceira(activeUnit);
+  const atraso = (c) => (ehParceira ? prazoDaCorrespondencia(c) : { atrasada: false, dias: 0 });
+  const foraDoPrazo = ehParceira ? corresp.filter((c) => atraso(c).atrasada) : [];
   const filtrada =
     filtro === "urgente" ? corresp.filter((c) => c.urgente) :
     filtro === "aguardando" ? corresp.filter((c) => c.status === "aguardando") :
+    filtro === "prazo" ? foraDoPrazo :
     corresp;
 
   const kpis = [
     { l: "Recebidas", v: corresp.length, c: C.cafe },
     { l: "Aguardando retirada", v: corresp.filter((c) => c.status === "aguardando").length, c: C.amber },
     { l: "Urgentes", v: corresp.filter((c) => c.urgente).length, c: C.red },
+    ...(ehParceira ? [{ l: "Fora do prazo (1 dia útil)", v: foraDoPrazo.length, c: foraDoPrazo.length ? C.red : C.green }] : []),
     { l: "Retiradas", v: corresp.filter((c) => c.status === "retirada").length, c: C.green },
   ];
 
@@ -104,7 +113,8 @@ export default function Correspondencias() {
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        {[["todas", "Todas"], ["aguardando", "Aguardando"], ["urgente", "Urgentes"]].map(([id, l]) => (
+        {[["todas", "Todas"], ["aguardando", "Aguardando"], ["urgente", "Urgentes"],
+          ...(ehParceira ? [["prazo", `Fora do prazo (${foraDoPrazo.length})`]] : [])].map(([id, l]) => (
           <button key={id} onClick={() => setFiltro(id)} className="cw-btn"
             style={{ padding: "8px 16px", borderRadius: 20, fontSize: 13, fontWeight: 600, border: `1px solid ${filtro === id ? C.cafe : C.border}`, background: filtro === id ? C.cafe : C.white, color: filtro === id ? "#fff" : C.text2 }}>
             <Filter size={13} style={{ verticalAlign: -2, marginRight: 5 }} /> {l}
@@ -125,6 +135,11 @@ export default function Correspondencias() {
                     <PackageCheck size={22} color={c.urgente ? C.red : C.cafe} />
                   </div>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    {atraso(c).atrasada && (
+                      <Badge color={C.red} bg={C.redPale}>
+                        <AlertCircle size={11} /> Fora do prazo{atraso(c).dias > 1 ? ` (${atraso(c).dias} dias)` : ""}
+                      </Badge>
+                    )}
                     {c.urgente && <Badge color={C.red} bg={C.redPale}><AlertCircle size={11} /> Urgente</Badge>}
                     <button onClick={() => setExcluir(c)} className="cw-btn" style={{ color: C.text4, padding: 4 }} title="Excluir" aria-label={`Excluir correspondência de ${c.cliente}`}><Trash2 size={15} /></button>
                   </div>
