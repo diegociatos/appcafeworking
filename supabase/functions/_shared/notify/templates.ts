@@ -306,6 +306,51 @@ const TEMPLATES: Record<Evento, (d: any) => Render> = {
       RODAPE_PARCEIRO,
     ),
   }),
+  // Candidatura aprovada (aprovar-parceiro): o parceiro entra na plataforma e
+  // vê o que ainda falta para começar a vender.
+  parceiro_boas_vindas: (d) => ({
+    assunto: `Bem-vindo à rede CafeWorking · ${d.unidade || "sua unidade"}`,
+    texto: [
+      `Olá ${d.cliente}, sua candidatura foi aprovada e a unidade ${d.unidade} já existe na plataforma.`,
+      `Login: ${d.email}.`,
+      d.linkSenha ? `Crie sua senha: ${d.linkSenha}` : `Entre em ${linkApp()}`,
+      ...((d.pendencias as string[]) || []).map((p) => `Falta: ${p}`),
+    ].join("\n"),
+    html: layout(
+      "Sua candidatura foi aprovada",
+      `Olá <b>${esc(d.cliente)}</b>,<br><br>
+       O escritório <b>${esc(d.escritorio)}</b> agora é parceiro credenciado da rede CafeWorking. Criamos para você:
+       <ul style="margin:10px 0;padding-left:20px">
+         <li>a unidade <b>${esc(d.unidade)}</b>, com a tabela nacional de preços já aplicada;</li>
+         <li>o seu acesso de responsável, com o login <b>${esc(d.email)}</b>.</li>
+       </ul>
+       Quem vende é a CafeWorking: o cliente contrata pelo site ou pelo app, o pagamento é dividido
+       automaticamente e você recebe ${esc(d.percentual || "75")}% de cada cobrança paga${d.garantia ? `, com ${esc(d.garantia)}% do seu repasse retido como garantia` : ""}.
+       Você acompanha tudo em <b>Financeiro · Meus repasses</b>.
+       <br><br><b>Antes de a unidade começar a vender, ainda falta:</b>
+       <ul style="margin:10px 0;padding-left:20px">
+         ${(((d.pendencias as string[]) || []).map((p) => `<li>${esc(p)}</li>`).join("")) || "<li>nada: avisaremos assim que liberarmos as vendas.</li>"}
+       </ul>
+       A equipe da CafeWorking fala com você para concluir esses pontos.`,
+      d.linkSenha ? { label: "Criar minha senha", url: d.linkSenha } : { label: "Entrar na plataforma", url: linkApp() },
+      RODAPE_PARCEIRO,
+    ),
+  }),
+  // Candidatura recusada: o motivo escrito pelo admin vai inteiro no e-mail.
+  parceiro_recusado: (d) => ({
+    assunto: "Sobre a sua candidatura à rede CafeWorking",
+    texto: `Olá ${d.cliente}, agradecemos o interesse em ser parceiro da CafeWorking. Neste momento não seguiremos com a candidatura de ${d.escritorio}. Motivo: ${d.motivo}`,
+    html: layout(
+      "Sobre a sua candidatura",
+      `Olá <b>${esc(d.cliente)}</b>,<br><br>
+       Obrigado pelo interesse em ser parceiro da rede CafeWorking. Neste momento não vamos seguir com a
+       candidatura de <b>${esc(d.escritorio)}</b>.<br><br>
+       <b>Motivo:</b> ${esc(d.motivo)}<br><br>
+       Se algo mudar no seu espaço ou na sua cidade, fale com a gente: a rede continua aberta a novos parceiros.`,
+      undefined,
+      "Você recebe este e-mail porque se candidatou a parceiro da rede CafeWorking.",
+    ),
+  }),
 };
 
 export function renderTemplate(evento: Evento, dados: Record<string, unknown>): OutboundMessage & { texto: string } {
