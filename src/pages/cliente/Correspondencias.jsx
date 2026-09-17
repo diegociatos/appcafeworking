@@ -6,6 +6,7 @@ import { Card, Badge, Btn, PageHead, Empty, Modal } from "../../components/ui.js
 import { C } from "../../lib/theme.js";
 import { clienteApi, abrirDataUrl } from "../../lib/clienteApi.js";
 import { mensagemDe } from "../../lib/erros.js";
+import { urlSegura } from "../../lib/html.js";
 import { Carregando, ErroCarga, CartaoRecepcao, useDados, dataHoraBR } from "./comum.jsx";
 
 const SITUACAO = {
@@ -30,10 +31,12 @@ export default function Correspondencias() {
   };
 
   const lista = dados?.correspondencias || [];
-  const ehImagem = (a) => a && ((a.tipo || "").startsWith("image") || /^data:image/.test(a.url || ""));
+  const ehImagem = (a) => a && urlSegura(a.url) && ((a.tipo || "").startsWith("image") || /^data:image/.test(a.url || ""));
   const baixar = (a) => {
-    if (/^data:/.test(a.url)) abrirDataUrl(a.url, a.nome);
-    else window.open(a.url, "_blank", "noopener");
+    const url = urlSegura(a.url);
+    if (!url) { setAberta((p) => ({ ...p, anexo: null, erro: "Não foi possível abrir este arquivo. Peça à recepção." })); return; }
+    if (/^data:/.test(url)) abrirDataUrl(url, a.nome);
+    else window.open(url, "_blank", "noopener");
   };
 
   return (

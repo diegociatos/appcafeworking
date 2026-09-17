@@ -8,6 +8,7 @@ import { C, serif, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 import { enviarAnexoCorrespondencia, linkAnexoCorrespondencia, removerAnexoCorrespondencia } from "../lib/correspondenciasArquivo.js";
 import { mensagemDe } from "../lib/erros.js";
+import { urlSegura } from "../lib/html.js";
 
 const STATUS = {
   aguardando: { c: C.amber, bg: C.amberPale, l: "Aguardando retirada" },
@@ -22,9 +23,10 @@ const TIPOS = ["Notificação", "Intimação", "Extrato", "Carta", "Boleto", "En
 async function baixarAnexo(anexo) {
   if (!anexo) return;
   if (!anexo.caminho) {
-    if (!anexo.url) return;
+    const seguro = urlSegura(anexo.url);
+    if (!seguro) return;
     const a = document.createElement("a");
-    a.href = anexo.url;
+    a.href = seguro;
     a.download = anexo.nome || "anexo";
     document.body.appendChild(a);
     a.click();

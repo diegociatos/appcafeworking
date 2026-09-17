@@ -82,6 +82,8 @@ supabase functions deploy unidades-publicas --no-verify-jwt
 supabase functions deploy cadastrar-cliente --no-verify-jwt
 supabase functions deploy criar-unidade
 supabase functions deploy excluir-unidade
+supabase functions deploy cancelar-reserva --no-verify-jwt
+supabase functions deploy contas-plataforma --no-verify-jwt
 ```
 
 ### Autocadastro do cliente do coworking

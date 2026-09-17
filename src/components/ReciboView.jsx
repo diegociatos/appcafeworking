@@ -1,6 +1,7 @@
 import { Printer, Receipt } from "lucide-react";
 import { Btn } from "./ui.jsx";
 import { C, serif, fmt } from "../lib/theme.js";
+import { esc } from "../lib/html.js";
 
 // Valor por extenso (reais) — simples, cobre o uso de recibos de coworking.
 function porExtenso(n) {
@@ -39,7 +40,7 @@ export default function ReciboView({ recibo, unidade }) {
   const imprimir = () => {
     const w = window.open("", "_blank", "width=720,height=900");
     if (!w) return;
-    w.document.write(`<html><head><title>Recibo ${recibo.numero}</title>
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Recibo ${esc(recibo.numero)}</title>
       <style>body{font-family:'Book Antiqua',Palatino,Georgia,serif;color:#1f1f1c;padding:48px;max-width:680px;margin:0 auto}
       h1{font-size:22px;margin:0 0 4px}.muted{color:#6b6b63;font-size:13px}.valor{font-size:30px;color:#6E4E3B;margin:18px 0}
       .box{border:1px solid #e6e1d8;border-radius:14px;padding:24px;margin-top:18px}.row{margin:8px 0;font-size:14px}
@@ -74,15 +75,16 @@ export default function ReciboView({ recibo, unidade }) {
   );
 }
 
+// Todo valor dinâmico passa por esc(): o recibo vem de cadastro e formulário.
 function reciboHtml(r, unidade) {
-  const data = (r.emitidoEm || "").split("-").reverse().join("/");
-  return `<h1>RECIBO</h1><div class="muted">Nº ${r.numero} · ${unidade?.nome || ""}</div>
-    <div class="valor">${fmt(r.valor)}</div>
-    <div class="muted"><i>(${porExtenso(r.valor)})</i></div>
+  const data = String(r.emitidoEm || "").split("-").reverse().join("/");
+  return `<h1>RECIBO</h1><div class="muted">Nº ${esc(r.numero)} · ${esc(unidade?.nome || "")}</div>
+    <div class="valor">${esc(fmt(r.valor))}</div>
+    <div class="muted"><i>(${esc(porExtenso(r.valor))})</i></div>
     <div class="box">
-      <div class="row"><span class="lbl">Recebemos de</span><br><b>${r.cliente}</b>${r.clienteDoc ? ` — ${r.clienteDoc}` : ""}</div>
-      <div class="row"><span class="lbl">Referente a</span><br>${r.descricao}${r.forma ? ` — via ${r.forma}` : ""}</div>
-      <div class="row"><span class="lbl">Data</span><br>${data}</div>
-      <div class="sign">${unidade?.nome || "Emitente"}</div>
+      <div class="row"><span class="lbl">Recebemos de</span><br><b>${esc(r.cliente)}</b>${r.clienteDoc ? ` — ${esc(r.clienteDoc)}` : ""}</div>
+      <div class="row"><span class="lbl">Referente a</span><br>${esc(r.descricao)}${r.forma ? ` — via ${esc(r.forma)}` : ""}</div>
+      <div class="row"><span class="lbl">Data</span><br>${esc(data)}</div>
+      <div class="sign">${esc(unidade?.nome || "Emitente")}</div>
     </div>`;
 }

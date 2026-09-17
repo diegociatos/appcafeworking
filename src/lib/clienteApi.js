@@ -98,7 +98,11 @@ export const clienteApi = {
 /** Abre um arquivo em data URL (anexo antigo) sem navegar para data: (bloqueado nos navegadores). */
 export function abrirDataUrl(dataUrl, nome = "arquivo") {
   const m = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(dataUrl || "");
-  if (!m) { window.open(dataUrl, "_blank", "noopener"); return; }
+  if (!m) {
+    // Só abre link http(s)/blob; nunca javascript: ou outro esquema vindo de dado gravado.
+    if (/^(https?:\/\/|blob:)/i.test(String(dataUrl || "").trim())) window.open(dataUrl, "_blank", "noopener");
+    return;
+  }
   const binario = m[2] ? atob(m[3]) : decodeURIComponent(m[3]);
   const bytes = new Uint8Array(binario.length);
   for (let i = 0; i < binario.length; i++) bytes[i] = binario.charCodeAt(i);

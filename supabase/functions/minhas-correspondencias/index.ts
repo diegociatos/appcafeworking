@@ -85,7 +85,12 @@ Deno.serve(async (req) => {
         if (eLink || !link?.signedUrl) throw new Error(`storage: ${eLink?.message || "sem link"}`);
         return json({ anexo: { nome, tipo: c.anexo.tipo || "", url: link.signedUrl, expira_em_s: VALIDADE_LINK_S } }, 200, req);
       }
-      return json({ anexo: { nome, tipo: c.anexo.tipo || "", url: c.anexo.url } }, 200, req);
+      // Anexo antigo embutido no app_state: só imagem/PDF em data: ou link http(s).
+      const antigo = String(c.anexo.url || "").trim();
+      if (!/^data:(image\/(png|jpe?g|webp|gif)|application\/pdf)[;,]/i.test(antigo) && !/^https?:\/\//i.test(antigo)) {
+        return json({ error: "Esta correspondência não tem arquivo digitalizado." }, 404, req);
+      }
+      return json({ anexo: { nome, tipo: c.anexo.tipo || "", url: antigo } }, 200, req);
     }
 
     const nomes = await nomesDasUnidades(admin, unidades);
