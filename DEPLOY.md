@@ -84,7 +84,63 @@ supabase functions deploy criar-unidade
 supabase functions deploy excluir-unidade
 supabase functions deploy cancelar-reserva --no-verify-jwt
 supabase functions deploy contas-plataforma --no-verify-jwt
+supabase functions deploy email-ms365 --no-verify-jwt
+supabase functions deploy email-ms365-callback --no-verify-jwt
 ```
+
+### E-mail pela Microsoft 365 (envio@grupociatos.com.br)
+Os e-mails podem sair direto pela Microsoft 365 (Graph, OAuth delegado), no
+mesmo desenho do ContaOne. Enquanto a integração não estiver **conectada e
+ligada**, tudo continua saindo pelo Resend (`RESEND_API_KEY`/`EMAIL_FROM`).
+
+Publicação, nesta ordem:
+```bash
+supabase db push                                    # migration 20260922120000_email_microsoft
+supabase functions deploy email-ms365 --no-verify-jwt
+supabase functions deploy email-ms365-callback --no-verify-jwt
+# funções que embutem _shared/notify (direto ou via _shared/assinaturas.ts ou
+# _shared/aberturas.ts) e só passam a usar o roteador Microsoft/Resend quando
+# republicadas. Publicar a partir do código já mesclado na main (asaas-* e
+# outras podem ter mudanças de outros branches).
+# Todas validam o login no próprio código (padrão dos scripts/publicar-*.ps1).
+for f in enviar-email convidar-cliente aberturas rotina-diaria asaas-webhook \
+         cadastrar-cliente cancelar-assinatura cancelar-reserva contas-plataforma \
+         documentos-assinatura gestao-assinaturas kit-endereco lead-site \
+         minha-assinatura minhas-correspondencias minhas-faturas reservas-cliente; do
+  supabase functions deploy $f --project-ref lmgbysfrbtgqzbtouzft --no-verify-jwt
+done
+# Estas duas não documentam a flag: confira no painel (Edge Functions → Verify JWT)
+# e republique com a MESMA configuração de hoje.
+supabase functions deploy asaas-cobranca --project-ref lmgbysfrbtgqzbtouzft
+supabase functions deploy criar-reserva --project-ref lmgbysfrbtgqzbtouzft
+# opcional: segredo próprio para assinar o "state" do OAuth
+# (sem ele, deriva do SUPABASE_SERVICE_ROLE_KEY)
+supabase secrets set MS_STATE_SECRET="<valor-aleatorio-longo>"
+```
+Depois, o front (Configurações → Integrações só mostra o card para o admin da plataforma).
+
+Passos do dono:
+1. **Azure** (Microsoft Entra → Registros de aplicativo → app): Autenticação →
+   plataforma **Web** → URI de redirecionamento
+   `https://lmgbysfrbtgqzbtouzft.supabase.co/functions/v1/email-ms365-callback`.
+   Permissões de API → Microsoft Graph → **delegadas**: `Mail.Send`,
+   `User.Read`, `offline_access` (conceder consentimento do administrador).
+   Certificados e segredos → novo segredo do cliente (copiar o **valor**).
+2. **Exchange** (admin.exchange.microsoft.com → caixa envio@grupociatos.com.br →
+   Delegação): dar **Enviar como** para a conta que vai conectar.
+3. **No app** (Configurações → Integrações → E-mail · Microsoft 365): salvar
+   Tenant ID, Client ID, Client Secret e "Enviar como"; **Conectar conta
+   Microsoft**; **Enviar e-mail de teste**; ligar **Usar Microsoft 365 para
+   todos os e-mails**.
+
+Notas: o client secret e o refresh token ficam no Vault
+(`email_ms365_client_secret`, `email_ms365_refresh_token`); a config sem
+segredo fica em `integracoes_plataforma` (sem acesso para anon/authenticated).
+O nome exibido ao destinatário é o nome da caixa no Exchange (o Graph não deixa
+trocar). Se o refresh token expirar ou for revogado, os envios ficam com status
+"erro" em `notificacoes` ("Microsoft 400: ...") — não caem para o Resend:
+reconecte a conta ou desligue a chave. O client secret do Azure vence (6/12/24
+meses): renove no Azure e salve o novo valor na tela antes do vencimento.
 
 ### Autocadastro do cliente do coworking
 Na tela de login há **"Cadastre-se"**: o cliente escolhe **cidade + unidade**,

@@ -9,6 +9,7 @@ import { C, serif, fmt, inp } from "../lib/theme.js";
 import { useStore, MODO_REAL } from "../lib/store.jsx";
 import Logo from "../components/Logo.jsx";
 import { notificacoesApi } from "../lib/notificacoesApi.js";
+import { emailMs365Api } from "../lib/emailMs365Api.js";
 
 // Apenas integrações ativas (que funcionam de verdade).
 const INTEGRACOES = [
@@ -122,6 +123,7 @@ export default function Configuracoes({ go }) {
               );
             })}
           </div>
+          {ehFranqueador && emailMs365Api.configured && <EmailMicrosoft365 />}
         </div>
       )}
 
@@ -489,6 +491,210 @@ function HistoricoEmails() {
             </div>
           );
         })
+      )}
+    </Card>
+  );
+}
+
+// ===========================================================================
+// E-mail · Microsoft 365 — só admin da plataforma (mesmo fluxo do ContaOne).
+// Credenciais do app do Azure → conectar a conta pela tela da Microsoft →
+// e-mail de teste → ligar "usar para todos os e-mails". Desligado, segue o Resend.
+// ===========================================================================
+const REDIRECT_MS365_PADRAO = "https://lmgbysfrbtgqzbtouzft.supabase.co/functions/v1/email-ms365-callback";
+
+function EmailMicrosoft365() {
+  const [st, setSt] = useState(null);          // resposta de status
+  const [oculto, setOculto] = useState(false); // 403: não é admin da plataforma
+  const [form, setForm] = useState({ tenant_id: "", client_id: "", client_secret: "", envia_como: "" });
+  const [testeMail, setTesteMail] = useState("");
+  const [busy, setBusy] = useState("");
+  const [msg, setMsg] = useState(null);        // { ok, texto }
+
+  const aplicar = (r) => {
+    setSt(r);
+    const e = r.email || {};
+    setForm({ tenant_id: e.tenant_id || "", client_id: e.client_id || "", client_secret: "", envia_como: e.envia_como || "" });
+  };
+  const carregar = async (silencioso = false) => {
+    try {
+      const r = await emailMs365Api.status();
+      aplicar(r);
+      setTesteMail((t) => t || r.adminEmail || "");
+    } catch (e) {
+      if (e.status === 403) { setOculto(true); return; }
+      if (!silencioso) setMsg({ ok: false, texto: e.message });
+    }
+  };
+  useEffect(() => {
+    carregar();
+    // Voltando da janela da Microsoft, atualiza o status sozinho.
+    const aoFocar = () => carregar(true);
+    window.addEventListener("focus", aoFocar);
+    return () => window.removeEventListener("focus", aoFocar);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (oculto) return null;
+
+  const rodar = async (nome, fn, sucesso) => {
+    setBusy(nome); setMsg(null);
+    try {
+      const r = await fn();
+      if (r?.email) setSt((s) => ({ ...(s || {}), email: r.email }));
+      const texto = typeof sucesso === "function" ? sucesso(r) : sucesso;
+      if (texto) setMsg({ ok: true, texto });
+      return r;
+    } catch (e) {
+      setMsg({ ok: false, texto: e.message });
+      return null;
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const e = st?.email || {};
+  const set = (k) => (ev) => setForm({ ...form, [k]: ev.target.value });
+  const salvar = () => rodar("salvar", () => emailMs365Api.salvar(form), (r) => {
+    setForm((f) => ({ ...f, client_secret: "" }));
+    return r.desconectou
+      ? "Credenciais salvas. Como o aplicativo mudou, a conta foi desconectada: conecte de novo."
+      : "Credenciais salvas.";
+  });
+  const conectar = async () => {
+    // Abre a janela já no clique (senão o bloqueador de pop-up barra) e só depois navega.
+    const janela = window.open("", "_blank");
+    const r = await rodar("conectar", () => emailMs365Api.urlConexao(), "Conclua o login na janela da Microsoft e volte para esta tela.");
+    if (!r?.url) { if (janela) janela.close(); return; }
+    if (janela) { janela.opener = null; janela.location.href = r.url; } else window.location.href = r.url;
+  };
+  const testar = () => rodar("testar", () => emailMs365Api.testar(testeMail), (r) => `E-mail de teste enviado para ${r.para} como ${r.remetente || "a conta conectada"}. Confira a caixa de entrada.`);
+  const desconectar = () => {
+    if (!window.confirm("Desconectar a conta Microsoft? Os e-mails voltam a sair pelo Resend.")) return;
+    rodar("desconectar", () => emailMs365Api.desconectar(), "Conta desconectada. Os e-mails voltaram a sair pelo Resend.");
+  };
+  const alternar = () => {
+    const ligar = !e.ativo;
+    if (ligar && !window.confirm(`Todos os e-mails do CafeWorking passarão a sair pela Microsoft 365${e.envia_como ? ` como ${e.envia_como}` : ""}. Você já enviou um e-mail de teste?`)) return;
+    rodar("ativar", () => emailMs365Api.ativar(ligar), ligar ? "Microsoft 365 ativada para todos os e-mails." : "Microsoft 365 desligada. Os e-mails voltaram a sair pelo Resend.");
+  };
+
+  const quando = e.conectado_em ? new Date(e.conectado_em).toLocaleString("pt-BR") : "";
+  const statusBadge = !e.appConfigurado
+    ? <Badge color={C.text3} bg={C.cream2}>Não configurado</Badge>
+    : !e.conectado
+      ? <Badge color={C.amber} bg={C.amberPale}>Aguardando conexão</Badge>
+      : e.ativo
+        ? <Badge color={C.green} bg={C.greenPale}>Ativo</Badge>
+        : <Badge color={C.blue} bg={C.bluePale}>Conectado · desligado</Badge>;
+
+  return (
+    <Card style={{ maxWidth: 720, marginTop: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 10 }}>
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <div style={{ width: 44, height: 44, borderRadius: 12, background: `${C.blue}1a`, display: "grid", placeItems: "center" }}>
+            <Mail size={22} color={C.blue} />
+          </div>
+          <div>
+            <div style={{ fontFamily: serif, fontSize: 18, color: C.text }}>E-mail · Microsoft 365</div>
+            <div style={{ fontSize: 13, color: C.text3 }}>Enviar os e-mails aos clientes direto pela caixa do Grupo Ciatos.</div>
+          </div>
+        </div>
+        {st && statusBadge}
+      </div>
+
+      {!st && !msg && <div style={{ fontSize: 13, color: C.text3 }}>Carregando…</div>}
+      {st?.pendente && (
+        <div style={{ fontSize: 13, color: C.amber, background: C.amberPale, borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
+          Falta aplicar a migration 20260922120000_email_microsoft no banco.
+        </div>
+      )}
+
+      {st && (
+        <>
+          <div style={{ fontSize: 12.5, color: C.text2, background: C.cream, border: `1px solid ${C.border2}`, borderRadius: 10, padding: "10px 12px", margin: "6px 0 14px", lineHeight: 1.55 }}>
+            <b>No Azure (Microsoft Entra → Registros de aplicativo → seu app):</b>
+            <ol style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+              <li>Autenticação → Adicionar plataforma → <b>Web</b> → URI de redirecionamento:
+                <div style={{ fontFamily: "monospace", fontSize: 12, wordBreak: "break-all", margin: "3px 0" }}>{st.redirectUri || REDIRECT_MS365_PADRAO}</div>
+              </li>
+              <li>Permissões de API → Microsoft Graph → <b>delegadas</b>: Mail.Send, User.Read e offline_access.</li>
+              <li>A conta que conectar precisa ter permissão <b>"Enviar como"</b> na caixa informada abaixo (Exchange → caixa envio@grupociatos.com.br → Delegação).</li>
+            </ol>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 12 }}>
+            <Field label="Tenant ID">
+              <input value={form.tenant_id} onChange={set("tenant_id")} style={inp} placeholder="00000000-0000-0000-0000-000000000000" autoComplete="off" />
+            </Field>
+            <Field label="Client ID">
+              <input value={form.client_id} onChange={set("client_id")} style={inp} placeholder="00000000-0000-0000-0000-000000000000" autoComplete="off" />
+            </Field>
+            <Field label="Client Secret">
+              <input type="password" value={form.client_secret} onChange={set("client_secret")} style={inp} autoComplete="new-password"
+                placeholder={e.temSecret ? "configurado · deixe em branco para manter" : "cole o valor do segredo"} />
+            </Field>
+            <Field label="Enviar como">
+              <input type="email" value={form.envia_como} onChange={set("envia_como")} style={inp} placeholder="envio@grupociatos.com.br" autoComplete="off" />
+            </Field>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
+            <Btn onClick={salvar} disabled={!!busy}><Save size={16} /> {busy === "salvar" ? "Salvando…" : "Salvar"}</Btn>
+            <Btn variant="teal" onClick={conectar} disabled={!!busy || !e.appConfigurado}>
+              {busy === "conectar" ? "Abrindo…" : e.conectado ? "Reconectar conta Microsoft" : "Conectar conta Microsoft"}
+            </Btn>
+            {e.conectado && (
+              <Btn variant="ghost" onClick={desconectar} disabled={!!busy} style={{ color: C.red }}>
+                {busy === "desconectar" ? "Desconectando…" : "Desconectar"}
+              </Btn>
+            )}
+            <Btn variant="ghost" onClick={() => carregar()} disabled={!!busy}>Atualizar status</Btn>
+          </div>
+
+          {e.conectado && (
+            <>
+              <div style={{ fontSize: 13, color: C.text2, marginTop: 16 }}>
+                Conectado como <b>{e.conta_email || e.conta_nome || "conta Microsoft"}</b>{quando ? `, desde ${quando}` : ""}.
+                {" "}Os e-mails saem como <b>{e.envia_como || e.conta_email}</b>.
+              </div>
+
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", marginTop: 12 }}>
+                <Field label="E-mail de teste para" style={{ marginBottom: 0, flex: "1 1 240px" }}>
+                  <input type="email" value={testeMail} onChange={(ev) => setTesteMail(ev.target.value)} style={inp} placeholder="voce@exemplo.com" />
+                </Field>
+                <Btn variant="ghost" onClick={testar} disabled={!!busy || !testeMail}>
+                  <Mail size={16} /> {busy === "testar" ? "Enviando…" : "Enviar e-mail de teste"}
+                </Btn>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 0 0", marginTop: 14, borderTop: `1px solid ${C.border2}` }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>Usar Microsoft 365 para todos os e-mails</div>
+                  <div style={{ fontSize: 12, color: C.text3 }}>
+                    {e.ativo ? "Ligado: cobranças, avisos e convites saem pela Microsoft." : "Desligado: os e-mails continuam saindo pelo Resend."}
+                  </div>
+                </div>
+                <button
+                  onClick={alternar}
+                  disabled={!!busy}
+                  role="switch"
+                  aria-checked={!!e.ativo}
+                  aria-label="Usar Microsoft 365 para todos os e-mails"
+                  style={{ width: 44, height: 26, borderRadius: 20, background: e.ativo ? C.teal : C.gray, position: "relative", transition: "all .2s", flexShrink: 0, opacity: busy ? 0.6 : 1 }}
+                >
+                  <div style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: e.ativo ? 21 : 3, transition: "all .2s", boxShadow: "0 2px 4px rgba(0,0,0,.15)" }} />
+                </button>
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {msg && (
+        <div style={{ fontSize: 13, marginTop: 14, borderRadius: 10, padding: "10px 12px", color: msg.ok ? C.green : C.red, background: msg.ok ? C.greenPale : C.redPale }}>
+          {msg.texto}
+        </div>
       )}
     </Card>
   );

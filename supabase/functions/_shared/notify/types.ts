@@ -11,10 +11,11 @@ export interface OutboundMessage {
   assunto: string;
   html: string;
   texto?: string;
+  replyTo?: string;    // opcional; sem ele vale EMAIL_REPLY_TO
 }
 
 export interface SendResult {
-  providerId?: string; // id no provedor (Resend/Meta)
+  providerId?: string | null; // id no provedor (Resend/Meta); Microsoft Graph não devolve (null)
   ok: boolean;
   erro?: string;
 }
