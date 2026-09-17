@@ -77,6 +77,7 @@ supabase functions deploy excluir-coworking
 supabase functions deploy asaas-cobranca
 supabase functions deploy asaas-webhook --no-verify-jwt
 supabase functions deploy salvar-integracao
+supabase functions deploy remover-conta-bancaria --no-verify-jwt
 supabase functions deploy unidades-publicas --no-verify-jwt
 supabase functions deploy cadastrar-cliente --no-verify-jwt
 supabase functions deploy criar-unidade
