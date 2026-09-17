@@ -4,13 +4,14 @@
 
 import type { NotificationProvider } from "./NotificationProvider.ts";
 import { type Canal, NotifyError } from "./types.ts";
-import { EmailProvider } from "./EmailProvider.ts";
+import { EmailRoteador } from "./EmailRoteador.ts";
 import { WhatsAppProvider } from "./WhatsAppProvider.ts";
 
 export function getNotifProvider(canal: Canal): NotificationProvider {
   switch (canal) {
     case "email":
-      return new EmailProvider();
+      // Microsoft 365 quando conectada e ativa; senão Resend (decisão em cache curto).
+      return new EmailRoteador();
     case "whatsapp":
       return new WhatsAppProvider();
     default:
@@ -20,6 +21,7 @@ export function getNotifProvider(canal: Canal): NotificationProvider {
 
 export { renderTemplate } from "./templates.ts";
 export { NotifyError } from "./types.ts";
+export { limparCacheEmail } from "./EmailRoteador.ts";
 export type { Canal, Evento } from "./types.ts";
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";

@@ -36,7 +36,7 @@ export class EmailProvider implements NotificationProvider {
         subject: msg.assunto,
         html: msg.html,
         ...(msg.texto ? { text: msg.texto } : {}),
-        ...(this.replyTo ? { reply_to: this.replyTo } : {}),
+        ...((msg.replyTo || this.replyTo) ? { reply_to: msg.replyTo || this.replyTo } : {}),
       }),
     });
 

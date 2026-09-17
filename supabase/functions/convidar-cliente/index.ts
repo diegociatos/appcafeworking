@@ -128,7 +128,7 @@ Deno.serve(async (req) => {
     const msg = renderTemplate("convite_acesso", {
       cliente: cliente.nome, email, unidade: nomeExibicaoUnidade(unidade.nome), plano: cliente.plano, linkSenha,
     });
-    let envio: { ok: boolean; providerId?: string; erro?: string };
+    let envio: { ok: boolean; providerId?: string | null; erro?: string };
     try {
       envio = await getNotifProvider("email").enviar({ ...msg, para: email });
     } catch (e) {
