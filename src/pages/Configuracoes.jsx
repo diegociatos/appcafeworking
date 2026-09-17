@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Field, ImageInput, Empty } from "../components/ui.jsx";
 import { C, serif, fmt, inp } from "../lib/theme.js";
-import { useStore } from "../lib/store.jsx";
+import { useStore, MODO_REAL } from "../lib/store.jsx";
 import Logo from "../components/Logo.jsx";
 import { notificacoesApi } from "../lib/notificacoesApi.js";
 
@@ -18,22 +18,26 @@ const INTEGRACOES = [
 export default function Configuracoes({ go }) {
   const { perfil } = useStore();
   const ehFranqueador = perfil === "franqueador";
+  // Conta, Assinatura, Segurança e Marca são só vitrine (dados fixos, "Salvar" e
+  // toggles que não gravam nada, fatura e cartão de exemplo): ficam só na demonstração.
   const abas = [
     { id: "perfil", label: "Meu perfil", icon: UserCircle },
-    { id: "geral", label: ehFranqueador ? "Plataforma" : "Conta", icon: Globe },
+    ...(!MODO_REAL ? [{ id: "geral", label: ehFranqueador ? "Plataforma" : "Conta", icon: Globe }] : []),
     // Assinatura é a cobrança do coworking pelo uso do CafeWorking.
     // O Administrador (plataforma) é o vendedor, não assina o produto.
-    ...(!ehFranqueador ? [{ id: "assinatura", label: "Assinatura", icon: CardIcon }] : []),
+    ...(!ehFranqueador && !MODO_REAL ? [{ id: "assinatura", label: "Assinatura", icon: CardIcon }] : []),
     { id: "notificacoes", label: "Notificações", icon: Bell },
     { id: "integracoes", label: "Integrações", icon: Zap },
-    { id: "seguranca", label: "Segurança", icon: Lock },
-    { id: "marca", label: "Marca", icon: Palette },
+    ...(!MODO_REAL ? [
+      { id: "seguranca", label: "Segurança", icon: Lock },
+      { id: "marca", label: "Marca", icon: Palette },
+    ] : []),
   ];
   const [aba, setAba] = useState("perfil");
 
   return (
     <div>
-      <PageHead title="Configurações" sub="Seu perfil, assinatura, notificações, integrações, segurança e marca." />
+      <PageHead title="Configurações" sub={MODO_REAL ? "Seu perfil, notificações e integrações." : "Seu perfil, assinatura, notificações, integrações, segurança e marca."} />
       <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
         {abas.map((a) => (
           <button
@@ -221,9 +225,17 @@ function MeuPerfil() {
           <input value={f.telefone} onChange={set("telefone")} style={inp} />
         </Field>
       </div>
+      {/* O perfil ainda não é gravado no banco: em produção, dizer a verdade. */}
       <Btn style={{ marginTop: 6 }} onClick={salvar}>
-        <Save size={16} /> {salvo ? "Dados salvos" : "Salvar meu perfil"}
+        <Save size={16} /> {MODO_REAL
+          ? (salvo ? "Aplicado nesta sessão" : "Aplicar nesta sessão")
+          : (salvo ? "Dados salvos" : "Salvar meu perfil")}
       </Btn>
+      {MODO_REAL && (
+        <div style={{ fontSize: 12, color: C.text4, marginTop: 8 }}>
+          Por enquanto estes dados valem só até recarregar a página; o login e o e-mail de acesso não mudam aqui.
+        </div>
+      )}
     </Card>
   );
 }
@@ -356,6 +368,7 @@ function Notificacoes() {
     <div style={{ fontSize: 13, color: C.text3 }}>
       <b>Avisos da equipe</b> — quem do time é notificado, e por qual canal, a cada evento.
       A coluna <b>Push</b> controla os contadores que aparecem no menu do app (PDV, Reservas e Correspondências).
+      {MODO_REAL && <> Por enquanto a escolha não é gravada (vale até recarregar) e as colunas E-mail e WhatsApp ainda não mudam nenhum envio.</>}
     </div>
     <Card style={{ padding: 0, overflow: "hidden" }}>
       {/* cabeçalho de canais */}
@@ -392,9 +405,11 @@ function Notificacoes() {
 
       <div style={{ padding: "14px 20px", borderTop: `1px solid ${C.border2}`, display: "flex", alignItems: "center", gap: 12 }}>
         <Btn onClick={salvar} style={salvo ? { opacity: 0.85 } : {}}>
-          <Save size={16} /> {salvo ? "Preferências salvas" : "Salvar preferências"}
+          <Save size={16} /> {MODO_REAL
+            ? (salvo ? "Aplicado nesta sessão" : "Aplicar nesta sessão")
+            : (salvo ? "Preferências salvas" : "Salvar preferências")}
         </Btn>
-        {!salvo && <span style={{ fontSize: 12, color: C.amber }}>Alterações não salvas</span>}
+        {!salvo && <span style={{ fontSize: 12, color: C.amber }}>{MODO_REAL ? "Alterações não aplicadas" : "Alterações não salvas"}</span>}
       </div>
     </Card>
 

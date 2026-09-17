@@ -2,9 +2,9 @@ import {
   Plus, Calendar, MapPin, Presentation, GraduationCap, Sparkles,
   Mic2, Ticket,
 } from "lucide-react";
-import { Card, Badge, Btn, PageHead } from "../components/ui.jsx";
+import { Card, Badge, Btn, PageHead, Empty } from "../components/ui.jsx";
 import { C, serif } from "../lib/theme.js";
-import { useStore } from "../lib/store.jsx";
+import { useStore, MODO_REAL } from "../lib/store.jsx";
 
 const TIPO_ICONE = {
   Workshop: GraduationCap,
@@ -23,17 +23,23 @@ const TIPO_COR = {
 export default function Eventos() {
   const { activeUnit, eventosDe } = useStore();
   const EVENTOS = eventosDe(activeUnit);
+  // "Novo evento" ainda não tem cadastro: em produção o botão não aparece (não fazia nada).
   return (
     <div>
       <PageHead
         title="Eventos & Auditório"
-        sub="Workshops, treinamentos e networking — venda, inscritos, certificados e QR Code de acesso."
-        action={
+        sub={MODO_REAL
+          ? "Workshops, treinamentos e networking da unidade."
+          : "Workshops, treinamentos e networking — venda, inscritos, certificados e QR Code de acesso."}
+        action={MODO_REAL ? null : (
           <Btn variant="teal">
             <Plus size={16} /> Novo evento
           </Btn>
-        }
+        )}
       />
+      {MODO_REAL && EVENTOS.length === 0 && (
+        <Card><Empty icon={Calendar} title="Nenhum evento" sub="O cadastro e a venda de eventos ainda não estão disponíveis no app." /></Card>
+      )}
       <div
         style={{
           display: "grid",
