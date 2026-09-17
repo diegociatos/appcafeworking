@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   LayoutDashboard, KanbanSquare, Building2, CalendarDays, Mail, Coffee,
   Users, Wallet, Mic2, MessageSquare, UserCircle, Settings,
-  Search, Bell, Menu, X, ChevronDown, Check, Store, Eye, LogOut, ShieldCheck, Package, Home, FileText, Barcode, Boxes, Landmark, Tags, DoorOpen, ScrollText, ChefHat, Briefcase,
+  Search, Bell, Menu, X, ChevronDown, Check, Store, Eye, LogOut, ShieldCheck, Package, Home, FileText, Barcode, Boxes, Landmark, Tags, DoorOpen, ScrollText, ChefHat, Briefcase, Handshake,
 } from "lucide-react";
 import { C, sans, serif, fmt, shadow } from "./lib/theme.js";
 import { useStore, PERFIS } from "./lib/store.jsx";
@@ -35,6 +35,7 @@ import Equipe from "./pages/Equipe.jsx";
 import Catalogo from "./pages/Catalogo.jsx";
 import Planos from "./pages/Planos.jsx";
 import PlanosNacionais from "./pages/PlanosNacionais.jsx";
+import Parceiros from "./pages/Parceiros.jsx";
 import Salas from "./pages/Salas.jsx";
 import Configuracoes from "./pages/Configuracoes.jsx";
 import Auditoria from "./pages/Auditoria.jsx";
@@ -56,6 +57,7 @@ import { aberturasApi } from "./lib/aberturasApi.js";
 const NAV = [
   { id: "dash", label: "Dashboard", icon: LayoutDashboard, group: "principal" },
   { id: "franqueados", label: "Contas", icon: Store, group: "comercial" },
+  { id: "parceiros", label: "Parceiros", icon: Handshake, group: "comercial" },
   { id: "crm", label: "CRM · Leads", icon: KanbanSquare, group: "comercial" },
   { id: "planos", label: "Planos e serviços", icon: Tags, group: "comercial" },
   { id: "tabela_nacional", label: "Tabela nacional", icon: Tags, group: "comercial" },
@@ -96,7 +98,7 @@ const PAGES = {
   dash: Dashboard, franqueados: Franqueados, crm: CRM, unidades: Unidades,
   reservas: Reservas, corresp: Correspondencias, pdv: PDV, clientes: Clientes,
   financeiro: Financeiro, boletos: Boletos, cobrancas: Cobrancas, notafiscal: NotaFiscal, estoque: Estoque, patrimonio: Patrimonio, eventos: Eventos,
-  area: AreaCliente, equipe: Equipe, catalogo: Catalogo, planos: Planos, tabela_nacional: PlanosNacionais, salas: Salas, config: Configuracoes, auditoria: Auditoria, kds: KDS,
+  area: AreaCliente, equipe: Equipe, catalogo: Catalogo, planos: Planos, tabela_nacional: PlanosNacionais, parceiros: Parceiros, salas: Salas, config: Configuracoes, auditoria: Auditoria, kds: KDS,
   assinaturas: Assinaturas, aberturas: Aberturas, cli_plano: MeuPlano, cli_abertura: AberturaEmpresaCliente,
   cli_inicio: InicioCliente, cli_reservar: ReservarCliente, cli_faturas: FaturasCliente, cli_docs: CorrespondenciasCliente,
   cli_fiscal: EnderecoFiscalCliente, cli_contato: FaleConoscoCliente, cli_notif: NotificacoesCliente, cli_conta: MinhaContaCliente,
