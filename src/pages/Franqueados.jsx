@@ -43,6 +43,20 @@ const contratoNovo = (c) => Boolean(c?.url && /^data:/.test(c.url));
 // CPF tem 11 dígitos; CNPJ tem 14
 const tipoDoc = (doc) => ((doc || "").replace(/\D/g, "").length > 11 ? "CNPJ" : "CPF");
 
+// Rede de parceiros (docs/PARCEIROS.md)
+const STATUS_PARCEIRO = [
+  ["em_analise", "Em análise"], ["ativo", "Ativo (vende)"], ["suspenso", "Suspenso"], ["encerrado", "Encerrado"],
+];
+const rotuloStatus = (s) => STATUS_PARCEIRO.find(([v]) => v === s)?.[1] || "Em análise";
+const corStatus = (s) => (s === "ativo" ? C.green : s === "suspenso" || s === "encerrado" ? C.red : C.amber);
+
+/** Campos do parceiro enviados às Edge Functions (camelCase; o backend valida). */
+const dadosParceiro = (d) => ({
+  tipo: d.tipo, parceiroPercentual: d.parceiroPercentual, garantiaPercentual: d.garantiaPercentual,
+  asaasWalletId: d.asaasWalletId, parceiroStatus: d.tipo === "parceiro" ? d.parceiroStatus : "",
+  emailsAviso: d.emailsAvisoTexto,
+});
+
 export default function Franqueados({ go }) {
   const { franqueados, unidades, unidadesDe, addFranqueado, updateFranqueado, removeFranqueado, removerCoworking, enterViewAs, adicionarCoworking } = useStore();
   const [modal, setModal] = useState(null);
@@ -70,7 +84,8 @@ export default function Franqueados({ go }) {
 
   const salvarConta = async (dados) => {
     if (!onboardApi.configured) {
-      if (modal?.id) updateFranqueado(modal.id, dados); else addFranqueado(dados);
+      const local = { ...dados, emailsAviso: String(dados.emailsAvisoTexto || "").split(/[\s,;]+/).filter(Boolean) };
+      if (modal?.id) updateFranqueado(modal.id, local); else addFranqueado(local);
       setModal(null);
       return;
     }
@@ -82,6 +97,7 @@ export default function Franqueados({ go }) {
           nome: dados.nome, master: dados.master, documento: dados.documento, telefone: dados.telefone,
           plano: dados.plano, mensalidade: dados.mensalidade, tipoPessoa: dados.tipoPessoa, nomeFantasia: dados.nomeFantasia,
           responsavel: dados.responsavel, endereco: dados.endereco, cidade: dados.cidade, observacoes: dados.observacoes,
+          ...dadosParceiro(dados),
         });
         updateFranqueado(modal.id, mapConta(conta));
         if (contratoNovo(dados.contrato)) conta = await onboardApi.enviarContrato(modal.id, dados.contrato);
@@ -102,6 +118,9 @@ export default function Franqueados({ go }) {
         senha: dados.senha || undefined,
         tipo_pessoa: dados.tipoPessoa, nome_fantasia: dados.nomeFantasia, responsavel: dados.responsavel,
         endereco_conta: dados.endereco, observacoes: dados.observacoes,
+        tipo: dados.tipo, parceiro_percentual: dados.parceiroPercentual, garantia_percentual: dados.garantiaPercentual,
+        asaas_wallet_id: dados.asaasWalletId, parceiro_status: dados.tipo === "parceiro" ? dados.parceiroStatus : "",
+        emails_aviso: dados.emailsAvisoTexto,
       });
       let conta = res.conta;
       let avisoContrato = "";
@@ -190,7 +209,13 @@ export default function Franqueados({ go }) {
                   <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                     <span style={{ fontFamily: serif, fontSize: 21, color: C.text }}>{f.nome}</span>
                     <Badge color={C.cafe}>{us.length} unidade{us.length === 1 ? "" : "s"}</Badge>
-                    {f.plano && <Badge color={C.green}>{f.plano} · {fmt(f.mensalidade || 0)}/mês</Badge>}
+                    {f.plano && f.tipo !== "parceiro" && <Badge color={C.green}>{f.plano} · {fmt(f.mensalidade || 0)}/mês</Badge>}
+                    {f.tipo === "parceiro" && (
+                      <Badge color={corStatus(f.parceiroStatus)}>
+                        Parceiro · {rotuloStatus(f.parceiroStatus)} · {f.parceiroPercentual}% (garantia {f.garantiaPercentual}%)
+                      </Badge>
+                    )}
+                    {f.tipo === "parceiro" && !f.asaasWalletId && <Badge color={C.red}>Sem carteira Asaas</Badge>}
                   </div>
                   <div style={{ fontSize: 13, color: C.text2, marginTop: 4 }}>
                     Master: <b>{f.master || f.responsavel || "—"}</b>
@@ -370,10 +395,23 @@ function FranqueadoForm({ inicial, onSave, loading, erro, novo, real }) {
     mensalidade: inicial.mensalidade ?? 297,
     contrato: inicial.contrato || null,
     observacoes: inicial.observacoes || "",
+    tipo: inicial.tipo === "parceiro" ? "parceiro" : "propria",
+    parceiroPercentual: inicial.parceiroPercentual ?? 75,
+    garantiaPercentual: inicial.garantiaPercentual ?? 10,
+    asaasWalletId: inicial.asaasWalletId || "",
+    parceiroStatus: inicial.parceiroStatus || "em_analise",
+    emailsAvisoTexto: (inicial.emailsAviso || []).join("\n"),
   });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const pj = f.tipoPessoa === "PJ";
-  const valido = f.nome.trim() && f.documento.trim() && f.email.trim() && (!novo || f.unidadeNome.trim());
+  const parceiro = f.tipo === "parceiro";
+  const pctOk = +f.parceiroPercentual > 0 && +f.parceiroPercentual < 100 && +f.garantiaPercentual >= 0 && +f.garantiaPercentual < 100;
+  const erroParceiro = !parceiro ? ""
+    : !pctOk ? "Percentuais precisam ficar entre 0 e 100."
+    : f.parceiroStatus === "ativo" && !f.asaasWalletId.trim() ? "Parceiro ativo precisa da carteira Asaas (walletId) para receber o split."
+    : "";
+  const imediato = Math.round(+f.parceiroPercentual * (1 - +f.garantiaPercentual / 100) * 100) / 100;
+  const valido = f.nome.trim() && f.documento.trim() && f.email.trim() && (!novo || f.unidadeNome.trim()) && !erroParceiro;
   const [buscandoDoc, setBuscandoDoc] = useState(false);
   const lookupCnpj = async (d) => {
     setBuscandoDoc(true);
@@ -456,6 +494,50 @@ function FranqueadoForm({ inicial, onSave, loading, erro, novo, real }) {
         <Field label="Cidade/UF">
           <input value={f.cidade} onChange={set("cidade")} style={inp} placeholder="BH/MG" />
         </Field>
+      </div>
+
+      <div style={{ background: C.cream2, borderRadius: 12, padding: 14, marginBottom: 14 }}>
+        <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 8 }}>Rede de parceiros</div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+          {[["propria", "Conta própria"], ["parceiro", "Parceiro da rede"]].map(([v, lb]) => (
+            <button key={v} type="button" onClick={() => setF({ ...f, tipo: v })}
+              style={{ flex: 1, padding: "9px 0", borderRadius: 10, fontFamily: sans, fontSize: 13, fontWeight: 600, border: `1px solid ${f.tipo === v ? C.cafe : C.border}`, background: f.tipo === v ? C.cafePale : C.white, color: f.tipo === v ? C.cafe : C.text2 }}>
+              {lb}
+            </button>
+          ))}
+        </div>
+        {parceiro ? (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <Field label="Situação" style={{ marginBottom: 0 }}>
+                <select value={f.parceiroStatus} onChange={set("parceiroStatus")} style={inp}>
+                  {STATUS_PARCEIRO.map(([v, lb]) => <option key={v} value={v}>{lb}</option>)}
+                </select>
+              </Field>
+              <Field label="Carteira Asaas (walletId)" style={{ marginBottom: 0 }}>
+                <input value={f.asaasWalletId} onChange={set("asaasWalletId")} style={inp} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+              </Field>
+              <Field label="Parte do parceiro (%)" style={{ marginBottom: 0 }}>
+                <input type="number" min="1" max="99" step="0.01" value={f.parceiroPercentual} onChange={set("parceiroPercentual")} style={inp} />
+              </Field>
+              <Field label="Garantia retida (% do repasse)" style={{ marginBottom: 0 }}>
+                <input type="number" min="0" max="99" step="0.01" value={f.garantiaPercentual} onChange={set("garantiaPercentual")} style={inp} />
+              </Field>
+            </div>
+            {pctOk && (
+              <div style={{ fontSize: 11.5, color: C.text3, marginTop: 8 }}>
+                Em cada pagamento: {imediato}% vai direto ao parceiro no split, {Math.round((+f.parceiroPercentual - imediato) * 100) / 100}% fica retido como garantia
+                e {Math.round((100 - +f.parceiroPercentual) * 100) / 100}% é da CafeWorking. Só vende online com situação "Ativo" e carteira preenchida.
+              </div>
+            )}
+            <Field label="E-mails que recebem os avisos (um por linha; vazio = e-mail do master)" style={{ marginTop: 10, marginBottom: 0 }}>
+              <textarea value={f.emailsAvisoTexto} onChange={set("emailsAvisoTexto")} rows={2} style={{ ...inp, resize: "vertical", minHeight: 52 }} placeholder={"contato@escritorio.com.br"} />
+            </Field>
+            {erroParceiro && <div style={{ fontSize: 12, color: C.red, marginTop: 8 }}>{erroParceiro}</div>}
+          </>
+        ) : (
+          <div style={{ fontSize: 11.5, color: C.text3 }}>Conta própria vende com a própria chave Asaas e define os próprios planos. Parceiro usa a conta da CafeWorking com split e a tabela nacional.</div>
+        )}
       </div>
 
       <Field label="Plano da plataforma (assinatura do app)">

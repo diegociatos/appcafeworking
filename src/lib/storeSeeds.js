@@ -15,7 +15,7 @@ const NOME_TO_ID = { Luxemburgo: "lux", Estoril: "est" };
 
 // Perfis de acesso (RBAC). `modules: null` = vê tudo. `landing` = página inicial.
 export const PERFIS = {
-  franqueador: { label: "Administrador (plataforma)", cor: "#0E4B4F", modules: ["dash", "franqueados", "auditoria"], landing: "dash" },
+  franqueador: { label: "Administrador (plataforma)", cor: "#0E4B4F", modules: ["dash", "franqueados", "tabela_nacional", "auditoria"], landing: "dash" },
   master: {
     label: "Master (coworking)",
     cor: "#B8862F",

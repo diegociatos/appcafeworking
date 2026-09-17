@@ -1,14 +1,20 @@
 import { useState } from "react";
-import { Tags, Plus, Edit3, Trash2, Check, X, FileText, Repeat, Zap, ShoppingBag, Globe } from "lucide-react";
+import { Tags, Plus, Edit3, Trash2, Check, X, FileText, Repeat, Zap, ShoppingBag, Globe, Lock } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, ConfirmDialog } from "../components/ui.jsx";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 
+// Desconto do anual nas unidades parceiras (o checkout usa o padrão nacional).
+const DESCONTO_ANUAL_NACIONAL = 10;
+
 export default function Planos() {
-  const { activeUnit, unidadeAtiva, planosDe, addPlano, updatePlano, removePlano, configVenda, setConfigVenda } = useStore();
+  const { activeUnit, unidadeAtiva, planosDe, addPlano, updatePlano, removePlano, configVenda, setConfigVenda, unidadeEhParceira } = useStore();
   const planos = planosDe(activeUnit, true); // inclui inativos para gerir
   const [modal, setModal] = useState(null); // {} novo | plano editar
   const [excluir, setExcluir] = useState(null); // plano a excluir
+  // Unidade de conta parceira: tabela nacional da CafeWorking. Só pausar/reativar
+  // (o banco recusa preço, benefícios e planos novos; aqui a tela nem oferece).
+  const parceira = unidadeEhParceira(activeUnit);
 
   const ativos = planos.filter((p) => p.ativo !== false);
   const comPreco = ativos.filter((p) => !p.sobConsulta);
@@ -20,17 +26,32 @@ export default function Planos() {
       <PageHead
         title="Planos e serviços"
         sub={`O que ${unidadeAtiva?.nome || "sua unidade"} vende. Usado nas cobranças e no autocadastro do cliente.`}
-        action={<Btn onClick={() => setModal({})}><Plus size={16} /> Novo plano</Btn>}
+        action={parceira ? null : <Btn onClick={() => setModal({})}><Plus size={16} /> Novo plano</Btn>}
       />
+
+      {parceira && (
+        <Card style={{ marginBottom: 18, display: "flex", gap: 12, alignItems: "flex-start", background: C.cream2 }}>
+          <Lock size={18} color={C.cafe} style={{ flexShrink: 0, marginTop: 2 }} />
+          <div style={{ fontSize: 13, color: C.text2 }}>
+            <b>Unidade parceira: tabela nacional da CafeWorking.</b> Preço, benefícios, direitos e fidelidade são os mesmos em todas as cidades e só a CafeWorking altera.
+            Você pode pausar um plano que a sua unidade não oferece e reativá-lo depois.
+          </div>
+        </Card>
+      )}
 
       <Card style={{ marginBottom: 18, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 220 }}>
           <div style={{ fontWeight: 600 }}>Desconto do plano anual</div>
-          <div style={{ fontSize: 12.5, color: C.text3 }}>Vale para todos os planos mensais no site: 12 mensalidades menos este percentual, no PIX, boleto ou cartão à vista.</div>
+          <div style={{ fontSize: 12.5, color: C.text3 }}>
+            {parceira
+              ? "Padrão nacional da rede de parceiros: 12 mensalidades menos este percentual, no PIX, boleto ou cartão à vista."
+              : "Vale para todos os planos mensais no site: 12 mensalidades menos este percentual, no PIX, boleto ou cartão à vista."}
+          </div>
         </div>
-        <input type="number" min="0" max="50" step="1" value={configVenda.descontoAnualPct}
+        <input type="number" min="0" max="50" step="1" value={parceira ? DESCONTO_ANUAL_NACIONAL : configVenda.descontoAnualPct}
+          disabled={parceira}
           onChange={(e) => setConfigVenda({ descontoAnualPct: Math.min(50, Math.max(0, Math.floor(+e.target.value || 0))) })}
-          style={{ ...inp, width: 90 }} aria-label="Desconto do plano anual em porcentagem" />
+          style={{ ...inp, width: 90, ...(parceira ? { background: C.cream2, color: C.text3 } : {}) }} aria-label="Desconto do plano anual em porcentagem" />
         <span style={{ color: C.text3 }}>%</span>
       </Card>
 
@@ -46,6 +67,9 @@ export default function Planos() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 14 }}>
           {planos.map((p) => {
             const inativo = p.ativo === false;
+            // em unidade parceira: plano fora da tabela, descontinuado ou pausado pela CafeWorking não reativa aqui
+            const pausadoNacional = parceira && p.modelo && inativo && !p.pausadoNaUnidade && !p.descontinuado;
+            const podePausar = !parceira || (p.modelo && !p.descontinuado && !pausadoNacional) || (!p.modelo && !inativo);
             return (
               <Card key={p.id} style={{ opacity: inativo ? 0.6 : 1, borderLeft: `3px solid ${inativo ? C.text4 : C.cafe}` }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
@@ -55,8 +79,10 @@ export default function Planos() {
                       <Badge color={p.recorrencia === "mensal" ? C.teal : C.amber} bg={p.recorrencia === "mensal" ? C.tealPale : C.amberPale}>
                         {p.recorrencia === "mensal" ? <><Repeat size={11} /> Mensal</> : <><Zap size={11} /> Avulso</>}
                       </Badge>
-                      {inativo && <Badge color={C.text3} bg={C.cream2}>Inativo</Badge>}
+                      {inativo && <Badge color={C.text3} bg={C.cream2}>{p.descontinuado ? "Saiu da tabela nacional" : pausadoNacional ? "Pausado pela CafeWorking" : "Inativo"}</Badge>}
                       {p.venderNoSite && <Badge color={C.green} bg={C.greenPale}><Globe size={11} /> No site</Badge>}
+                      {parceira && p.modelo && <Badge color={C.cafe} bg={C.cafePale}><Lock size={11} /> Tabela nacional</Badge>}
+                      {parceira && !p.modelo && <Badge color={C.amber} bg={C.amberPale}>Fora da tabela: não é vendido</Badge>}
                     </div>
                     {p.descricao && <div style={{ fontSize: 12.5, color: C.text3, marginTop: 4 }}>{p.descricao}</div>}
                   </div>
@@ -77,11 +103,14 @@ export default function Planos() {
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 6, marginTop: 14, borderTop: `1px solid ${C.border2}`, paddingTop: 12 }}>
-                  <Btn variant="ghost" style={{ flex: 1, justifyContent: "center", fontSize: 13 }} onClick={() => setModal(p)}><Edit3 size={14} /> Editar</Btn>
-                  <Btn variant="ghost" style={{ fontSize: 13, color: inativo ? C.green : C.amber }} onClick={() => updatePlano(p.id, { ativo: inativo })}>
-                    {inativo ? <><Check size={14} /> Ativar</> : <><X size={14} /> Pausar</>}
-                  </Btn>
-                  <Btn variant="ghost" style={{ color: C.red, padding: "10px 12px" }} aria-label={`Excluir plano ${p.nome}`} onClick={() => setExcluir(p)}><Trash2 size={14} /></Btn>
+                  {!parceira && <Btn variant="ghost" style={{ flex: 1, justifyContent: "center", fontSize: 13 }} onClick={() => setModal(p)}><Edit3 size={14} /> Editar</Btn>}
+                  {podePausar && (
+                    <Btn variant="ghost" style={{ fontSize: 13, color: inativo ? C.green : C.amber, ...(parceira ? { flex: 1, justifyContent: "center" } : {}) }}
+                      onClick={() => updatePlano(p.id, parceira && p.modelo ? { ativo: inativo, pausadoNaUnidade: !inativo } : { ativo: inativo })}>
+                      {inativo ? <><Check size={14} /> {parceira ? "Reativar na unidade" : "Ativar"}</> : <><X size={14} /> {parceira ? "Pausar na unidade" : "Pausar"}</>}
+                    </Btn>
+                  )}
+                  {!parceira && <Btn variant="ghost" style={{ color: C.red, padding: "10px 12px" }} aria-label={`Excluir plano ${p.nome}`} onClick={() => setExcluir(p)}><Trash2 size={14} /></Btn>}
                 </div>
               </Card>
             );
@@ -106,7 +135,8 @@ export default function Planos() {
   );
 }
 
-function PlanoForm({ inicial, onSave }) {
+// Também usado pela tela Tabela nacional (admin da plataforma).
+export function PlanoForm({ inicial, onSave }) {
   const [f, setF] = useState({
     nome: inicial.nome || "", preco: inicial.preco ?? "", recorrencia: inicial.recorrencia || "mensal",
     emiteNF: inicial.emiteNF !== false, descricao: inicial.descricao || "",

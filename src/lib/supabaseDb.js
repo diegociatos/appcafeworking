@@ -359,7 +359,25 @@ export const mapConta = (r) => ({
   tipoPessoa: r.tipo_pessoa || undefined, nomeFantasia: r.nome_fantasia || "", responsavel: r.responsavel || "",
   endereco: r.endereco || "", cidade: r.cidade || "", observacoes: r.observacoes || "",
   contrato: r.contrato_path ? { nome: r.contrato_nome || "contrato", mime: r.contrato_mime, bytes: r.contrato_bytes, enviadoEm: r.contrato_enviado_em, noServidor: true } : null,
+  // rede de parceiros (docs/PARCEIROS.md)
+  tipo: r.tipo === "parceiro" ? "parceiro" : "propria",
+  parceiroPercentual: r.parceiro_percentual != null ? Number(r.parceiro_percentual) : 75,
+  garantiaPercentual: r.garantia_percentual != null ? Number(r.garantia_percentual) : 10,
+  asaasWalletId: r.asaas_wallet_id || "",
+  parceiroStatus: r.parceiro_status || "",
+  emailsAviso: Array.isArray(r.emails_aviso) ? r.emails_aviso : [],
 });
+
+// ---- Rede de parceiros ------------------------------------------------------
+// Razão de garantia (parceiro_garantias). RLS: admin vê tudo; master/financeiro
+// da conta parceira só as próprias. Retorna [] sem backend/sessão.
+export async function fetchGarantiasDb() {
+  const rows = (await getJson("parceiro_garantias?select=*&order=created_at.asc")) || [];
+  return rows.map((g) => ({
+    id: g.id, contaId: g.conta_id, unidadeId: g.unidade_id, cobrancaId: g.cobranca_id, tipo: g.tipo,
+    valor: Number(g.valor || 0), observacao: g.observacao || "", criadoEm: g.created_at,
+  }));
+}
 const mapUnidade = (r) => ({ id: r.id, franqueadoId: r.franqueado_id, nome: r.nome, endereco: r.endereco, cor: r.cor, salas: r.salas, ocupacao: r.ocupacao, membros: r.membros, receita: Number(r.receita || 0) });
 const mapUsuario = (r) => ({ id: r.id, unidadeId: r.unidade_id, nome: r.nome, email: r.email, perfil: r.perfil, ativo: r.ativo });
 // Cliente no formato das telas (cnpj + nome da unidade + docs). nomeDaUnidade

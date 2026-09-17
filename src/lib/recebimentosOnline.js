@@ -22,7 +22,64 @@ export const mapCobrancaDb = (c) => ({
   status: c.status || "pendente", tipo: c.tipo, descricao: c.descricao || "", origem: c.origem || null,
   assinaturaId: c.assinatura_id || null, reservaId: c.reserva_id || null,
   notaId: c.nota_id || null, notaStatus: c.nota_status || null,
+  // unidade parceira: divisão do split gravada na cobrança
+  parceiroContaId: c.parceiro_conta_id || null,
+  splitParceiroPct: c.split_parceiro_pct != null ? Number(c.split_parceiro_pct) : null,
+  splitGarantiaPct: c.split_garantia_pct != null ? Number(c.split_garantia_pct) : null,
+  valorBruto: c.valor_bruto != null ? Number(c.valor_bruto) : null,
+  valorParceiro: c.valor_parceiro != null ? Number(c.valor_parceiro) : null,
+  valorGarantia: c.valor_garantia != null ? Number(c.valor_garantia) : null,
+  valorRepasse: c.valor_repasse != null ? Number(c.valor_repasse) : null,
+  valorCafeworking: c.valor_cafeworking != null ? Number(c.valor_cafeworking) : null,
 });
+
+// ---- Meus repasses (unidade parceira) --------------------------------------
+
+const arred2 = (n) => Math.round(n * 100) / 100;
+
+/**
+ * Repasses do ano, mês a mês, das cobranças PAGAS com split (mês do pagamento):
+ * bruto recebido, parte do parceiro, garantia retida, repasse líquido e parte da
+ * CafeWorking. Estornadas/canceladas não entram (o estorno da garantia aparece
+ * no extrato da garantia).
+ */
+export function repassesDoAno(cobrancas = [], ano) {
+  const porMes = Array.from({ length: 12 }, () => ({ bruto: 0, parceiro: 0, garantia: 0, repasse: 0, cafeworking: 0, qtd: 0 }));
+  for (const c of cobrancas) {
+    if (c.status !== "pago" || !c.parceiroContaId) continue;
+    const comp = competenciaDaCobranca(c, "recebido");
+    if (!comp || comp.ano !== ano) continue;
+    const m = porMes[comp.mes];
+    m.bruto += c.valorBruto ?? valorRecebido(c);
+    m.parceiro += c.valorParceiro || 0;
+    m.garantia += c.valorGarantia || 0;
+    m.repasse += c.valorRepasse || 0;
+    m.cafeworking += c.valorCafeworking || 0;
+    m.qtd += 1;
+  }
+  const meses = porMes.map((m) => ({ ...m, bruto: arred2(m.bruto), parceiro: arred2(m.parceiro), garantia: arred2(m.garantia), repasse: arred2(m.repasse), cafeworking: arred2(m.cafeworking) }));
+  const total = meses.reduce((t, m) => ({
+    bruto: arred2(t.bruto + m.bruto), parceiro: arred2(t.parceiro + m.parceiro), garantia: arred2(t.garantia + m.garantia),
+    repasse: arred2(t.repasse + m.repasse), cafeworking: arred2(t.cafeworking + m.cafeworking), qtd: t.qtd + m.qtd,
+  }), { bruto: 0, parceiro: 0, garantia: 0, repasse: 0, cafeworking: 0, qtd: 0 });
+  return { porMes: meses, total };
+}
+
+/** Sinal de cada lançamento do razão de garantia no saldo. */
+export const SINAL_GARANTIA = { retencao: 1, estorno: -1, devolucao: -1, uso: -1 };
+export const ROTULO_GARANTIA = { retencao: "Retenção", estorno: "Estorno de cobrança", devolucao: "Devolução ao parceiro", uso: "Uso da garantia" };
+
+/** Extrato da garantia em ordem de data, com saldo acumulado. */
+export function extratoGarantia(movimentos = []) {
+  let saldo = 0;
+  return [...movimentos]
+    .sort((a, b) => String(a.criadoEm).localeCompare(String(b.criadoEm)))
+    .map((g) => {
+      const sinal = SINAL_GARANTIA[g.tipo] ?? 0;
+      saldo = arred2(saldo + sinal * Number(g.valor || 0));
+      return { ...g, sinal, saldo };
+    });
+}
 
 /** { mes 0..11, ano } de uma data/hora ISO no fuso de Brasília; data pura (aaaa-mm-dd) é lida como está. */
 export function competenciaBRT(iso) {

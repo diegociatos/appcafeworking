@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Wallet, TrendingUp, Landmark, BarChart3, FileText, Tags,
   Plus, Edit3, Trash2, Check, X, ArrowUpRight, ArrowDownRight, Receipt, Paperclip, Download, Barcode, Copy, QrCode,
-  FileSignature, RefreshCw, AlertTriangle, Upload, CheckCircle2, AlertCircle, MessageSquare, Phone, CreditCard,
+  FileSignature, RefreshCw, AlertTriangle, Upload, CheckCircle2, AlertCircle, MessageSquare, Phone, CreditCard, PiggyBank,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, FileInput } from "../components/ui.jsx";
 import { C, serif, sans, fmt, fmtShort, inp } from "../lib/theme.js";
@@ -11,7 +11,8 @@ import {
   getCurrentCompetencia, parseDateBR, anoDoLancamento, chaveCompetencia, chaveDoLancamento, noPeriodo, anosDisponiveis, competenciaComAno,
 } from "../lib/dateUtils.js";
 import { gerarModeloFluxo, lerPlanilhaFluxo, validarLinhas, exportarExtratoExcel, exportarProvisaoExcel } from "../lib/fluxoImport.js";
-import { resumoOnline, cobrancasJaLancadas, competenciaDaCobranca, situacaoCobranca, hojeBRT } from "../lib/recebimentosOnline.js";
+import { resumoOnline, cobrancasJaLancadas, competenciaDaCobranca, situacaoCobranca, hojeBRT, repassesDoAno, extratoGarantia, ROTULO_GARANTIA } from "../lib/recebimentosOnline.js";
+import { fetchGarantiasDb } from "../lib/supabaseDb.js";
 
 const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 // Competência atual a partir da data real (sem datas fixas).
@@ -61,6 +62,8 @@ export const FIN_GRUPOS = [
     { id: "provisao", label: "Provisão", icon: TrendingUp },
     { id: "recebimentos", label: "Recebimentos por Cliente", icon: Receipt },
     { id: "online", label: "Recebimentos online (Asaas)", icon: CreditCard },
+    // só aparece em unidade de conta parceira (App.jsx filtra por soParceiro)
+    { id: "repasses", label: "Meus repasses", icon: PiggyBank, soParceiro: true },
   ] },
   { titulo: "Cadastros", itens: [
     { id: "bancos", label: "Bancos", icon: Landmark },
@@ -151,6 +154,9 @@ export default function Financeiro({ finTab }) {
         {tab === "extrato" && <Extrato contas={contas} lancamentos={lancamentos} onAbrir={setDetalheLanc} onRemoverImportados={(contaId) => store.removerImportados(activeUnit, contaId)} />}
         {tab === "dre" && <DRE lancamentos={lancamentos} categorias={categorias} />}
         {tab === "online" && <RecebimentosOnline cobrancas={store.cobrancasDe(activeUnit)} lancamentos={lancamentos} />}
+        {tab === "repasses" && (store.unidadeEhParceira(activeUnit)
+          ? <MeusRepasses cobrancas={store.cobrancasDe(activeUnit)} conta={store.contaDaUnidade(activeUnit)} unidadeId={activeUnit} />
+          : <Card><Empty icon={PiggyBank} title="Só para unidades parceiras" sub="Os repasses do split aparecem nas unidades das contas parceiras da rede CafeWorking." /></Card>)}
         {tab === "recebimentos" && <RecebimentosCliente clientes={clientesUnidade} lancamentos={lancamentos} updateLancamento={store.updateLancamento} />}
         {tab === "inadimplencia" && <Inadimplencia clientes={clientesUnidade} lancamentos={lancamentos} contas={contas} categorias={categorias} store={store} activeUnit={activeUnit} />}
         {tab === "provisao" && <Provisao store={store} activeUnit={activeUnit} lancamentos={lancamentos} categorias={categorias} unidadeNome={unidadeAtiva?.nome} onNovaDespesa={() => setContaPRModal({ tipo: "saida" })} />}
@@ -1878,6 +1884,106 @@ function RecebimentosOnline({ cobrancas = [], lancamentos = [] }) {
           </Card>
         </div>
       )}
+    </>
+  );
+}
+
+// ===== MEUS REPASSES (UNIDADE PARCEIRA) ====================================
+// Cobranças pagas com split no Asaas: quanto entrou, a parte do parceiro, a
+// garantia retida pela CafeWorking e o repasse líquido, mês a mês; e o extrato
+// da garantia acumulada. A RLS só devolve as cobranças da unidade e a garantia
+// da própria conta.
+function MeusRepasses({ cobrancas = [], conta, unidadeId }) {
+  const anos = [...new Set([ANO_ATUAL, ...cobrancas.filter((c) => c.parceiroContaId && c.status === "pago").map((c) => competenciaDaCobranca(c, "recebido")?.ano).filter(Boolean)])].sort((a, b) => b - a);
+  const [ano, setAno] = useState(ANO_ATUAL);
+  const [garantias, setGarantias] = useState(null); // null = carregando
+  useEffect(() => {
+    let vivo = true;
+    if (!MODO_REAL) { setGarantias([]); return undefined; }
+    fetchGarantiasDb().then((g) => { if (vivo) setGarantias(g); }).catch(() => { if (vivo) setGarantias([]); });
+    return () => { vivo = false; };
+  }, [conta?.id]);
+  const r = repassesDoAno(cobrancas, ano);
+  const extrato = extratoGarantia((garantias || []).filter((g) => !conta?.id || g.contaId === conta.id));
+  const saldo = extrato.length ? extrato[extrato.length - 1].saldo : 0;
+  const pctP = conta?.parceiroPercentual ?? 75;
+  const pctG = conta?.garantiaPercentual ?? 10;
+  const imediato = Math.round(pctP * (1 - pctG / 100) * 100) / 100;
+  const Cel = ({ children, style }) => <div style={{ fontSize: 13, ...style }}>{children}</div>;
+  const val = (v, cor) => <Cel style={{ textAlign: "right", color: v ? cor : C.text4, fontVariantNumeric: "tabular-nums" }}>{v ? fmt(v) : "—"}</Cel>;
+  const gcol = "80px repeat(4, 1fr)";
+  const dataBR = (iso) => (iso ? new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—");
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
+        <div>
+          <div style={{ fontFamily: serif, fontSize: 20 }}>Meus repasses</div>
+          <div style={{ fontSize: 12.5, color: C.text3, maxWidth: 700 }}>
+            Cada pagamento pela CafeWorking é dividido no Asaas: {pctP}% é seu e {Math.round((100 - pctP) * 100) / 100}% fica com a CafeWorking (plataforma e intermediação).
+            Da sua parte, {pctG}% fica retido como garantia e {imediato}% do valor vai direto para a sua conta Asaas. Conta no mês do pagamento.
+          </div>
+        </div>
+        <SeletorAno valor={ano} onChange={setAno} anos={anos} />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 12, marginBottom: 14 }}>
+        <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Recebido em {ano}</div><div style={{ fontFamily: serif, fontSize: 22 }}>{fmt(r.total.bruto)}</div><div style={{ fontSize: 11, color: C.text4 }}>{r.total.qtd} pagamento(s)</div></Card>
+        <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Sua parte ({pctP}%)</div><div style={{ fontFamily: serif, fontSize: 22, color: C.cafe }}>{fmt(r.total.parceiro)}</div></Card>
+        <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Garantia retida</div><div style={{ fontFamily: serif, fontSize: 22, color: C.amber }}>{fmt(r.total.garantia)}</div></Card>
+        <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Repassado a você</div><div style={{ fontFamily: serif, fontSize: 22, color: C.green }}>{fmt(r.total.repasse)}</div></Card>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(340px,1fr))", gap: 16 }}>
+        <Card style={{ padding: 0, overflow: "hidden" }}>
+          <div style={{ padding: "12px 18px", borderBottom: `1px solid ${C.border2}`, fontWeight: 700, fontSize: 13.5 }}>Mês a mês · {ano}</div>
+          <div style={{ overflowX: "auto" }}><div style={{ minWidth: 500 }}>
+            <div style={{ display: "grid", gridTemplateColumns: gcol, gap: 8, padding: "10px 18px", background: C.cream, fontSize: 11, fontWeight: 700, color: C.text3 }}>
+              <div>MÊS</div><div style={{ textAlign: "right" }}>BRUTO</div><div style={{ textAlign: "right" }}>SUA PARTE</div><div style={{ textAlign: "right" }}>GARANTIA</div><div style={{ textAlign: "right" }}>REPASSADO</div>
+            </div>
+            {r.porMes.map((m, i) => (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: gcol, gap: 8, padding: "9px 18px", borderTop: `1px solid ${C.border2}`, opacity: m.qtd ? 1 : 0.5 }}>
+                <Cel style={{ fontWeight: 600 }}>{MESES[i]}/{ano}</Cel>
+                {val(m.bruto, C.text)}{val(m.parceiro, C.cafe)}{val(m.garantia, C.amber)}{val(m.repasse, C.green)}
+              </div>
+            ))}
+            <div style={{ display: "grid", gridTemplateColumns: gcol, gap: 8, padding: "12px 18px", background: C.cream, fontWeight: 700 }}>
+              <Cel style={{ fontFamily: serif }}>ANO</Cel>
+              {val(r.total.bruto, C.text)}{val(r.total.parceiro, C.cafe)}{val(r.total.garantia, C.amber)}{val(r.total.repasse, C.green)}
+            </div>
+          </div></div>
+        </Card>
+
+        <Card style={{ padding: 0, overflow: "hidden" }}>
+          <div style={{ padding: "12px 18px", borderBottom: `1px solid ${C.border2}`, display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+            <span style={{ fontWeight: 700, fontSize: 13.5 }}>Extrato da garantia</span>
+            <span style={{ fontSize: 12.5, color: C.text3 }}>Saldo acumulado <b style={{ fontFamily: serif, fontSize: 17, color: C.amber }}>{fmt(saldo)}</b></span>
+          </div>
+          {garantias === null ? (
+            <div style={{ padding: 18, fontSize: 12.5, color: C.text4 }}>Carregando…</div>
+          ) : extrato.length === 0 ? (
+            <div style={{ padding: 18, fontSize: 12.5, color: C.text4 }}>Nenhuma garantia retida ainda. A retenção entra quando cada pagamento é confirmado.</div>
+          ) : (
+            <div style={{ maxHeight: 460, overflowY: "auto" }}>
+              {[...extrato].reverse().map((g) => (
+                <div key={g.id} style={{ display: "grid", gridTemplateColumns: "82px 1fr 100px 100px", gap: 8, padding: "9px 18px", borderTop: `1px solid ${C.border2}`, alignItems: "center" }}>
+                  <Cel style={{ color: C.text3 }}>{dataBR(g.criadoEm)}</Cel>
+                  <Cel>
+                    {ROTULO_GARANTIA[g.tipo] || g.tipo}
+                    {g.unidadeId && g.unidadeId !== unidadeId && <span style={{ fontSize: 11, color: C.text4 }}> · outra unidade</span>}
+                    {g.observacao && <div style={{ fontSize: 11, color: C.text4 }}>{g.observacao}</div>}
+                  </Cel>
+                  <Cel style={{ textAlign: "right", color: g.sinal > 0 ? C.amber : C.text2, fontVariantNumeric: "tabular-nums" }}>{g.sinal > 0 ? "+" : "−"} {fmt(g.valor)}</Cel>
+                  <Cel style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: C.text3 }}>{fmt(g.saldo)}</Cel>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ padding: "10px 18px", borderTop: `1px solid ${C.border2}`, fontSize: 11.5, color: C.text4 }}>
+            A garantia é devolvida 12 meses depois do último cliente, ou usada para cobrir prejuízo, conforme o contrato de parceria.
+          </div>
+        </Card>
+      </div>
     </>
   );
 }

@@ -864,6 +864,14 @@ export function StoreProvider({ children }) {
     });
   };
 
+  // Rede de parceiros: conta dona da unidade (tabela contas) e se é parceira.
+  // Em unidade parceira os planos seguem a tabela nacional (o banco trava preço).
+  const contaDaUnidade = (unidadeId) => {
+    const u = unidades.find((x) => x.id === unidadeId);
+    return u ? franqueados.find((f) => f.id === u.franqueadoId) || null : null;
+  };
+  const unidadeEhParceira = (unidadeId) => contaDaUnidade(unidadeId)?.tipo === "parceiro";
+
   // Planos vendáveis (por unidade) — cobrança e autocheckout do cliente ------
   const planosDe = (unidadeId, incluirInativos = false) =>
     planos.filter((p) => p.unidadeId === unidadeId && (incluirInativos || p.ativo !== false));
@@ -1431,7 +1439,7 @@ export function StoreProvider({ children }) {
       patrimonio, patrimonioDe, addAtivo, updateAtivo, removeAtivo,
       configFiscal, configFiscalDe, updateConfigFiscal, salvarConfigFiscal, notasFiscais, notasFiscaisDe, emitirNFSe, cancelarNF, salvarCertificadoFiscal,
       cobrancas, cobrancasDe,
-      planos, planosDe, addPlano, updatePlano, removePlano,
+      planos, planosDe, addPlano, updatePlano, removePlano, contaDaUnidade, unidadeEhParceira,
       recibos, recibosDe, emitirRecibo, removeRecibo,
       creditLedger, CREDITO_TIPOS, ledgerDe, saldoCreditos, saldosCliente, concederCreditosPlano, consumirCredito, ajustarCredito, lancarHorasSalaMes,
       configVenda, setConfigVenda,

@@ -34,6 +34,7 @@ import AreaCliente from "./pages/AreaCliente.jsx";
 import Equipe from "./pages/Equipe.jsx";
 import Catalogo from "./pages/Catalogo.jsx";
 import Planos from "./pages/Planos.jsx";
+import PlanosNacionais from "./pages/PlanosNacionais.jsx";
 import Salas from "./pages/Salas.jsx";
 import Configuracoes from "./pages/Configuracoes.jsx";
 import Auditoria from "./pages/Auditoria.jsx";
@@ -57,6 +58,7 @@ const NAV = [
   { id: "franqueados", label: "Contas", icon: Store, group: "comercial" },
   { id: "crm", label: "CRM · Leads", icon: KanbanSquare, group: "comercial" },
   { id: "planos", label: "Planos e serviços", icon: Tags, group: "comercial" },
+  { id: "tabela_nacional", label: "Tabela nacional", icon: Tags, group: "comercial" },
   { id: "assinaturas", label: "Assinaturas e contratos", icon: ScrollText, group: "comercial" },
   { id: "aberturas", label: "Abertura de empresas", icon: Briefcase, group: "relacionamento" },
   { id: "unidades", label: "Unidades", icon: Building2, group: "gestao" },
@@ -94,14 +96,14 @@ const PAGES = {
   dash: Dashboard, franqueados: Franqueados, crm: CRM, unidades: Unidades,
   reservas: Reservas, corresp: Correspondencias, pdv: PDV, clientes: Clientes,
   financeiro: Financeiro, boletos: Boletos, cobrancas: Cobrancas, notafiscal: NotaFiscal, estoque: Estoque, patrimonio: Patrimonio, eventos: Eventos,
-  area: AreaCliente, equipe: Equipe, catalogo: Catalogo, planos: Planos, salas: Salas, config: Configuracoes, auditoria: Auditoria, kds: KDS,
+  area: AreaCliente, equipe: Equipe, catalogo: Catalogo, planos: Planos, tabela_nacional: PlanosNacionais, salas: Salas, config: Configuracoes, auditoria: Auditoria, kds: KDS,
   assinaturas: Assinaturas, aberturas: Aberturas, cli_plano: MeuPlano, cli_abertura: AberturaEmpresaCliente,
   cli_inicio: InicioCliente, cli_reservar: ReservarCliente, cli_faturas: FaturasCliente, cli_docs: CorrespondenciasCliente,
   cli_fiscal: EnderecoFiscalCliente, cli_contato: FaleConoscoCliente, cli_notif: NotificacoesCliente, cli_conta: MinhaContaCliente,
 };
 
 export default function App() {
-  const { viewAs, franqueadoAtivo, perfil, setPerfil, activeUnit, pedidosDe, clientes, correspondenciasDe, reservas, meuPerfil, contratosVencendoDe, notificacaoPrefs, aplicarSessaoUsuario, hydrateFromDb, hydrateOperacional, estoqueBaixoDe, syncErrors } = useStore();
+  const { viewAs, franqueadoAtivo, unidadeEhParceira, perfil, setPerfil, activeUnit, pedidosDe, clientes, correspondenciasDe, reservas, meuPerfil, contratosVencendoDe, notificacaoPrefs, aplicarSessaoUsuario, hydrateFromDb, hydrateOperacional, estoqueBaixoDe, syncErrors } = useStore();
   const [page, setPage] = useState("dash");
   const [finTab, setFinTab] = useState("visao");
   const [finOpen, setFinOpen] = useState(true); // submenu Financeiro recolhível
@@ -364,7 +366,7 @@ export default function App() {
             </button>
             {n.id === "financeiro" && pageId === "financeiro" && finOpen && (
               <div style={{ margin: "1px 0 4px 13px", paddingLeft: 8, borderLeft: `1px solid ${C.border2}` }}>
-                {FIN_GRUPOS.map((g) => (
+                {FIN_GRUPOS.map((g) => ({ ...g, itens: g.itens.filter((s) => !s.soParceiro || unidadeEhParceira(activeUnit)) })).filter((g) => g.itens.length).map((g) => (
                   <div key={g.titulo} style={{ marginBottom: 1 }}>
                     <div style={{ fontSize: 9, fontWeight: 700, color: C.text4, letterSpacing: 0.7, padding: "7px 10px 3px" }}>
                       {g.titulo.toUpperCase()}
