@@ -143,6 +143,23 @@ Deno.test("abertura_preencher leva à tela de abertura e fala do IPTU conforme o
   assertEquals(propria.html.includes("já enviamos o IPTU"), false);
 });
 
+Deno.test("reserva_cancelada: horas devolvidas, estorno e nome escapado", () => {
+  const m = renderTemplate("reserva_cancelada", {
+    cliente: "Ana <b>O'Neil</b>", email: "a@x.com", sala: "Reunião 1", quando: "sexta, 19/09/2026, das 10:00 às 12:00",
+    horasDevolvidas: 2, estorno: "automatico",
+  });
+  assertStringIncludes(m.assunto, "Reserva cancelada");
+  assertStringIncludes(m.html, "Ana &lt;b&gt;O&#39;Neil&lt;/b&gt;");
+  assertStringIncludes(m.html, "As 2 horas do seu plano");
+  assertStringIncludes(m.html, "mesma forma de pagamento");
+  assertStringIncludes(m.html, "/?p=reservas");
+  const manual = renderTemplate("reserva_cancelada", { cliente: "Rui", email: "r@x.com", sala: "Sala", horasDevolvidas: 0, estorno: "manual" });
+  assertStringIncludes(manual.html, "combinar a devolução");
+  assertEquals(manual.html.includes("do seu plano"), false);
+  const semPagamento = renderTemplate("reserva_cancelada", { cliente: "Rui", email: "r@x.com", sala: "Sala", estorno: "nao_se_aplica" });
+  assertEquals(semPagamento.html.includes("valor pago"), false);
+});
+
 Deno.test("abertura_pendencia escapa o texto da contabilidade e abertura_concluida mostra o CNPJ", () => {
   const p = renderTemplate("abertura_pendencia", { cliente: "Ana", email: "a@x.com", pendencia: "RG <ilegível>" });
   assertStringIncludes(p.html, "RG &lt;ilegível&gt;");

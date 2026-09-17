@@ -19,7 +19,7 @@ const brl = (n: number) =>
 const dataBR = (iso: string) => (iso ? String(iso).slice(0, 10).split("-").reverse().join("/") : "");
 /** Texto vindo de formulário público (nome, plano) não pode virar HTML. */
 const esc = (s: unknown) =>
-  String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
 /** Link para uma tela da área do cliente (abre depois do login, se preciso). */
 export const linkApp = (tela?: string) => (tela ? `${APP_URL}/?p=${encodeURIComponent(tela)}` : `${APP_URL}/`);
@@ -128,6 +128,30 @@ const TEMPLATES: Record<Evento, (d: any) => Render> = {
       { label: "Ver minhas reservas", url: linkApp("reservas") },
     ),
   }),
+  // Cancelamento feito pela equipe (recepção, master ou financeiro). Transacional.
+  reserva_cancelada: (d) => {
+    const horas = Number(d.horasDevolvidas || 0);
+    const devolucaoHoras = horas > 0
+      ? `As ${horas} hora${horas > 1 ? "s" : ""} do seu plano usada${horas > 1 ? "s" : ""} nesta reserva voltaram para o seu saldo.`
+      : "";
+    const pagamento = d.estorno === "automatico"
+      ? "O valor pago está sendo devolvido pela mesma forma de pagamento e aparece em até 10 dias úteis (no cartão, pode sair na próxima fatura)."
+      : d.estorno === "manual"
+      ? "Sobre o valor pago: nossa equipe vai entrar em contato para combinar a devolução."
+      : "";
+    return {
+      assunto: `Reserva cancelada · ${d.sala || "sala"}`,
+      texto: `Olá ${d.cliente}, sua reserva${d.sala ? ` da ${d.sala}` : ""}${d.quando ? ` para ${d.quando}` : ""} foi cancelada pela nossa equipe. ${devolucaoHoras} ${pagamento} Veja em ${linkApp("reservas")}`.replace(/\s+/g, " ").trim(),
+      html: layout(
+        "Reserva cancelada",
+        `Olá <b>${esc(d.cliente)}</b>,<br><br>Sua reserva${d.sala ? ` da <b>${esc(d.sala)}</b>` : ""}${d.quando ? ` para <b>${esc(d.quando)}</b>` : ""} foi cancelada pela nossa equipe e o horário foi liberado.
+         ${devolucaoHoras ? `<br><br>${devolucaoHoras}` : ""}
+         ${pagamento ? `<br><br>${pagamento}` : ""}
+         <br><br>Se não reconhece este cancelamento ou quer reservar outro horário, fale com a recepção.`,
+        { label: "Ver minhas reservas", url: linkApp("reservas") },
+      ),
+    };
+  },
   assinatura_ativa: (d) => ({
     assunto: `${d.plano} ativo no CafeWorking`,
     texto: `Olá ${d.cliente}, seu plano ${d.plano}${d.unidade ? ` na unidade ${d.unidade}` : ""} está ativo. ${d.linkSenha ? `Crie sua senha: ${d.linkSenha}` : `Entre em ${linkApp("plano")}`}`,

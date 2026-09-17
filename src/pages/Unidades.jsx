@@ -682,7 +682,7 @@ function _ProdutoForm({ inicial, onSave }) {
 // --- Aba Agenda ------------------------------------------------------------
 function AgendaTab({ unidade, salas, store, go }) {
   const salaIds = new Set(salas.map((s) => s.id));
-  const totalReservas = store.reservas.filter((r) => salaIds.has(r.sala)).length;
+  const totalReservas = store.reservas.filter((r) => salaIds.has(r.sala) && r.status !== "cancelada").length;
 
   return (
     <Card>

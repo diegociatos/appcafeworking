@@ -9,6 +9,9 @@ const pad2 = (n) => String(n).padStart(2, "0");
 const MESES_NOME = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 const ATIVOS_RESERVA = new Set(["solicitada", "confirmada", "checkin"]);
 const reservaAtivaLocal = (r) => !r.status || ATIVOS_RESERVA.has(r.status);
+// Cancelada não ocupa a agenda (nem na hora, nem depois de recarregar do banco).
+const naAgenda = (r) => r.status !== "cancelada";
+const PERFIS_ESTORNO = new Set(["master", "financeiro", "franqueador"]);
 // Date do início de um bloco a partir de (segunda da semana, dia 0..6, índice de horário).
 const dataDoSlot = (monday, diaIdx, horaIdx) => {
   const d = new Date(monday);
@@ -64,7 +67,9 @@ function AvisoExcedente({ credito, valorHora, style }) {
 }
 
 export default function Reservas() {
-  const { activeUnit, unidadeAtiva, salasDe, clientesDe, reservas, criarReserva, removeReserva, marcarReservasVistas, addLancamento } = useStore();
+  const { activeUnit, unidadeAtiva, salasDe, clientesDe, reservas: todasReservas, criarReserva, cancelarReserva, marcarReservasVistas, addLancamento, perfil } = useStore();
+  const reservas = todasReservas.filter(naAgenda);
+  const [avisoCancelamento, setAvisoCancelamento] = useState(null); // texto após cancelar
   const [diaSel, setDiaSel] = useState(0);
   const [modal, setModal] = useState(null);
   const [linkModal, setLinkModal] = useState(null); // {} = aberto
@@ -139,6 +144,13 @@ export default function Reservas() {
           </div>
         }
       />
+      {avisoCancelamento && (
+        <div role="status" aria-live="polite" style={{ position: "relative", display: "flex", gap: 8, alignItems: "flex-start", background: C.greenPale, color: C.green, border: `1px solid ${C.green}44`, borderRadius: 10, padding: "10px 36px 10px 12px", fontSize: 13, marginBottom: 14 }}>
+          <CheckCircle2 size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span style={{ color: C.text2 }}>{avisoCancelamento}</span>
+          <button type="button" onClick={() => setAvisoCancelamento(null)} className="cw-btn" aria-label="Fechar aviso de cancelamento" style={{ position: "absolute", top: 6, right: 8, color: C.green, padding: 4, fontSize: 16, lineHeight: 1 }}>×</button>
+        </div>
+      )}
       {avisoReserva && (
         <div style={{ position: "relative", marginBottom: 14 }}>
           <AvisoExcedente credito={avisoReserva.credito} valorHora={avisoReserva.valorHora} style={{ paddingRight: 36 }} />
@@ -403,7 +415,14 @@ export default function Reservas() {
               });
               setDetalhe(null);
             }}
-            onCancelar={() => { removeReserva(detalhe.id); setDetalhe(null); }}
+            podeEstornar={PERFIS_ESTORNO.has(perfil)}
+            onCancelar={async (opcoes) => {
+              const res = await cancelarReserva(detalhe.id, opcoes);
+              if (!res?.ok) return res;
+              setDetalhe(null);
+              setAvisoCancelamento(textoCancelamento(detalhe, res));
+              return res;
+            }}
           />
         </Modal>
       )}
@@ -503,13 +522,52 @@ function MiniKpi({ label, valor, sub, icon: Icon, cor }) {
   );
 }
 
-function ReservaDetalhe({ reserva, sala, dias, onComplemento, onCancelar }) {
+// Frase exibida na agenda depois de cancelar.
+function textoCancelamento(reserva, res) {
+  const partes = [`Reserva de ${reserva.cliente || "cliente"} cancelada. O horário ficou livre.`];
+  const h = Number(res.horas_devolvidas || 0);
+  if (h > 0) partes.push(`${h} hora${h > 1 ? "s" : ""} do plano voltaram ao saldo do cliente.`);
+  if (res.estorno === "automatico") partes.push("O estorno do pagamento foi pedido ao Asaas.");
+  if (res.estorno === "manual") partes.push("A devolução do pagamento é manual: a equipe foi avisada por e-mail.");
+  if (res.email === "enviado") partes.push("O cliente recebeu um e-mail.");
+  else if (res.email === "erro") partes.push("O e-mail ao cliente não saiu; avise-o por outro canal.");
+  else partes.push("A reserva não tem e-mail: avise o cliente por outro canal.");
+  return partes.join(" ");
+}
+
+function ReservaDetalhe({ reserva, sala, dias, onComplemento, onCancelar, podeEstornar }) {
   const dt = getReservaStart(reserva);
   const dataLabel = `${dias[reserva.dia]} ${pad2(dt.getDate())}/${pad2(dt.getMonth() + 1)}/${dt.getFullYear()}`;
   const vh = sala?.valorHora || 0;
   const [horas, setHoras] = useState(1);
   const [valor, setValor] = useState(vh);
   const setH = (h) => { const n = Math.max(0, h); setHoras(n); setValor(n * vh); };
+  // Cancelamento: confirmação antes, aviso de pagamento online, erro humano.
+  const [confirmando, setConfirmando] = useState(false);
+  const [motivo, setMotivo] = useState("");
+  const [cienteEstorno, setCienteEstorno] = useState(false);
+  const [estornar, setEstornar] = useState(false);
+  const [cancelando, setCancelando] = useState(false);
+  const [erroCancelar, setErroCancelar] = useState(null);
+  const [exigePaga, setExigePaga] = useState(false); // servidor informou que foi paga
+  const paga = exigePaga || (reserva.paymentStatus === "pago" && Number(reserva.valor || 0) > 0);
+  const podeConfirmar = !cancelando && (!paga || cienteEstorno || estornar);
+
+  const confirmarCancelamento = async () => {
+    if (!podeConfirmar) return;
+    setCancelando(true); setErroCancelar(null);
+    try {
+      const res = await onCancelar({ motivo: motivo.trim(), confirmarPaga: paga && (cienteEstorno || estornar), estornar: paga && estornar });
+      if (res && !res.ok) {
+        if (res.codigo === "PAGA_CONFIRMAR") setExigePaga(true);
+        setErroCancelar(res.error || "Não foi possível cancelar agora. Tente de novo.");
+      }
+    } catch {
+      setErroCancelar("Não foi possível cancelar agora. Tente de novo.");
+    } finally {
+      setCancelando(false);
+    }
+  };
 
   return (
     <>
@@ -546,9 +604,53 @@ function ReservaDetalhe({ reserva, sala, dias, onComplemento, onCancelar }) {
         </Btn>
       </div>
 
-      <Btn variant="ghost" style={{ width: "100%", justifyContent: "center", color: C.red, borderColor: C.redPale }} onClick={onCancelar}>
-        <Trash2 size={16} /> Cancelar reserva
-      </Btn>
+      {!confirmando ? (
+        <Btn variant="ghost" style={{ width: "100%", justifyContent: "center", color: C.red, borderColor: C.redPale }} onClick={() => setConfirmando(true)}>
+          <Trash2 size={16} /> Cancelar reserva
+        </Btn>
+      ) : (
+        <div style={{ border: `1px solid ${C.red}44`, background: C.redPale, borderRadius: 12, padding: 14 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: C.red, marginBottom: 6 }}>Cancelar esta reserva?</div>
+          <div style={{ fontSize: 12.5, color: C.text2, lineHeight: 1.5, marginBottom: 10 }}>
+            O horário fica livre na agenda e no site, as horas do plano usadas voltam ao saldo do cliente e ele recebe um e-mail avisando (se tiver e-mail no cadastro). Não dá para desfazer: se precisar, crie a reserva de novo.
+          </div>
+          {paga && (
+            <div role="alert" style={{ background: C.amberPale, color: C.text2, border: `1px solid ${C.amber}55`, borderRadius: 10, padding: "10px 12px", fontSize: 12.5, lineHeight: 1.5, marginBottom: 10 }}>
+              <div style={{ display: "flex", gap: 6, alignItems: "center", color: C.amber, fontWeight: 700, marginBottom: 4 }}>
+                <AlertCircle size={15} /> Reserva paga online ({fmt(reserva.valor || 0)})
+              </div>
+              Cancelar aqui <b>não devolve o dinheiro sozinho</b>. O estorno no Asaas é feito à parte{podeEstornar ? ", ou marque abaixo para pedir agora (cartão e PIX; boleto continua manual)" : " pelo master ou pelo financeiro"}.
+              <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 8, cursor: "pointer" }}>
+                <input type="checkbox" checked={cienteEstorno} onChange={(e) => setCienteEstorno(e.target.checked)} style={{ marginTop: 2 }} />
+                <span>Entendi que a devolução do pagamento não é automática.</span>
+              </label>
+              {podeEstornar && (
+                <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 6, cursor: "pointer" }}>
+                  <input type="checkbox" checked={estornar} onChange={(e) => setEstornar(e.target.checked)} style={{ marginTop: 2 }} />
+                  <span>Estornar o pagamento agora pelo Asaas.</span>
+                </label>
+              )}
+            </div>
+          )}
+          <Field label="Motivo (opcional, fica na auditoria)" style={{ marginBottom: 10 }}>
+            <input value={motivo} onChange={(e) => setMotivo(e.target.value)} maxLength={500} style={inp} placeholder="Ex.: cliente pediu por telefone" />
+          </Field>
+          {erroCancelar && (
+            <div role="alert" style={{ display: "flex", gap: 6, alignItems: "flex-start", color: C.red, fontSize: 12.5, marginBottom: 10 }}>
+              <AlertCircle size={15} style={{ flexShrink: 0, marginTop: 1 }} /> {erroCancelar}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn variant="ghost" onClick={() => { if (!cancelando) { setConfirmando(false); setErroCancelar(null); } }} style={{ flex: 1, justifyContent: "center" }}>
+              Voltar
+            </Btn>
+            <Btn onClick={confirmarCancelamento} disabled={!podeConfirmar}
+              style={{ flex: 1, justifyContent: "center", background: C.red, opacity: podeConfirmar ? 1 : 0.5 }}>
+              {cancelando ? "Cancelando…" : "Confirmar cancelamento"}
+            </Btn>
+          </div>
+        </div>
+      )}
     </>
   );
 }

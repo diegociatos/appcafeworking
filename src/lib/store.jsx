@@ -451,7 +451,33 @@ export function StoreProvider({ children }) {
   };
   const marcarReservasVistas = (unidadeId) =>
     setReservas((rs) => rs.map((r) => (r.unidadeId === unidadeId && r.origem === "app" && !r.vista ? { ...r, vista: true } : r)));
-  const removeReserva = (id) => setReservas((rs) => rs.filter((r) => r.id !== id));
+  // Cancelamento pela equipe. Modo real → Edge Function cancelar-reserva (status
+  // na tabela, horas do plano de volta, auditoria, e-mail). A reserva continua na
+  // lista com status "cancelada" (a agenda não mostra), igual ao que vem do banco
+  // ao recarregar. Modo demo → só marca local. Retorna o resultado da API.
+  const cancelarReserva = async (id, opcoes = {}) => {
+    if (!reservasApi.configured) {
+      setReservas((rs) => rs.map((r) => (r.id === id ? { ...r, status: "cancelada" } : r)));
+      return { ok: true, horas_devolvidas: 0, devolucoes: [], estorno: "nao_se_aplica", email: "sem_email" };
+    }
+    const res = await reservasApi.cancelar({ reservaId: id, ...opcoes });
+    if (!res.ok) return res;
+    const reserva = reservas.find((r) => r.id === id);
+    setReservas((rs) => rs.map((r) => (r.id === id ? { ...r, status: "cancelada", paymentStatus: res.payment_status || r.paymentStatus } : r)));
+    // Reflete na tela o estorno das horas já gravado no banco.
+    if (Array.isArray(res.devolucoes) && res.devolucoes.length) {
+      const agora = new Date().toISOString();
+      setCreditLedger((ls) => [
+        ...res.devolucoes.map((d) => ({
+          id: d.id, unidadeId: reserva?.unidadeId, clienteId: d.cliente_id || null, clienteEmail: d.cliente_email || null,
+          tipo: d.tipo, quantidade: Number(d.horas || 0), saldoApos: Number(d.saldo_apos || 0), origem: "estorno",
+          motivo: "Reserva cancelada pela equipe", referenciaId: id, createdAt: agora,
+        })),
+        ...ls.filter((l) => !res.devolucoes.some((d) => d.id === l.id)),
+      ]);
+    }
+    return res;
+  };
 
   // Pedidos da cafeteria (cliente faz no app → recepção recebe) -------------
   const addPedido = (unidadeId, p) => {
@@ -1387,7 +1413,7 @@ export function StoreProvider({ children }) {
       addUnidade, updateUnidade,
       addSala, updateSala, removeSala,
       addProduto, updateProduto, removeProduto,
-      addReserva, criarReserva, removeReserva, marcarReservasVistas,
+      addReserva, criarReserva, cancelarReserva, marcarReservasVistas,
       pedidos, addPedido, updatePedido, removePedido, pedidosDe,
       correspondencias, addCorrespondencia, updateCorrespondencia, notificarCorrespondencia, removeCorrespondencia, correspondenciasDe,
       salasDe, produtosDe, unidadesDe,

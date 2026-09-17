@@ -31,6 +31,7 @@ export type Evento =
   | "cafe_pedido"
   | "cafe_pronto"
   | "reserva"
+  | "reserva_cancelada"
   | "assinatura_ativa"
   | "renovacao_anual"
   | "cancelamento_confirmado"

@@ -24,7 +24,7 @@ export default function Dashboard({ go }) {
   const daUnidade = (arr) => (arr || []).filter((x) => !x.unidadeId || x.unidadeId === ativo);
   const lancs = daUnidade(store.lancamentos);
   const clientes = daUnidade(store.clientes);
-  const reservas = daUnidade(store.reservas);
+  const reservas = daUnidade(store.reservas).filter((r) => r.status !== "cancelada");
   const pedidos = daUnidade(store.pedidos);
   const boletos = daUnidade(store.boletos);
   const leads = daUnidade(store.leads);
