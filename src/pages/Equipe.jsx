@@ -141,9 +141,12 @@ export default function Equipe({ go }) {
                   <Btn variant="soft" style={{ padding: "8px 12px", fontSize: 13 }} onClick={() => { verComoUsuario(u); go && go(PERFIS[u.perfil]?.landing || "dash"); }}>
                     <Eye size={14} /> Ver como
                   </Btn>
-                  <Btn variant="ghost" style={{ padding: "8px 12px", fontSize: 13 }} onClick={() => setModal(u)}>
-                    <Edit3 size={14} /> Editar
-                  </Btn>
+                  {/* Editar perfil/unidades/ativo ainda não grava no banco (unidade_members): só na demonstração. */}
+                  {!onboardApi.configured && (
+                    <Btn variant="ghost" style={{ padding: "8px 12px", fontSize: 13 }} onClick={() => setModal(u)}>
+                      <Edit3 size={14} /> Editar
+                    </Btn>
+                  )}
                   <Btn variant="ghost" style={{ color: C.red, borderColor: C.redPale, padding: "8px 11px" }} onClick={() => { setErroExcluir(null); setExcluir(u); }} title="Excluir" aria-label={`Excluir ${u.nome}`}>
                     <Trash2 size={14} />
                   </Btn>

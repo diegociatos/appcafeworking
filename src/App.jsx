@@ -537,7 +537,8 @@ export default function App() {
             {/* "Ver como" é ferramenta de demonstração — escondida no login real */}
             {!autenticadoReal && <PerfilSwitcher />}
             {perfil !== "cliente" && perfil !== "franqueador" && perfil !== "contabilidade" && <UnitSwitcher />}
-            {perfil !== "cliente" && perfil !== "contabilidade" && <button style={{ position: "relative", color: C.text2 }} aria-label="Notificações">
+            {/* Sino sem central de notificações: só na demonstração (em produção não abria nada e o ponto era fixo). */}
+            {!supabaseConfigured && perfil !== "cliente" && perfil !== "contabilidade" && <button style={{ position: "relative", color: C.text2 }} aria-label="Notificações">
               <Bell size={21} />
               <span
                 className="cw-pulse"

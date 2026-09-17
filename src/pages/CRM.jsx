@@ -53,6 +53,11 @@ export default function CRM({ go }) {
     .reduce((s, l) => s + (l.valor * l.prob) / 100, 0);
 
   const fechados = leads.filter((l) => l.etapa === "fechado");
+  // Origem com mais leads (antes o card mostrava "Instagram" fixo).
+  const origemCampea = Object.entries(leads.reduce((m, l) => {
+    if (l.origem) m[l.origem] = (m[l.origem] || 0) + 1;
+    return m;
+  }, {})).sort((a, b) => b[1] - a[1])[0] || null;
   const taxa = leads.length > 0 ? Math.round((fechados.length / leads.length) * 100) : 0;
 
   const onDrop = (etapa) => {
@@ -89,7 +94,7 @@ export default function CRM({ go }) {
     <div>
       <PageHead
         title="CRM · Funil de leads"
-        sub="Transforme interessados em contratos. Funil integrado a Instagram, WhatsApp, Site e Google Ads."
+        sub="Transforme interessados em contratos. Leads do formulário do site entram sozinhos; os de Instagram, WhatsApp e outras origens são cadastrados aqui."
         action={
           <Btn onClick={() => setModal({})}>
             <Plus size={16} /> Novo lead
@@ -125,13 +130,13 @@ export default function CRM({ go }) {
           <div style={{ fontFamily: serif, fontSize: 26, color: C.teal }}>
             {fmt(fechados.reduce((s, l) => s + l.valor, 0))}
           </div>
-          <div style={{ fontSize: 12, color: C.text3, marginTop: 4 }}>contratos do mês</div>
+          <div style={{ fontSize: 12, color: C.text3, marginTop: 4 }}>leads fechados</div>
         </Card>
         <Card>
           <div style={{ fontSize: 13, color: C.text3, marginBottom: 6 }}>Origem campeã</div>
-          <div style={{ fontFamily: serif, fontSize: 22, color: C.text }}>Instagram</div>
+          <div style={{ fontFamily: serif, fontSize: 22, color: C.text }}>{origemCampea ? origemCampea[0] : "—"}</div>
           <div style={{ fontSize: 12, color: C.text3, marginTop: 4 }}>
-            {leads.filter((l) => l.origem === "Instagram").length} leads novos
+            {origemCampea ? `${origemCampea[1]} lead${origemCampea[1] > 1 ? "s" : ""}` : "sem leads ainda"}
           </div>
         </Card>
       </div>
