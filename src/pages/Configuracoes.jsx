@@ -511,10 +511,17 @@ function EmailMicrosoft365() {
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState(null);        // { ok, texto }
 
+  // Só preenche o formulário quando ele está em branco: recarregar o status (ao
+  // voltar da janela da Microsoft, por exemplo) não pode apagar o que a pessoa
+  // acabou de digitar, principalmente o segredo, que não volta do servidor.
   const aplicar = (r) => {
     setSt(r);
     const e = r.email || {};
-    setForm({ tenant_id: e.tenant_id || "", client_id: e.client_id || "", client_secret: "", envia_como: e.envia_como || "" });
+    setForm((atual) => {
+      const digitando = atual.tenant_id || atual.client_id || atual.client_secret || atual.envia_como;
+      if (digitando) return atual;
+      return { tenant_id: e.tenant_id || "", client_id: e.client_id || "", client_secret: "", envia_como: e.envia_como || "" };
+    });
   };
   const carregar = async (silencioso = false) => {
     try {
