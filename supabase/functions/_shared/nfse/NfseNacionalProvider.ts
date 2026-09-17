@@ -60,16 +60,31 @@ export class NfseNacionalProvider implements NfseProvider {
    * são IGNORADOS SILENCIOSAMENTE (client sem certificado → mTLS falha). Por
    * isso passamos os DOIS pares de nomes por compatibilidade (mesma pegadinha
    * do Inter no ContaOne). Requer o certificado em PEM (cert_pem + key_pem).
+   *
+   * HTTP/1.1 obrigatório: o SEFIN Nacional recusa HTTP/2 com
+   * "endpoint requires HTTP/1.1" (visto em produção em 17/09/2026). O Deno
+   * negocia h2 por ALPN, então desligamos http2 no cliente.
    */
   private async mtlsFetch(url: string, init?: RequestInit): Promise<Response> {
     const anyDeno = (globalThis as any).Deno;
     if (this.creds.cert_pem && this.creds.key_pem && anyDeno?.createHttpClient) {
-      const client = anyDeno.createHttpClient({
+      const opcoes: Record<string, unknown> = {
         cert: this.creds.cert_pem,
         key: this.creds.key_pem,
         certChain: this.creds.cert_pem,
         privateKey: this.creds.key_pem,
-      });
+        http1: true,
+        http2: false,
+      };
+      let client: unknown;
+      try {
+        client = anyDeno.createHttpClient(opcoes);
+      } catch {
+        // Runtime antigo sem as opções http1/http2: segue sem elas.
+        delete opcoes.http1;
+        delete opcoes.http2;
+        client = anyDeno.createHttpClient(opcoes);
+      }
       return await fetch(url, { ...init, client } as RequestInit);
     }
     // Sem PEM disponível: tenta sem mTLS (provavelmente 496) — o erro é tratado.
