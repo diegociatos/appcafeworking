@@ -18,6 +18,10 @@
 // estornar=true (só master/financeiro/admin), tenta estornar no Asaas quando o
 // pagamento foi por cartão ou PIX; boleto ou falha viram devolução manual.
 // Reserva aguardando pagamento: cancela a cobrança pendente no Asaas.
+//
+// Financeiro: o lançamento da reserva (_shared/lancamentoReserva.ts) sai do
+// fluxo de caixa quando nada foi recebido ou o Asaas estornou; com pagamento na
+// conta e devolução manual, ele fica e a devolução é lançada como saída.
 // ============================================================================
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -28,6 +32,7 @@ import { registrarAuditoria, ipDaReq } from "../_shared/audit.ts";
 import { dispatchNotificacao } from "../_shared/notify/index.ts";
 import { asaas, cancelarNoAsaas, credenciaisAsaas } from "../_shared/asaas.ts";
 import { podeMexerNoDinheiro, recusaSemFinanceiro } from "../_shared/permissoes.ts";
+import { ajustarLancamentoNoCancelamento } from "../_shared/lancamentoReserva.ts";
 import {
   type Estorno, MSG_SEM_PAPEL_CANCELAR, mensagemCancelamentoEquipe, papelCancelaReserva, planoDeEstorno, quandoReservaBR,
   statusDoErroCancelamento,
@@ -122,6 +127,11 @@ Deno.serve(async (req) => {
     const quando = quandoReservaBR(r.start_at, r.end_at);
     const horas = Number(r.horas_devolvidas || 0);
 
+    // Receita no financeiro: some quando nada foi recebido (ou o Asaas estornou);
+    // fica quando o dinheiro está na conta e a devolução é manual (o financeiro
+    // lança a saída), para o caixa não mentir.
+    const lancamento = await ajustarLancamentoNoCancelamento(admin, unidadeId, reservaId, r.paga === true, estorno);
+
     await registrarAuditoria(admin, {
       unidade_id: unidadeId, ator_id: usuario.id, ator_email: usuario.email,
       acao: "reserva.cancelada_equipe", entidade: "reserva", entidade_id: reservaId,
@@ -130,7 +140,7 @@ Deno.serve(async (req) => {
         cliente_nome: r.cliente_nome, cliente_email: r.cliente_email, origem: r.origem, valor: r.valor,
         motivo: motivo || null, horas_devolvidas: horas, devolucoes: r.devolucoes ?? [],
         paga: r.paga === true, estorno, estorno_pedido: estornar, ...(erroEstorno ? { erro_estorno: erroEstorno } : {}),
-        asaas_payment_id: paymentId,
+        asaas_payment_id: paymentId, lancamento,
       },
       ip: ipDaReq(req),
     });
@@ -156,7 +166,7 @@ Deno.serve(async (req) => {
 
     return json({
       ok: true, horas_devolvidas: horas, devolucoes: r.devolucoes ?? [], paga: r.paga === true,
-      estorno, payment_status: paymentStatus, email,
+      estorno, payment_status: paymentStatus, email, lancamento,
     }, 200, req);
   } catch (e) {
     console.error("[cancelar-reserva]", e);

@@ -1,11 +1,14 @@
 import { useState, useEffect } from "react";
 import {
   Coffee, Plus, Minus, ShoppingCart, QrCode, CreditCard, Banknote,
-  CheckCircle2, TrendingUp, Percent, Box, Bell, Clock, Smartphone, ArrowRight,
+  CheckCircle2, TrendingUp, Percent, Box, Bell, Clock, Smartphone, ArrowRight, UserCheck, Tag,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Empty, Modal } from "../components/ui.jsx";
-import { C, serif, fmt } from "../lib/theme.js";
+import { C, serif, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
+import {
+  cafeInclusoUsadoHoje, contaDaComanda, diaDoPedido, direitosDoCliente, hojeBRT, temCafeIncluso,
+} from "../lib/direitosPlano.js";
 
 // fluxo de status do pedido recebido do app
 const PROX_STATUS = { recebido: "preparo", preparo: "pronto", pronto: "entregue" };
@@ -16,17 +19,27 @@ const STATUS_INFO = {
 };
 
 export default function PDV() {
-  const { activeUnit, unidadeAtiva, produtosDe, pedidosDe, addPedido, updatePedido, estoqueBaixoDe } = useStore();
+  const { activeUnit, unidadeAtiva, produtosDe, pedidosDe, addPedido, updatePedido, estoqueBaixoDe, clientesDe, planosDe } = useStore();
   const [cart, setCart] = useState([]);
   const [cat, setCat] = useState("Todos");
   const [pago, setPago] = useState(null);
-  const [vendaOk, setVendaOk] = useState(null); // { total } após finalizar
+  const [clienteId, setClienteId] = useState(""); // cliente identificado na comanda
+  const [vendaOk, setVendaOk] = useState(null); // { total, conta } após finalizar
 
   // KPIs reais (do banco) — zeram quando ainda não há vendas/produtos.
   const pedidosUnidade = pedidosDe(activeUnit);
-  const vendasHoje = pedidosUnidade.reduce((s, p) => s + (p.total || 0), 0);
-  const ticketMedio = pedidosUnidade.length ? vendasHoje / pedidosUnidade.length : 0;
+  // "Vendas hoje" é HOJE mesmo (fuso de Brasília). Antes somava desde sempre.
+  const hoje = hojeBRT();
+  const pedidosHoje = pedidosUnidade.filter((p) => diaDoPedido(p) === hoje);
+  const vendasHoje = pedidosHoje.reduce((s, p) => s + (p.total || 0), 0);
+  const ticketMedio = pedidosHoje.length ? vendasHoje / pedidosHoje.length : 0;
   const baixo = estoqueBaixoDe ? estoqueBaixoDe(activeUnit) : [];
+
+  // Cliente identificado → direitos do plano (desconto e café incluso).
+  const clientesUnidade = (clientesDe ? clientesDe(unidadeAtiva?.nome) : []).filter((c) => c.status !== "inativo");
+  const cliente = clientesUnidade.find((c) => c.id === clienteId) || null;
+  const direitos = cliente ? direitosDoCliente(planosDe ? planosDe(activeUnit) : [], cliente) : {};
+  const cafeJaUsadoHoje = cafeInclusoUsadoHoje(pedidosUnidade, cliente?.id, hoje);
 
   const produtosUnidade = produtosDe(activeUnit).filter((p) => p.ativo !== false);
   const pedidosAtivos = pedidosDe(activeUnit).filter((p) => p.status !== "entregue");
@@ -39,6 +52,7 @@ export default function PDV() {
     setCart([]);
     setPago(null);
     setCat("Todos");
+    setClienteId("");
   }, [activeUnit]);
 
   const add = (p) =>
@@ -49,26 +63,39 @@ export default function PDV() {
   const sub = (id) =>
     setCart((c) => c.map((i) => (i.id === id ? { ...i, q: i.q - 1 } : i)).filter((i) => i.q > 0));
 
-  const total = cart.reduce((s, i) => s + i.preco * i.q, 0);
+  // Conta da comanda COM os direitos do plano: café incluso primeiro, desconto
+  // da cafeteria depois. Sem cliente identificado, é o preço cheio.
+  const conta = contaDaComanda(cart, direitos, { cafeJaUsadoHoje });
+  const total = conta.total;
   const totalCMV = cart.reduce((s, i) => s + i.cmv * i.q, 0);
   const margem = total > 0 ? ((total - totalCMV) / total) * 100 : 0;
+  const temBeneficio = conta.cafeInclusoValor > 0 || conta.descontoValor > 0;
 
   const finalizarVenda = () => {
     if (!pago || !cart.length) return;
     addPedido(activeUnit, {
       origem: "balcao",
       status: "entregue",
-      cliente: "Balcão",
+      cliente: cliente?.nome || "Balcão",
+      clienteId: cliente?.id || null,
       formaPagamento: pago,
       itens: cart.map((i) => ({ nome: i.nome, preco: i.preco, q: i.q, emoji: i.emoji, cmv: i.cmv })),
+      // subtotal = preço cheio; total = o que o cliente pagou (o financeiro usa o total)
+      subtotal: conta.subtotal,
+      cafeInclusoValor: conta.cafeInclusoValor,
+      cafeInclusoNome: conta.cafeInclusoNome,
+      descontoPlanoPct: conta.descontoPct,
+      descontoPlanoValor: conta.descontoValor,
+      planoCliente: cliente?.plano || "",
       total,
       cmvTotal: totalCMV,
       hora: "agora",
       createdAt: new Date().toISOString(),
     });
-    setVendaOk({ total });
+    setVendaOk({ total, conta, cliente });
     setCart([]);
     setPago(null);
+    setClienteId("");
   };
 
   return (
@@ -91,8 +118,8 @@ export default function PDV() {
           const m = produtosUnidade.filter((p) => p.preco > 0).map((p) => 1 - (p.cmv || 0) / p.preco);
           const margem = m.length ? Math.round((m.reduce((a, b) => a + b, 0) / m.length) * 100) : 0;
           return [
-            { l: "Vendas hoje", v: fmt(vendasHoje), s: `${pedidosUnidade.length} pedido(s)`, ic: TrendingUp, c: C.green },
-            { l: "Ticket médio", v: fmt(ticketMedio), s: pedidosUnidade.length ? "por pedido" : "sem vendas", ic: Coffee, c: C.cafe },
+            { l: "Vendas hoje", v: fmt(vendasHoje), s: `${pedidosHoje.length} pedido(s) hoje`, ic: TrendingUp, c: C.green },
+            { l: "Ticket médio", v: fmt(ticketMedio), s: pedidosHoje.length ? "por pedido hoje" : "sem vendas hoje", ic: Coffee, c: C.cafe },
             { l: "Margem média", v: `${margem}%`, s: `CMV estimado ${100 - margem}%`, ic: Percent, c: C.teal },
             { l: "Estoque baixo", v: String(baixo.length), s: baixo.slice(0, 3).map((x) => x.nome).join(", ") || "tudo ok", ic: Box, c: C.amber },
           ];
@@ -260,6 +287,34 @@ export default function PDV() {
               <Badge color={C.cafe}>{cart.reduce((s, i) => s + i.q, 0)} itens</Badge>
             )}
           </div>
+
+          {/* Quem está comprando: com o cliente identificado valem os direitos do plano */}
+          <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border2}`, background: C.cream }}>
+            <label htmlFor="pdv-cliente" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: C.text3, marginBottom: 6 }}>
+              <UserCheck size={14} color={C.cafe} /> Cliente (para aplicar o plano)
+            </label>
+            <select id="pdv-cliente" value={clienteId} onChange={(e) => setClienteId(e.target.value)} style={{ ...inp, marginBottom: 0 }}>
+              <option value="">Balcão — sem cliente identificado</option>
+              {clientesUnidade.map((c) => (
+                <option key={c.id} value={c.id}>{c.nome}{c.plano ? ` · ${c.plano}` : ""}</option>
+              ))}
+            </select>
+            {cliente && (
+              <div style={{ fontSize: 11.5, color: C.text3, marginTop: 6, lineHeight: 1.5 }}>
+                {conta.descontoPct > 0 || temCafeIncluso(direitos) ? (
+                  <>
+                    Plano <b>{cliente.plano || "—"}</b>:
+                    {conta.descontoPct > 0 ? ` ${conta.descontoPct}% de desconto na cafeteria.` : ""}
+                    {temCafeIncluso(direitos)
+                      ? (cafeJaUsadoHoje ? " Café incluso já usado hoje." : " 1 café por dia incluso.")
+                      : ""}
+                  </>
+                ) : (
+                  <>O plano <b>{cliente.plano || "—"}</b> não tem desconto nem café incluso na cafeteria.</>
+                )}
+              </div>
+            )}
+          </div>
           <div style={{ maxHeight: 320, overflowY: "auto", padding: cart.length ? 12 : 0 }}>
             {cart.length === 0 ? (
               <Empty icon={Coffee} title="Comanda vazia" sub="Toque nos produtos para adicionar" />
@@ -328,6 +383,26 @@ export default function PDV() {
                 <span>Margem nesta venda</span>
                 <span style={{ color: C.green, fontWeight: 700 }}>{margem.toFixed(0)}%</span>
               </div>
+              {temBeneficio && (
+                <div style={{ background: C.tealPale, border: `1px solid ${C.tealLine}`, borderRadius: 10, padding: "9px 11px", marginBottom: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 700, color: C.teal, marginBottom: 6 }}>
+                    <Tag size={13} /> Plano {cliente?.plano || ""}
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, color: C.text2 }}>
+                    <span>Subtotal</span><span>{fmt(conta.subtotal)}</span>
+                  </div>
+                  {conta.cafeInclusoValor > 0 && (
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, color: C.teal }}>
+                      <span>Café incluso ({conta.cafeInclusoNome})</span><span>−{fmt(conta.cafeInclusoValor)}</span>
+                    </div>
+                  )}
+                  {conta.descontoValor > 0 && (
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, color: C.teal }}>
+                      <span>Desconto do plano ({conta.descontoPct}%)</span><span>−{fmt(conta.descontoValor)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
                 <span style={{ fontSize: 15, color: C.text3 }}>Total</span>
                 <span style={{ fontFamily: serif, fontSize: 26, color: C.cafe }}>{fmt(total)}</span>
@@ -382,6 +457,12 @@ export default function PDV() {
           <div style={{ textAlign: "center", padding: "6px 0" }}>
             <CheckCircle2 size={46} color={C.green} />
             <div style={{ fontFamily: serif, fontSize: 24, color: C.cafe, marginTop: 10 }}>{fmt(vendaOk.total)}</div>
+            {(vendaOk.conta?.cafeInclusoValor > 0 || vendaOk.conta?.descontoValor > 0) && (
+              <div style={{ fontSize: 12.5, color: C.teal, marginTop: 6 }}>
+                {vendaOk.cliente?.nome} economizou {fmt((vendaOk.conta.cafeInclusoValor || 0) + (vendaOk.conta.descontoValor || 0))} pelo plano
+                {vendaOk.conta.cafeInclusoValor > 0 ? ` (café incluso${vendaOk.conta.descontoValor > 0 ? ` + ${vendaOk.conta.descontoPct}%` : ""})` : ` (${vendaOk.conta.descontoPct}%)`}.
+              </div>
+            )}
             <div style={{ fontSize: 13, color: C.text3, marginTop: 4, marginBottom: 16 }}>
               Pedido de balcão lançado: estoque baixado, receita e CMV no financeiro.
             </div>

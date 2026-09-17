@@ -207,7 +207,10 @@ const bankAccountToRow = (b) => {
   return row;
 };
 // Escrita com retorno da linha que LANÇA em falha (a tela mostra o erro).
-async function writeRowsOrThrow(pathQuery, method, body, prefer) {
+async function writeRowsOrThrow(pathQuery, method, body, prefer, textos = {}) {
+  const semPermissao = textos.semPermissao
+    || "Sem permissão: só o master ou o financeiro da unidade cadastra contas bancárias.";
+  const falha = textos.falha || "Falha ao gravar a conta bancária";
   if (!URL || !ANON) throw new Error("Backend não configurado.");
   const token = await getAccessToken();
   if (!token) throw new Error("Sessão expirada. Entre de novo.");
@@ -221,8 +224,8 @@ async function writeRowsOrThrow(pathQuery, method, body, prefer) {
     let msg = txt;
     try { msg = JSON.parse(txt)?.message || txt; } catch { /* texto cru */ }
     throw new Error(res.status === 401 || res.status === 403
-      ? "Sem permissão: só o master ou o financeiro da unidade cadastra contas bancárias."
-      : `Falha ao gravar a conta bancária (${res.status}): ${String(msg).slice(0, 160)}`);
+      ? semPermissao
+      : `${falha} (${res.status}): ${String(msg).slice(0, 160)}`);
   }
   return res.json().catch(() => []);
 }
@@ -342,6 +345,17 @@ function clienteToRow(c) {
 
 export async function insertCliente(c) {
   return (await writeJson("clientes", "POST", clienteToRow(c)))?.[0] || null;
+}
+/** Igual a insertCliente, mas LANÇA em falha: para a tela só dizer "criado"
+ *  quando o banco confirmar (conversão de lead no CRM). */
+export async function insertClienteOuFalhar(c) {
+  const rows = await writeRowsOrThrow("clientes", "POST", clienteToRow(c), "return=representation", {
+    semPermissao: "Sem permissão para cadastrar cliente nesta unidade.",
+    falha: "Falha ao cadastrar o cliente",
+  });
+  const r = Array.isArray(rows) ? rows[0] : null;
+  if (!r) throw new Error("O cliente não foi gravado (sem permissão nesta unidade?).");
+  return r;
 }
 export async function patchCliente(id, patch) {
   return (await writeJson(`clientes?id=eq.${encodeURIComponent(id)}`, "PATCH", clienteToRow({ ...patch, id: undefined })))?.[0] || null;

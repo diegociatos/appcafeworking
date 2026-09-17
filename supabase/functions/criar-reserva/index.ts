@@ -23,6 +23,8 @@ import { dispatchNotificacao } from "../_shared/notify/index.ts";
 import {
   calcularReserva, mensagemReserva, padraoEmail, salaReservavelPeloCliente, tipoCredito, validarReservaCliente,
 } from "../_shared/reservaCliente.ts";
+import { descontoSalaDoCliente } from "../_shared/direitosPlano.ts";
+import { registrarLancamentoReserva } from "../_shared/lancamentoReserva.ts";
 
 const CODIGOS_CONHECIDOS = /CONFLITO|SALA_CONTRATADA|SALA_INATIVA|BASE_INVALIDA|PERIODO_INVALIDO|PERIODO_PASSADO|SALA_INEXISTENTE|SALA_DE_OUTRA_UNIDADE/;
 
@@ -104,6 +106,15 @@ Deno.serve(async (req) => {
       return [...movs.values()].reduce((s, q) => s + q, 0);
     };
 
+    // Desconto de sala do plano (direitos.descontoSala): vale sobre o excedente,
+    // tanto para o cliente quanto para a reserva feita pela recepção. Calculado
+    // aqui, no servidor — a tela só reflete o que voltar daqui.
+    // Como cliente, o id do cadastro vem do navegador: só o e-mail (conferido
+    // logo abaixo contra o do login) decide o desconto.
+    const descontoSalaPct = await descontoSalaDoCliente(
+      admin, b.unidade_id, comoCliente ? email : alvoEmail, comoCliente ? null : idDoCadastro,
+    );
+
     if (comoCliente) {
       if (!alvoEmail || alvoEmail !== email) {
         return json({ error: "Como cliente, você só pode reservar para si mesmo." }, 403, req);
@@ -112,7 +123,7 @@ Deno.serve(async (req) => {
       if (!periodo.ok) return json({ error: mensagemReserva(periodo.erro), codigo: periodo.erro }, 400, req);
       if (!salaReservavelPeloCliente(sala)) return json({ error: mensagemReserva("SALA_NAO_RESERVAVEL") }, 400, req);
 
-      const calculo = calcularReserva(periodo.horas, await saldoDoPlano(), valorHora);
+      const calculo = calcularReserva(periodo.horas, await saldoDoPlano(), valorHora, descontoSalaPct);
       if (valorHora <= 0 && calculo.excedente > 0) {
         return json({ error: mensagemReserva("SEM_CREDITO"), codigo: "SEM_CREDITO" }, 400, req);
       }
@@ -161,7 +172,7 @@ Deno.serve(async (req) => {
       if ((alvoEmail || idDoCadastro) && tipoCred) {
         const horas = Math.max(1, Math.ceil((new Date(b.end_at).getTime() - new Date(b.start_at).getTime()) / 3_600_000));
         const saldo = await saldoDoPlano();
-        const calc = calcularReserva(horas, saldo, valorHora);
+        const calc = calcularReserva(horas, saldo, valorHora, descontoSalaPct);
         if (calc.cobertas > 0) {
           await admin.from("creditos_ledger").insert({
             id: "cl_" + Date.now() + Math.floor(Math.random() * 1000),
@@ -173,13 +184,50 @@ Deno.serve(async (req) => {
         }
         // Só reescreve o valor quando há preço por hora — evita zerar um valor fixo.
         if (data?.id && valorHora > 0) {
-          await admin.from("reservas").update({ valor: calc.valorExcedente }).eq("id", data.id);
+          await admin.from("reservas").update({
+            valor: calc.valorExcedente,
+            desconto_plano_pct: calc.descontoPct || null,
+            valor_sem_desconto: calc.descontoPct > 0 ? calc.valorSemDesconto : null,
+          }).eq("id", data.id);
           (data as { valor?: number }).valor = calc.valorExcedente;
         }
-        credito = { tipo: tipoCred, horas, cobertas: calc.cobertas, excedente: calc.excedente, saldoAntes: saldo, saldoApos: saldo - calc.cobertas, valorExcedente: calc.valorExcedente };
+        credito = {
+          tipo: tipoCred, horas, cobertas: calc.cobertas, excedente: calc.excedente,
+          saldoAntes: saldo, saldoApos: saldo - calc.cobertas,
+          valorSemDesconto: calc.valorSemDesconto, descontoPct: calc.descontoPct, descontoValor: calc.descontoValor,
+          valorExcedente: calc.valorExcedente,
+        };
       }
     } catch (e) {
       console.error("[criar-reserva] consumo de crédito falhou (segue sem debitar)", e);
+    }
+
+    // Reserva sem crédito de plano (sala privativa, cliente sem saldo do tipo):
+    // o desconto do plano ainda vale sobre o valor cheio.
+    if (!credito && descontoSalaPct > 0 && data?.id && valorHora > 0) {
+      try {
+        const cheio = Number((data as { valor?: number }).valor ?? valorPedido ?? 0);
+        const comDesconto = Math.round(cheio * (100 - descontoSalaPct)) / 100;
+        if (cheio > 0 && comDesconto !== cheio) {
+          await admin.from("reservas").update({
+            valor: comDesconto, desconto_plano_pct: descontoSalaPct, valor_sem_desconto: cheio,
+          }).eq("id", data.id);
+          (data as { valor?: number }).valor = comDesconto;
+        }
+      } catch (e) {
+        console.error("[criar-reserva] desconto de sala falhou (segue com o valor cheio)", e);
+      }
+    }
+
+    // Receita no financeiro. A recepção já lança pelo store (src/lib/store.jsx);
+    // aqui entra a reserva que o cliente faz no app, que antes não gerava nada.
+    const valorFinal = Number((data as { valor?: number })?.valor ?? valorPedido ?? 0);
+    if (comoCliente && data?.id && valorFinal > 0) {
+      await registrarLancamentoReserva(admin, {
+        reservaId: String(data.id), unidadeId: b.unidade_id, salaNome: sala.nome, salaTipo: sala.tipo,
+        clienteNome: clienteNome, valor: valorFinal, status: "previsto", quando: b.start_at,
+        descontoPct: descontoSalaPct,
+      });
     }
 
     await registrarAuditoria(admin, {
@@ -194,7 +242,7 @@ Deno.serve(async (req) => {
         cliente_nome: clienteNome, cliente_email: alvoEmail || null,
         ...(b.avulso === true ? { excecao_sem_cadastro: true, motivo: observacao } : {}),
         origem: comoCliente ? "app" : (b.origem ?? "recepcao"), valor: (data as { valor?: number })?.valor ?? valorPedido,
-        credito,
+        credito, desconto_sala_pct: descontoSalaPct || null,
       },
       ip: ipDaReq(req),
     });
@@ -206,7 +254,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    return json({ ok: true, reserva: data, credito }, 201, req);
+    return json({ ok: true, reserva: data, credito, desconto_sala_pct: descontoSalaPct || 0 }, 201, req);
   } catch (e) {
     console.error("[criar-reserva]", e);
     return json({ error: "Não foi possível reservar agora. Tente de novo." }, 500, req);

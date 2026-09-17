@@ -49,17 +49,41 @@ export interface CalculoReserva {
   horas: number;
   cobertas: number;
   excedente: number;
+  /** Excedente pelo preço cheio da sala, antes do desconto do plano. */
+  valorSemDesconto: number;
+  /** Desconto de sala do plano aplicado ao excedente (0 a 100). */
+  descontoPct: number;
+  /** Quanto o desconto do plano tirou do excedente. */
+  descontoValor: number;
+  /** O que o cliente paga: excedente menos o desconto do plano. */
   valorExcedente: number;
 }
 
-/** Quantas horas o saldo do plano cobre e quanto sobra para pagar. */
-export function calcularReserva(horas: number, saldo: number, valorHora: number): CalculoReserva {
+/** Percentual válido (0 a 100, duas casas). Lixo vira 0. */
+export function percentualValido(valor: unknown): number {
+  const n = Number(valor);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.round(Math.min(100, n) * 100) / 100;
+}
+
+/**
+ * Quantas horas o saldo do plano cobre, quanto sobra para pagar e quanto o
+ * desconto de sala do plano (direitos.descontoSala) tira desse excedente.
+ */
+export function calcularReserva(horas: number, saldo: number, valorHora: number, descontoPct: unknown = 0): CalculoReserva {
   const h = Math.max(0, Math.floor(Number(horas) || 0));
   const disponivel = Math.max(0, Math.floor(Number(saldo) || 0));
   const cobertas = Math.min(disponivel, h);
   const excedente = h - cobertas;
   const vh = Math.max(0, Number(valorHora) || 0);
-  return { horas: h, cobertas, excedente, valorExcedente: Math.round(excedente * vh * 100) / 100 };
+  const cheio = Math.round(excedente * vh * 100) / 100;
+  const pct = percentualValido(descontoPct);
+  const desconto = Math.round(cheio * pct) / 100;
+  return {
+    horas: h, cobertas, excedente,
+    valorSemDesconto: cheio, descontoPct: pct, descontoValor: desconto,
+    valorExcedente: Math.round((cheio - desconto) * 100) / 100,
+  };
 }
 
 export type ResultadoReservaCliente = { ok: true; horas: number } | { ok: false; erro: string };

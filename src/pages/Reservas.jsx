@@ -29,7 +29,12 @@ const horaFim = (inicio, dur) => {
   const ult = parseInt(HORARIOS[HORARIOS.length - 1], 10) + 1;
   return `${String(ult).padStart(2, "0")}:00`;
 };
-import { useStore } from "../lib/store.jsx";
+import { idLancamentoDaReserva, useStore } from "../lib/store.jsx";
+import { asaasApi } from "../lib/asaasApi.js";
+import { descontoSalaPct, direitosDoCliente, previaExcedente } from "../lib/direitosPlano.js";
+
+// Quem pode criar cobrança no Asaas (a Edge Function recusa a recepção).
+const PERFIS_COBRANCA = new Set(["master", "financeiro", "franqueador"]);
 
 // Mesma regra da Edge Function criar-reserva (_shared/reservaCliente.ts):
 // tipo da sala → tipo de crédito do plano, e quanto o saldo cobre.
@@ -40,34 +45,106 @@ const tipoCreditoSala = (tipoSala) => {
   return null;
 };
 const NOME_CREDITO = { sala_reuniao: "sala de reunião", coworking: "coworking" };
-const previaCredito = (horas, saldo, valorHora) => {
-  const h = Math.max(0, Math.floor(Number(horas) || 0));
-  const cobertas = Math.min(Math.max(0, Math.floor(Number(saldo) || 0)), h);
-  const excedente = h - cobertas;
-  return { horas: h, cobertas, excedente, valorExcedente: Math.round(excedente * Math.max(0, Number(valorHora) || 0) * 100) / 100 };
-};
+// Prévia do excedente (o servidor recalcula e manda a versão que vale).
+const previaCredito = previaExcedente;
 
 /** Aviso do excedente a cobrar (valorHora 0: horas além do plano sem preço definido). */
-function AvisoExcedente({ credito, valorHora, style }) {
+function AvisoExcedente({ credito, valorHora, style, children }) {
   if (!credito || !(credito.excedente > 0)) return null;
+  const pct = Number(credito.descontoPct || 0);
   return (
     <div role="alert" style={{ display: "flex", gap: 8, alignItems: "flex-start", background: C.amberPale, color: C.amber, border: `1px solid ${C.amber}55`, borderRadius: 10, padding: "10px 12px", fontSize: 13, ...style }}>
       <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
-      <div>
+      <div style={{ flex: 1, minWidth: 0 }}>
         {credito.valorExcedente > 0
           ? <b>Excedente de {fmt(credito.valorExcedente)} a cobrar do cliente</b>
           : <b>{credito.excedente} h além das horas do plano a combinar com o cliente</b>}
         <div style={{ fontSize: 12, marginTop: 2, color: C.text2 }}>
           {credito.cobertas > 0 ? `${credito.cobertas} h cobertas pelo plano, ` : "Sem horas do plano para cobrir, "}
-          {credito.excedente} h excedente{credito.valorExcedente > 0 && valorHora > 0 ? ` × ${fmt(valorHora)}` : ""}. O valor entra no financeiro como a receber; nenhuma cobrança é enviada ao cliente.
+          {credito.excedente} h excedente{credito.valorExcedente > 0 && valorHora > 0 ? ` × ${fmt(valorHora)}` : ""}
+          {pct > 0 ? ` = ${fmt(credito.valorSemDesconto)} − ${pct}% do plano (${fmt(credito.descontoValor)})` : ""}.
+          {" "}Já está no financeiro como <b>a receber</b>.
         </div>
+        {children}
       </div>
     </div>
   );
 }
 
+/**
+ * "Cobrar agora": cria a cobrança do excedente no Asaas pelo mesmo caminho da
+ * tela Cobranças (Edge Function asaas-cobranca), vinculada ao cliente e à
+ * reserva. Só master/financeiro/admin criam cobrança (o backend recusa a
+ * recepção); aí a tela explica em vez de oferecer um botão que falha.
+ */
+function CobrarExcedente({ unidadeId, reservaId, cliente, valor, descricao, podeCobrar, jaCobrada, onCobrada }) {
+  const [estado, setEstado] = useState("inicial"); // inicial | enviando | ok | erro
+  const [erro, setErro] = useState("");
+  const [cobranca, setCobranca] = useState(jaCobrada || null);
+  const documento = String(cliente?.cnpj || cliente?.documento || "").replace(/\D/g, "");
+
+  if (!(valor > 0) || !reservaId) return null;
+  if (cobranca) {
+    return (
+      <div style={{ fontSize: 12, color: C.green, marginTop: 8, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        <CheckCircle2 size={14} /> Cobrança de {fmt(valor)} criada no Asaas.
+        {cobranca.invoice_url && <a href={cobranca.invoice_url} target="_blank" rel="noreferrer" style={{ color: C.teal, fontWeight: 600 }}>Abrir fatura</a>}
+      </div>
+    );
+  }
+  if (!podeCobrar) {
+    return (
+      <div style={{ fontSize: 12, color: C.text2, marginTop: 8 }}>
+        Para enviar a cobrança (boleto, PIX ou cartão), peça ao master ou ao financeiro — a recepção não cria cobrança.
+      </div>
+    );
+  }
+  if (!asaasApi.configured) {
+    return <div style={{ fontSize: 12, color: C.text2, marginTop: 8 }}>Modo demonstração: a cobrança de verdade sai com o Asaas configurado em Cobranças.</div>;
+  }
+  if (!cliente || !documento) {
+    return (
+      <div style={{ fontSize: 12, color: C.text2, marginTop: 8 }}>
+        Para cobrar agora, o cliente precisa de CPF/CNPJ no cadastro (Clientes). Por ora, fica só como a receber.
+      </div>
+    );
+  }
+
+  const cobrar = async () => {
+    setEstado("enviando"); setErro("");
+    try {
+      const venc = new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10);
+      const r = await asaasApi.criarCobranca({
+        unidade_id: unidadeId, cliente: cliente.nome, cliente_documento: documento,
+        cliente_email: cliente.email || undefined, valor, vencimento: venc,
+        descricao, reserva_id: reservaId,
+      });
+      setCobranca(r.cobranca || {});
+      setEstado("ok");
+      onCobrada?.(r.cobranca);
+    } catch (e) {
+      setErro(e?.message || "Não foi possível criar a cobrança agora.");
+      setEstado("erro");
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      <Btn variant="teal" style={{ padding: "8px 12px", fontSize: 12.5, opacity: estado === "enviando" ? 0.6 : 1 }}
+        disabled={estado === "enviando"} onClick={cobrar}>
+        <DollarSign size={14} /> {estado === "enviando" ? "Criando cobrança…" : `Cobrar agora ${fmt(valor)}`}
+      </Btn>
+      <div style={{ fontSize: 11.5, color: C.text3, marginTop: 5 }}>
+        Cria a cobrança no Asaas (boleto, PIX ou cartão) em nome de {cliente.nome} e manda o link por e-mail.
+      </div>
+      {erro && <div role="alert" style={{ fontSize: 12, color: C.red, marginTop: 6 }}>{erro}</div>}
+    </div>
+  );
+}
+
 export default function Reservas() {
-  const { activeUnit, unidadeAtiva, salasDe, clientesDe, reservas: todasReservas, criarReserva, cancelarReserva, marcarReservasVistas, addLancamento, perfil } = useStore();
+  const { activeUnit, unidadeAtiva, salasDe, clientesDe, reservas: todasReservas, criarReserva, cancelarReserva, marcarReservasVistas, addLancamento, updateLancamento, perfil } = useStore();
+  const podeCobrar = PERFIS_COBRANCA.has(perfil);
   const reservas = todasReservas.filter(naAgenda);
   const [avisoCancelamento, setAvisoCancelamento] = useState(null); // texto após cancelar
   const [diaSel, setDiaSel] = useState(0);
@@ -153,7 +230,17 @@ export default function Reservas() {
       )}
       {avisoReserva && (
         <div style={{ position: "relative", marginBottom: 14 }}>
-          <AvisoExcedente credito={avisoReserva.credito} valorHora={avisoReserva.valorHora} style={{ paddingRight: 36 }} />
+          <AvisoExcedente credito={avisoReserva.credito} valorHora={avisoReserva.valorHora} style={{ paddingRight: 36 }}>
+            <CobrarExcedente
+              unidadeId={activeUnit}
+              reservaId={avisoReserva.reservaId}
+              cliente={avisoReserva.clienteCadastro}
+              valor={avisoReserva.credito?.valorExcedente || 0}
+              descricao={`Excedente de horas · ${avisoReserva.sala}`}
+              podeCobrar={podeCobrar}
+              onCobrada={(cob) => cob?.id && updateLancamento(idLancamentoDaReserva(avisoReserva.reservaId), { cobrancaId: cob.id })}
+            />
+          </AvisoExcedente>
           <div style={{ fontSize: 12, color: C.text3, marginTop: 4 }}>Reserva de {avisoReserva.cliente} na {avisoReserva.sala} criada.</div>
           <button type="button" onClick={() => setAvisoReserva(null)} className="cw-btn" aria-label="Fechar aviso de excedente" style={{ position: "absolute", top: 8, right: 8, color: C.amber, padding: 4, fontSize: 16, lineHeight: 1 }}>×</button>
         </div>
@@ -381,8 +468,12 @@ export default function Reservas() {
             const res = await criarReserva({ ...nr, cor: C.teal2 });
             if (!res || res.ok === false) { alert(res?.error || "Não foi possível reservar."); return; }
             const salaNova = salasUnidade.find((s) => s.id === nr.sala);
+            const cadastro = clientesDe(unidadeAtiva?.nome).find((c) => c.id === nr.clienteId) || null;
             setAvisoReserva(res.credito?.excedente > 0
-              ? { cliente: nr.cliente, sala: salaNova?.nome || "sala", credito: res.credito, valorHora: Number(salaNova?.valorHora || 0) }
+              ? {
+                cliente: nr.cliente, sala: salaNova?.nome || "sala", credito: res.credito,
+                valorHora: Number(salaNova?.valorHora || 0), reservaId: res.reserva?.id, clienteCadastro: cadastro,
+              }
               : null);
             setDiaSel(nr.dia);
             setModal(null);
@@ -405,6 +496,10 @@ export default function Reservas() {
             reserva={detalhe}
             sala={salasUnidade.find((s) => s.id === detalhe.sala)}
             dias={dias}
+            unidadeId={activeUnit}
+            clienteCadastro={clientesDe(unidadeAtiva?.nome).find((c) => c.id === detalhe.clienteId || (detalhe.email && c.email === detalhe.email)) || null}
+            podeCobrar={podeCobrar}
+            onCobrada={(cob) => cob?.id && updateLancamento(idLancamentoDaReserva(detalhe.id), { cobrancaId: cob.id })}
             onComplemento={({ valor, horas }) => {
               const sala = salasUnidade.find((s) => s.id === detalhe.sala);
               const sub = sala?.tipo === "Privativa" ? "Aluguel de Salas Privativas" : "Aluguel de Sala de Reunião";
@@ -535,10 +630,12 @@ function textoCancelamento(reserva, res) {
   return partes.join(" ");
 }
 
-function ReservaDetalhe({ reserva, sala, dias, onComplemento, onCancelar, podeEstornar }) {
+function ReservaDetalhe({ reserva, sala, dias, onComplemento, onCancelar, podeEstornar, unidadeId, clienteCadastro, podeCobrar, onCobrada }) {
   const dt = getReservaStart(reserva);
   const dataLabel = `${dias[reserva.dia]} ${pad2(dt.getDate())}/${pad2(dt.getMonth() + 1)}/${dt.getFullYear()}`;
   const vh = sala?.valorHora || 0;
+  // Desconto de sala do plano já aplicado pelo servidor (vem do banco ou da resposta).
+  const descontoAplicado = Number(reserva.descontoPlanoPct || reserva.credito?.descontoPct || 0);
   const [horas, setHoras] = useState(1);
   const [valor, setValor] = useState(vh);
   const setH = (h) => { const n = Math.max(0, h); setHoras(n); setValor(n * vh); };
@@ -584,8 +681,24 @@ function ReservaDetalhe({ reserva, sala, dias, onComplemento, onCancelar, podeEs
         <div style={{ fontSize: 13, color: C.text2, marginTop: 6 }}>
           Valor da reserva: <b style={{ color: C.cafe }}>{fmt(reserva.valor || 0)}</b> · já lançado no financeiro (a receber)
         </div>
+        {descontoAplicado > 0 && (
+          <div style={{ fontSize: 12.5, color: C.teal, marginTop: 4 }}>
+            Desconto de sala do plano: {descontoAplicado}%
+            {reserva.valorSemDesconto > 0 ? ` (de ${fmt(reserva.valorSemDesconto)} por ${fmt(reserva.valor || 0)})` : ""}.
+          </div>
+        )}
       </div>
-      <AvisoExcedente credito={reserva.credito} valorHora={vh} style={{ marginBottom: 16 }} />
+      <AvisoExcedente credito={reserva.credito} valorHora={vh} style={{ marginBottom: 16 }}>
+        <CobrarExcedente
+          unidadeId={unidadeId}
+          reservaId={reserva.id}
+          cliente={clienteCadastro}
+          valor={Number(reserva.credito?.valorExcedente || 0)}
+          descricao={`Excedente de horas · ${sala?.nome || "sala"}`}
+          podeCobrar={podeCobrar}
+          onCobrada={onCobrada}
+        />
+      </AvisoExcedente>
 
       <div style={{ background: C.tealPale, border: `1px solid ${C.tealLine}`, borderRadius: 12, padding: 14, marginBottom: 16 }}>
         <div style={{ fontSize: 14, fontWeight: 600, color: C.teal, marginBottom: 4 }}>Usou mais que o contratado?</div>
@@ -665,13 +778,15 @@ function NovaReservaModal({ salas, clientes, dias, datasSemana = [], semanaInici
   });
   const salaSel = salas.find((s) => s.id === f.sala);
   const compart = (salaSel?.bases || 0) > 0; // sala compartilhada → reserva por base
-  const { saldoCreditos } = useStore();
+  const { saldoCreditos, activeUnit, planosDe } = useStore();
   const clienteSel = f.modo === "cadastrado" ? clientes.find((c) => c.id === f.clienteId) : null;
   const clienteNome = f.modo === "cadastrado" ? (clienteSel?.nome || "") : f.nome.trim();
   // Prévia do consumo das horas do plano (o servidor recalcula e é quem vale).
   const tipoCred = tipoCreditoSala(salaSel?.tipo);
   const saldoPlano = clienteSel && tipoCred ? Math.max(0, saldoCreditos(clienteSel.id, tipoCred)) : 0;
-  const previa = clienteSel && tipoCred ? previaCredito(f.dur, saldoPlano, salaSel?.valorHora) : null;
+  // Desconto de sala do plano do cliente (Planos → direitos.descontoSala).
+  const descontoPlano = clienteSel ? descontoSalaPct(direitosDoCliente(planosDe ? planosDe(activeUnit) : [], clienteSel)) : 0;
+  const previa = clienteSel && tipoCred ? previaCredito(f.dur, saldoPlano, salaSel?.valorHora, descontoPlano) : null;
   // Datas reais do bloco escolhido (na semana exibida) → conflito por DATA/HORA.
   const startDate = dataDoSlot(semanaInicio, f.dia, f.inicio);
   const endDate = new Date(startDate); endDate.setHours(startDate.getHours() + f.dur);

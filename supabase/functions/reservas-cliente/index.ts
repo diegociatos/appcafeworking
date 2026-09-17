@@ -25,6 +25,7 @@ import {
 } from "../_shared/reservaCliente.ts";
 import { erroInterno, nomesDasUnidades, unidadesDoCliente } from "../_shared/clienteArea.ts";
 import { fotosPublicas } from "../_shared/catalogo.ts";
+import { descontoSalaDoCliente } from "../_shared/direitosPlano.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -125,10 +126,18 @@ Deno.serve(async (req) => {
         payment_status: r.payment_status, pode_cancelar: podeCancelar(r),
       }));
 
+    // Desconto de sala do plano por unidade (direitos.descontoSala). A tela usa
+    // só para mostrar o valor certo antes de confirmar; quem aplica é a
+    // criar-reserva.
+    const descontos: Record<string, { sala: number }> = {};
+    for (const id of unidades) {
+      descontos[id] = { sala: await descontoSalaDoCliente(admin, id, usuario.email) };
+    }
+
     return json({
       hoje: hojeBRT(), data, datas, janela: JANELA_CLIENTE, antecedencia_cancelamento_horas: ANTECEDENCIA_CANCELAMENTO_HORAS,
       unidades: unidades.map((id) => ({ id, nome: nomes.get(id) || "" })),
-      salas, ocupados, saldos, reservas,
+      salas, ocupados, saldos, descontos, reservas,
     }, 200, req);
   } catch (e) {
     return erroInterno(req, "reservas-cliente", e);

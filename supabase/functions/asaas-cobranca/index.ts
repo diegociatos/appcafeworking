@@ -3,7 +3,8 @@
 //
 // POST /functions/v1/asaas-cobranca
 // body: { unidade_id, cliente, cliente_documento, cliente_email?, valor,
-//         vencimento, descricao?, tipo? (BOLETO|PIX|CREDIT_CARD|UNDEFINED) }
+//         vencimento, descricao?, tipo? (BOLETO|PIX|CREDIT_CARD|UNDEFINED),
+//         reserva_id? (cobrança do excedente de horas, feita na Agenda de Salas) }
 //
 // Credencial pelo _shared/asaas.ts: Vault asaas_<unidade> ou o secret
 // ASAAS_API_KEY. Cria/recupera o cliente no Asaas, cria a cobrança e grava em
@@ -60,6 +61,18 @@ Deno.serve(async (req) => {
     const valor = Number(body.valor);
     if (!(valor > 0)) return json({ error: "Valor inválido." }, 400);
 
+    // Cobrança do excedente de uma reserva: vincula à reserva (a tela mostra e o
+    // status-pagamento acha a fatura). A reserva precisa ser da mesma unidade.
+    let reservaId: string | null = null;
+    if (body.reserva_id) {
+      const { data: reserva } = await admin.from("reservas").select("id, unidade_id")
+        .eq("id", String(body.reserva_id)).maybeSingle();
+      if (!reserva || reserva.unidade_id !== body.unidade_id) {
+        return json({ error: "Reserva não encontrada nesta unidade." }, 400);
+      }
+      reservaId = reserva.id;
+    }
+
     // 1) cliente no Asaas (cria; se já existir, o Asaas resolve pelo cpfCnpj)
     const doc = String(body.cliente_documento).replace(/\D/g, "");
     const customer = await asaas(cred, "/customers", "POST", {
@@ -91,6 +104,7 @@ Deno.serve(async (req) => {
       status: pay.status === "RECEIVED" || pay.status === "CONFIRMED" ? "pago" : "pendente",
       invoice_url: pay.invoiceUrl || null, boleto_url: pay.bankSlipUrl || null,
       linha_digitavel: linha || null, pix_payload: pixPayload || null,
+      reserva_id: reservaId, origem: reservaId ? "reserva" : null,
       created_by: auth.user.id,
       ...camposDaDivisao(snapshot, valor),
     };
