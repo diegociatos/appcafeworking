@@ -38,6 +38,7 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { handleOptions, json } from "../_shared/cors.ts";
 import { adminClient } from "../_shared/supabaseAdmin.ts";
 import { atualizarCobranca, garantirCobranca } from "../_shared/cobrancas.ts";
+import { registrarLancamentoReserva, removerLancamentoReserva } from "../_shared/lancamentoReserva.ts";
 import { avisarParceiro, contaDaUnidade, lancarGarantia, linkParceiro } from "../_shared/parceirosDb.ts";
 import { ehContaParceira, linhaValorParceiro } from "../_shared/parceiros.ts";
 import { getNotifProvider, renderTemplate } from "../_shared/notify/index.ts";
@@ -337,7 +338,7 @@ async function avisarParceiroReserva(admin: SupabaseClient, r: Linha, pay: Linha
 
 async function tratarReserva(admin: SupabaseClient, reservaId: string, pay: Linha, status: string): Promise<string> {
   const { data: r } = await admin
-    .from("reservas").select("id, unidade_id, sala_id, cliente_nome, cliente_email, cliente_documento, cliente_telefone, status, start_at, end_at")
+    .from("reservas").select("id, unidade_id, sala_id, cliente_nome, cliente_email, cliente_documento, cliente_telefone, status, start_at, end_at, valor, desconto_plano_pct")
     .eq("id", reservaId).maybeSingle();
   if (!r) return "reserva_inexistente";
 
@@ -360,6 +361,14 @@ async function tratarReserva(admin: SupabaseClient, reservaId: string, pay: Linh
       await confirmarReservaPorEmail(admin, r);
       await cadastrarClienteDaReserva(admin, r);
       await avisarParceiroReserva(admin, r, pay);
+      // Receita da reserva no financeiro. Id determinístico: reentrega do
+      // webhook (CONFIRMED + RECEIVED) só reescreve a mesma linha.
+      const { data: sala } = await admin.from("salas").select("nome, tipo").eq("id", r.sala_id).maybeSingle();
+      await registrarLancamentoReserva(admin, {
+        reservaId: String(r.id), unidadeId: r.unidade_id, salaNome: sala?.nome, salaTipo: sala?.tipo,
+        clienteNome: r.cliente_nome, valor: Number(pay.value) > 0 ? Number(pay.value) : Number(r.valor || 0),
+        status: "pago", quando: new Date().toISOString(), descontoPct: Number(r.desconto_plano_pct || 0),
+      });
     }
     return `reserva_${resultado}`;
   }
@@ -368,6 +377,8 @@ async function tratarReserva(admin: SupabaseClient, reservaId: string, pay: Linh
     await admin.from("reservas")
       .update({ status: "cancelada", payment_status: status })
       .eq("id", r.id).in("status", ["aguardando_pagamento", "confirmada"]);
+    // Pagamento cancelado/estornado no Asaas: a receita não existe mais.
+    await removerLancamentoReserva(admin, r.unidade_id, String(r.id));
   }
   return `reserva_${status}`;
 }

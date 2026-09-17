@@ -18,7 +18,7 @@ import { UNIDADES, RESERVAS_INIT, CLIENTES, LEADS_INIT, ETAPAS_CRM, ORIGENS_INIT
 import { boletosApi } from "./boletosApi.js";
 import { nfseApi } from "./nfseApi.js";
 import {
-  upsertConfigFiscal, insertCliente, patchCliente, deleteClienteDb,
+  upsertConfigFiscal, insertCliente, insertClienteOuFalhar, patchCliente, deleteClienteDb,
   putAppState, delAppState, upsertSalaDb, deleteSalaDb, insertCreditoDb, inserirCreditoOuFalhar,
   upsertBankAccountDb, patchBankAccountDb,
 } from "./supabaseDb.js";
@@ -55,6 +55,11 @@ const StoreContext = createContext(null);
 
 // Competencia atual (mes 0..11 + ano) a partir da data real - sem datas fixas.
 const { mes: MES_ATUAL, ano: ANO_ATUAL } = getCurrentCompetencia();
+
+// Id do lançamento da reserva. IGUAL ao que a Edge Function usa
+// (_shared/lancamentoReserva.ts): uma reserva tem um lançamento só, venha ele da
+// recepção, da área do cliente ou do pagamento pelo site.
+export const idLancamentoDaReserva = (reservaId) => `lc_res_${reservaId}`;
 
 // Sequencial de nota fiscal (modo demo). Mutado no provider (emitirNota).
 let _nfSeq = 124;
@@ -389,13 +394,17 @@ export function StoreProvider({ children }) {
     }
     setReservas((rs) => [...rs, nova]);
     if (unidadeId) enfileirarEmail(unidadeId, { cliente: r.cliente, evento: "reserva", dados: { sala: sala?.nome, quando: [r.dia, r.inicio].filter(Boolean).join(" ") } });
-    // Contabiliza o valor da reserva no financeiro (conta a receber)
+    // Contabiliza o valor da reserva no financeiro (conta a receber). Id igual ao
+    // do servidor (lc_res_<reserva>): uma reserva, um lançamento — e o
+    // cancelamento sabe qual apagar.
     if (valor > 0 && unidadeId) {
       const sub = sala?.tipo === "Privativa" ? "Aluguel de Salas Privativas" : "Aluguel de Sala de Reunião";
       addLancamento(unidadeId, {
+        id: idLancamentoDaReserva(id),
         tipo: "entrada", descricao: `Reserva ${sala?.nome || ""} · ${r.cliente}`,
         categoria: "Receita Operacional Bruta", subcategoria: sub, valor,
         contaId: contas.find((c) => c.unidadeId === unidadeId)?.id, data: "—", status: "previsto",
+        origem: "reserva", reservaId: id,
       });
     }
     return { ok: true, reserva: nova };
@@ -428,6 +437,13 @@ export function StoreProvider({ children }) {
       paymentStatus: resp.reserva.payment_status || "pendente", vista: (r.origem || "recepcao") !== "app",
       // horas cobertas pelo plano e excedente a cobrar (mostrado no detalhe da reserva)
       ...(resp.credito ? { credito: resp.credito } : {}),
+      // desconto de sala do plano, calculado no servidor (com ou sem crédito de horas)
+      ...(Number(resp.desconto_sala_pct || resp.credito?.descontoPct || 0) > 0
+        ? {
+          descontoPlanoPct: Number(resp.desconto_sala_pct || resp.credito?.descontoPct),
+          valorSemDesconto: resp.credito?.valorSemDesconto ?? null,
+        }
+        : {}),
     };
     setReservas((rs) => [...rs, nova]);
     // Reflete o consumo de crédito no ledger local (o débito já foi gravado no
@@ -443,9 +459,18 @@ export function StoreProvider({ children }) {
       }, ...ls]);
     }
     // A confirmação por e-mail sai do servidor (criar-reserva), com a preferência do cliente.
+    // O lançamento usa o mesmo id do servidor (lc_res_<reserva>): a reserva feita
+    // pelo cliente no app já vem lançada de lá e aqui não duplica.
     if (valorFinal > 0 && unidadeId) {
       const sub = sala?.tipo === "Privativa" ? "Aluguel de Salas Privativas" : "Aluguel de Sala de Reunião";
-      addLancamento(unidadeId, { tipo: "entrada", descricao: `Reserva ${sala?.nome || ""} · ${r.cliente}`, categoria: "Receita Operacional Bruta", subcategoria: sub, valor: valorFinal, contaId: contas.find((c) => c.unidadeId === unidadeId)?.id, data: "—", status: "previsto" });
+      const pct = Number(resp.desconto_sala_pct || cr?.descontoPct || 0);
+      addLancamento(unidadeId, {
+        id: idLancamentoDaReserva(resp.reserva.id),
+        tipo: "entrada", descricao: `Reserva ${sala?.nome || ""} · ${r.cliente}${pct > 0 ? ` (−${pct}% do plano)` : ""}`,
+        categoria: "Receita Operacional Bruta", subcategoria: sub, valor: valorFinal,
+        contaId: contas.find((c) => c.unidadeId === unidadeId)?.id, data: "—", status: "previsto",
+        origem: "reserva", reservaId: resp.reserva.id,
+      });
     }
     return { ok: true, reserva: nova, credito: cr || null };
   };
@@ -458,12 +483,16 @@ export function StoreProvider({ children }) {
   const cancelarReserva = async (id, opcoes = {}) => {
     if (!reservasApi.configured) {
       setReservas((rs) => rs.map((r) => (r.id === id ? { ...r, status: "cancelada" } : r)));
-      return { ok: true, horas_devolvidas: 0, devolucoes: [], estorno: "nao_se_aplica", email: "sem_email" };
+      setLancamentos((ls) => ls.filter((l) => l.id !== idLancamentoDaReserva(id)));
+      return { ok: true, horas_devolvidas: 0, devolucoes: [], estorno: "nao_se_aplica", email: "sem_email", lancamento: "removido" };
     }
     const res = await reservasApi.cancelar({ reservaId: id, ...opcoes });
     if (!res.ok) return res;
     const reserva = reservas.find((r) => r.id === id);
     setReservas((rs) => rs.map((r) => (r.id === id ? { ...r, status: "cancelada", paymentStatus: res.payment_status || r.paymentStatus } : r)));
+    // O servidor já apagou o lançamento quando nada foi recebido; a tela
+    // acompanha para o fluxo de caixa não ficar com receita de reserva morta.
+    if (res.lancamento === "removido") setLancamentos((ls) => ls.filter((l) => l.id !== idLancamentoDaReserva(id)));
     // Reflete na tela o estorno das horas já gravado no banco.
     if (Array.isArray(res.devolucoes) && res.devolucoes.length) {
       const agora = new Date().toISOString();
@@ -482,7 +511,9 @@ export function StoreProvider({ children }) {
   // Pedidos da cafeteria (cliente faz no app → recepção recebe) -------------
   const addPedido = (unidadeId, p) => {
     const id = "pd" + Date.now();
-    setPedidos((ps) => [{ id, unidadeId, status: "recebido", origem: "app", ...p }, ...ps]);
+    // createdAt sempre: é por ele que "Vendas hoje" e "Cafeteria (mês)" sabem
+    // de quando é o pedido.
+    setPedidos((ps) => [{ id, unidadeId, status: "recebido", origem: "app", createdAt: new Date().toISOString(), ...p }, ...ps]);
     // Baixa automática de estoque + CMV. Quando o produto tem ficha técnica,
     // consome cada insumo (qtd da ficha × quantidade vendida) e calcula o CMV
     // pelo custo dos insumos. Sem ficha, baixa pelo próprio nome (comportamento
@@ -692,6 +723,22 @@ export function StoreProvider({ children }) {
     };
     setClientes((cs) => [novo, ...cs]);
     if (nfseApi.configured) insertCliente(novo).catch(() => {});
+    return novo;
+  };
+  /**
+   * Igual a addCliente, mas ESPERA o banco confirmar e LANÇA em falha. Quem
+   * mostra "criado com sucesso" (conversão de lead no CRM) usa esta: antes o
+   * erro de gravação era engolido e a tela comemorava um cliente que não existia.
+   */
+  const criarClienteConfirmado = async (c) => {
+    const unidadeId = c.unidadeId || unidades.find((u) => u.nome === c.unidade)?.id || activeUnit;
+    const novo = {
+      id: "c" + Date.now(), status: "ativo", docs: [],
+      desde: c.desde || new Date().toISOString().slice(0, 10),
+      ...c, unidadeId,
+    };
+    if (nfseApi.configured) await insertClienteOuFalhar(novo);
+    setClientes((cs) => [novo, ...cs]);
     return novo;
   };
   const updateCliente = (id, patch) => {
@@ -1386,6 +1433,9 @@ export function StoreProvider({ children }) {
         status: r.status, origem: r.origem, valor: Number(r.valor || 0),
         paymentStatus: r.payment_status, vista: r.origem !== "app",
         observacao: r.observacao || "", telefone: r.cliente_telefone || "",
+        // desconto de sala do plano aplicado pelo servidor (Planos → direitos)
+        descontoPlanoPct: r.desconto_plano_pct != null ? Number(r.desconto_plano_pct) : 0,
+        valorSemDesconto: r.valor_sem_desconto != null ? Number(r.valor_sem_desconto) : null,
       }));
       const ids = new Set(mapped.map((m) => m.id));
       setReservas((prev) => [...prev.filter((r) => !ids.has(r.id)), ...mapped]);
@@ -1417,7 +1467,7 @@ export function StoreProvider({ children }) {
       notificacoesEmail, notificacoesEmailDe, enfileirarEmail,
       addFranqueado, updateFranqueado, removeFranqueado,
       addUsuario, adicionarUsuario, updateUsuario, removeUsuario, usuariosDe,
-      clientes, clientesDe, addCliente, updateCliente, removeCliente,
+      clientes, clientesDe, addCliente, criarClienteConfirmado, updateCliente, removeCliente,
       addUnidade, updateUnidade,
       addSala, updateSala, removeSala,
       addProduto, updateProduto, removeProduto,
