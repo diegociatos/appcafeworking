@@ -3,7 +3,7 @@ import {
   Barcode, Plus, Landmark, Copy, Check, Download, XCircle, CircleDollarSign,
   QrCode, Building2, ShieldCheck, Trash2, Info, RefreshCw, Plug, CheckCircle2, ExternalLink,
 } from "lucide-react";
-import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
+import { Card, Badge, Btn, PageHead, Modal, Field, Empty, ConfirmDialog } from "../components/ui.jsx";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 import { supabaseConfigured, boletosApi } from "../lib/boletosApi.js";
@@ -41,6 +41,18 @@ export default function Boletos() {
   const [emitModal, setEmitModal] = useState(false);
   const [contaModal, setContaModal] = useState(null);
   const [integracao, setIntegracao] = useState(null);
+  const [removendo, setRemovendo] = useState(null); // conta a confirmar
+  const [avisoContas, setAvisoContas] = useState(null); // { ok, texto }
+
+  const confirmarRemocao = async () => {
+    const conta = removendo;
+    setRemovendo(null);
+    if (!conta) return;
+    const r = await store.removeBankAccount(conta.id);
+    if (!r.ok) setAvisoContas({ ok: false, texto: r.error });
+    else setAvisoContas({ ok: !r.aviso, texto: r.aviso || `Conta “${conta.apelido}” removida${supabaseConfigured ? " e credencial apagada do cofre" : ""}.` });
+    if (contaSel === conta.id) setContaSel("");
+  };
 
   return (
     <div>
@@ -120,8 +132,25 @@ export default function Boletos() {
         />
       )}
       {aba === "contas" && (
-        <ListaContas contas={contas} onNova={() => setContaModal({})} onRemover={(c) => store.removeBankAccount(c.id)} onIntegracao={(c) => setIntegracao(c)} />
+        <>
+          {avisoContas && (
+            <div role="status" style={{ display: "flex", gap: 8, alignItems: "flex-start", background: avisoContas.ok ? C.greenPale : C.redPale, color: avisoContas.ok ? C.green : C.red, borderRadius: 10, padding: "9px 12px", fontSize: 12.5, marginBottom: 12 }}>
+              {avisoContas.ok ? <CheckCircle2 size={15} style={{ flexShrink: 0, marginTop: 1 }} /> : <XCircle size={15} style={{ flexShrink: 0, marginTop: 1 }} />}
+              <span style={{ flex: 1 }}>{avisoContas.texto}</span>
+              <button onClick={() => setAvisoContas(null)} className="cw-btn" title="Fechar" style={{ color: "inherit", padding: 0 }}><XCircle size={14} /></button>
+            </div>
+          )}
+          <ListaContas contas={contas} onNova={() => setContaModal({})} onRemover={(c) => setRemovendo(c)} onIntegracao={(c) => setIntegracao(c)} />
+        </>
       )}
+      <ConfirmDialog
+        aberto={!!removendo}
+        titulo="Remover conta bancária?"
+        mensagem={removendo ? `A conta “${removendo.apelido}” sai da unidade${supabaseConfigured ? " e a credencial dela (Client ID/Secret e certificado) é apagada do cofre" : ""}. Conta que já emitiu boleto não pode ser removida.` : ""}
+        textoConfirmar="Remover"
+        onConfirmar={confirmarRemocao}
+        onCancelar={() => setRemovendo(null)}
+      />
 
       {emitModal && (
         <Modal title="Emitir boleto" onClose={() => setEmitModal(false)} maxWidth={520}>
@@ -134,7 +163,7 @@ export default function Boletos() {
       )}
       {contaModal && (
         <Modal title="Nova conta bancária" onClose={() => setContaModal(null)} maxWidth={520}>
-          <ContaForm unidadeId={activeUnit} onSalvar={(dados) => { store.addBankAccount(activeUnit, dados); setContaModal(null); }} />
+          <ContaForm unidadeId={activeUnit} contas={contas} onSalvar={async (dados) => { await store.addBankAccount(activeUnit, dados); setContaModal(null); setAba("contas"); }} />
         </Modal>
       )}
       {integracao && (
@@ -344,17 +373,21 @@ function IntegracaoBanco({ conta, onConectar, onDesconectar, onToggle }) {
   const usaOAuth = !mtls && oauthConfigured(conta.banco);
   const [testando, setTestando] = useState(false);
   const [resultado, setResultado] = useState(null); // { ok, detalhe }
+  // Conectar/desconectar/preferências gravam no banco: se recusar, mostra o motivo.
+  const gravar = (promessa) => Promise.resolve(promessa).then((r) => {
+    if (r && r.ok === false) setResultado({ ok: false, detalhe: `não foi possível salvar: ${r.error}` });
+  });
   const conectar = () => {
     if (usaOAuth) { conectarNoBanco(conta.banco, conta.id); return; } // BTG: redireciona ao consentimento
     if (mtls && boletosApi.configured) {
       setTestando(true); setResultado(null);
       boletosApi.testar(conta.id)
-        .then((r) => { setResultado(r); if (r?.ok) onConectar(); })
+        .then((r) => { setResultado(r); if (r?.ok) gravar(onConectar()); })
         .catch((e) => setResultado({ ok: false, detalhe: e.message }))
         .finally(() => setTestando(false));
       return;
     }
-    onConectar(); // demo (sem backend): simula validado
+    gravar(onConectar()); // demo (sem backend): simula validado
   };
   return (
     <>
@@ -380,7 +413,7 @@ function IntegracaoBanco({ conta, onConectar, onDesconectar, onToggle }) {
       {conectado ? (
         <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
           <Btn variant="ghost" onClick={conectar} disabled={testando} style={{ flex: 1, justifyContent: "center", opacity: testando ? 0.6 : 1 }}><RefreshCw size={15} /> {testando ? "Testando…" : mtls ? "Testar conexão" : "Reconectar"}</Btn>
-          <Btn variant="ghost" onClick={onDesconectar} style={{ color: C.red, borderColor: C.redPale }}>Desconectar</Btn>
+          <Btn variant="ghost" onClick={() => gravar(onDesconectar())} style={{ color: C.red, borderColor: C.redPale }}>Desconectar</Btn>
         </div>
       ) : (
         <Btn onClick={conectar} disabled={testando} style={{ width: "100%", justifyContent: "center", background: b.cor, marginBottom: 6, opacity: testando ? 0.6 : 1 }}>
@@ -397,8 +430,8 @@ function IntegracaoBanco({ conta, onConectar, onDesconectar, onToggle }) {
 
       <div style={{ borderTop: `1px solid ${C.border2}`, marginTop: 12, paddingTop: 4 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: C.text3, letterSpacing: 0.4, margin: "6px 0" }}>INTEGRAÇÕES AUTOMÁTICAS</div>
-        <Switch on={conta.autoRegistrar !== false} onClick={() => onToggle({ autoRegistrar: !(conta.autoRegistrar !== false) })} label="Registrar automaticamente os boletos gerados" sub="Cada boleto é registrado no banco na hora da emissão." />
-        {b.pix !== false && <Switch on={conta.gerarPix !== false} onClick={() => onToggle({ gerarPix: !(conta.gerarPix !== false) })} label="Gerar boletos de cobrança com PIX" sub="Boleto híbrido (boleto + PIX no mesmo documento)." />}
+        <Switch on={conta.autoRegistrar !== false} onClick={() => gravar(onToggle({ autoRegistrar: !(conta.autoRegistrar !== false) }))} label="Registrar automaticamente os boletos gerados" sub="Cada boleto é registrado no banco na hora da emissão." />
+        {b.pix !== false && <Switch on={conta.gerarPix !== false} onClick={() => gravar(onToggle({ gerarPix: !(conta.gerarPix !== false) }))} label="Gerar boletos de cobrança com PIX" sub="Boleto híbrido (boleto + PIX no mesmo documento)." />}
       </div>
 
       <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: C.tealPale, borderRadius: 10, padding: "9px 12px", fontSize: 11.5, color: C.teal, marginTop: 14 }}>
@@ -509,7 +542,7 @@ function EmitirForm({ contas, contaPadrao, onEmitir }) {
 }
 
 // ===========================================================================
-function ContaForm({ onSalvar, unidadeId }) {
+function ContaForm({ onSalvar, unidadeId, contas = [] }) {
   const [f, setF] = useState({
     banco: "inter",
     tipo: "franqueado",
@@ -533,6 +566,8 @@ function ContaForm({ onSalvar, unidadeId }) {
   const mtls = f.banco !== "btg"; // Inter/Itaú/Bradesco exigem certificado mTLS
   const certOk = !mtls || (f.formatoCert === "pfx" ? Boolean(f.pfxBase64) : Boolean(f.certPem.trim() && f.keyPem.trim()));
   const valido = f.apelido.trim() && f.clientId.trim() && f.clientSecret.trim() && certOk;
+  // A credencial é uma por banco na unidade: cadastrar de novo o mesmo banco regrava a conta existente.
+  const contaMesmoBanco = contas.find((c) => c.banco === f.banco);
 
   // Lê o arquivo anexado. .crt/.cer/.pem/.key viram texto PEM (DER binário é convertido); .pfx vira base64.
   const lerArquivo = async (arquivo, tipo) => {
@@ -563,7 +598,7 @@ function ContaForm({ onSalvar, unidadeId }) {
       beneficiarioNome: f.beneficiarioNome, beneficiarioDocumento: f.beneficiarioDocumento,
       pixChave: f.pixChave, credenciaisRef: ref,
     };
-    if (!integracaoApi.configured) { onSalvar(dados); return; }
+    if (!integracaoApi.configured) { Promise.resolve(onSalvar(dados)).catch((e) => setErro(e.message)); return; }
     setBusy(true);
     integracaoApi.salvarBanco(unidadeId, f.banco, {
       client_id: f.clientId.trim(), client_secret: f.clientSecret.trim(),
@@ -667,9 +702,15 @@ function ContaForm({ onSalvar, unidadeId }) {
         <ShieldCheck size={15} style={{ flexShrink: 0, marginTop: 1 }} />
         <span>As credenciais são enviadas direto ao backend e guardadas <b>criptografadas no cofre</b> — não ficam no navegador. <b>Dica:</b> para receber por cartão/PIX/boleto sem parceria bancária, use a aba <b>Cobranças (Asaas)</b>.</span>
       </div>
+      {contaMesmoBanco && (
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: C.amberPale, borderRadius: 10, padding: "9px 12px", fontSize: 11.5, color: C.amber, marginBottom: 12 }}>
+          <Info size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>Esta unidade já tem a conta <b>{contaMesmoBanco.apelido}</b> no {BANCOS[f.banco]?.label}. Cada banco guarda uma credencial por unidade: cadastrar substitui os dados e a credencial dessa conta.</span>
+        </div>
+      )}
       {erro && <div style={{ fontSize: 12.5, color: C.red, marginBottom: 10 }}>{erro}</div>}
       <Btn style={{ width: "100%", justifyContent: "center", opacity: (valido && !busy) ? 1 : 0.5 }} onClick={() => !busy && salvar()}>
-        <Building2 size={16} /> {busy ? "Salvando…" : "Cadastrar conta"}
+        <Building2 size={16} /> {busy ? "Salvando…" : contaMesmoBanco ? "Substituir conta" : "Cadastrar conta"}
       </Btn>
     </>
   );

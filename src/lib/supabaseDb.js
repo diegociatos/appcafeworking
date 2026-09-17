@@ -175,6 +175,80 @@ export async function fetchConfigFiscalDb() {
 export async function fetchBoletosDb() {
   return (await getJson("boletos?select=*")) || [];
 }
+// ---- Contas bancárias (public.bank_accounts) ------------------------------
+// RLS: só admin da plataforma e master/financeiro da unidade leem e gravam; a
+// recepção recebe lista vazia. O segredo (client_id/secret, certificado) fica no
+// Vault pela Edge Function salvar-integracao; aqui vai só a referência.
+export const mapBankAccountDb = (r) => ({
+  id: r.id, unidadeId: r.unidade_id, franqueadoId: r.franqueado_id ?? null,
+  banco: r.banco, tipo: r.tipo, apelido: r.apelido || "", ambiente: r.ambiente,
+  beneficiarioNome: r.beneficiario_nome || "", beneficiarioDocumento: r.beneficiario_documento || "",
+  agencia: r.agencia || "", conta: r.conta || "", carteira: r.carteira || "", pixChave: r.pix_chave || "",
+  credenciaisRef: r.credenciais_ref, ativo: r.ativo !== false,
+  conexao: r.conexao || { status: r.conexao_status || "desconectado", boleto: false, pix: false },
+  autoRegistrar: r.opcoes?.autoRegistrar, gerarPix: r.opcoes?.gerarPix,
+  createdAt: r.created_at,
+});
+// Só os campos editáveis presentes no patch (camelCase → coluna).
+const bankAccountToRow = (b) => {
+  const row = {
+    unidade_id: b.unidadeId, franqueado_id: b.franqueadoId,
+    banco: b.banco, tipo: b.tipo, apelido: b.apelido, ambiente: b.ambiente,
+    beneficiario_nome: b.beneficiarioNome, beneficiario_documento: b.beneficiarioDocumento,
+    agencia: b.agencia, conta: b.conta, carteira: b.carteira, pix_chave: b.pixChave,
+    credenciais_ref: b.credenciaisRef, ativo: b.ativo,
+  };
+  if (b.conexao !== undefined) {
+    row.conexao = b.conexao;
+    row.conexao_status = b.conexao?.status || null;
+  }
+  if (b.opcoes !== undefined) row.opcoes = b.opcoes;
+  Object.keys(row).forEach((k) => row[k] === undefined && delete row[k]);
+  return row;
+};
+// Escrita com retorno da linha que LANÇA em falha (a tela mostra o erro).
+async function writeRowsOrThrow(pathQuery, method, body, prefer) {
+  if (!URL || !ANON) throw new Error("Backend não configurado.");
+  const token = await getAccessToken();
+  if (!token) throw new Error("Sessão expirada. Entre de novo.");
+  const res = await fetch(`${URL}/rest/v1/${pathQuery}`, {
+    method,
+    headers: { apikey: ANON, authorization: `Bearer ${token}`, "content-type": "application/json", Prefer: prefer },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    let msg = txt;
+    try { msg = JSON.parse(txt)?.message || txt; } catch { /* texto cru */ }
+    throw new Error(res.status === 401 || res.status === 403
+      ? "Sem permissão: só o master ou o financeiro da unidade cadastra contas bancárias."
+      : `Falha ao gravar a conta bancária (${res.status}): ${String(msg).slice(0, 160)}`);
+  }
+  return res.json().catch(() => []);
+}
+export async function fetchBankAccountsDb() {
+  return ((await getJson("bank_accounts?select=*&order=created_at.asc")) || []).map(mapBankAccountDb);
+}
+/** Grava a conta. Se a unidade já tem conta desse banco (mesma credenciais_ref),
+ *  regrava a existente: o segredo do Vault é um só por banco/unidade. */
+export async function upsertBankAccountDb(conta) {
+  const rows = await writeRowsOrThrow(
+    "bank_accounts?on_conflict=credenciais_ref", "POST", bankAccountToRow(conta),
+    "resolution=merge-duplicates,return=representation",
+  );
+  const r = Array.isArray(rows) ? rows[0] : null;
+  if (!r) throw new Error("A conta bancária não foi gravada (sem permissão na unidade?).");
+  return mapBankAccountDb(r);
+}
+export async function patchBankAccountDb(id, patch) {
+  const rows = await writeRowsOrThrow(
+    `bank_accounts?id=eq.${encodeURIComponent(id)}`, "PATCH", bankAccountToRow(patch), "return=representation",
+  );
+  const r = Array.isArray(rows) ? rows[0] : null;
+  if (!r) throw new Error("A conta bancária não foi atualizada (sem permissão na unidade?).");
+  return mapBankAccountDb(r);
+}
+
 export async function fetchNotasDb() {
   return (await getJson("notas_fiscais?select=*&order=created_at.desc")) || [];
 }

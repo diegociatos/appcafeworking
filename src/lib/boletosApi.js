@@ -45,4 +45,6 @@ export const boletosApi = {
   // Valida as credenciais da conta (OAuth + mTLS) sem emitir boleto. Retorna
   // { ok, detalhe, ambiente } — não lança em falha de credencial (ok:false).
   testar: (bank_account_id) => callFn("testar-banco", { bank_account_id }),
+  // Remove a conta e apaga a credencial do Vault. 409 se a conta já emitiu boleto.
+  removerConta: (bank_account_id) => callFn("remover-conta-bancaria", { bank_account_id }),
 };

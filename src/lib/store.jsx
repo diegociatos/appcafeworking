@@ -20,6 +20,7 @@ import { nfseApi } from "./nfseApi.js";
 import {
   upsertConfigFiscal, insertCliente, patchCliente, deleteClienteDb,
   putAppState, delAppState, upsertSalaDb, deleteSalaDb, insertCreditoDb, inserirCreditoOuFalhar,
+  upsertBankAccountDb, patchBankAccountDb,
 } from "./supabaseDb.js";
 import { getCurrentCompetencia, parseDateToCompetencia, anoDoLancamento } from "./dateUtils.js";
 import { legacyReservaToDateRange, dateRangeToLegacy, temConflito, TZ } from "./reservas.js";
@@ -924,21 +925,81 @@ export function StoreProvider({ children }) {
   };
 
   // Boletos / contas bancárias --------------------------------------------
-  // ⚠️ Demonstração: em produção, addBankAccount manda a credencial pro Vault
-  // e emitirBoleto/cancelarBoleto chamam as Edge Functions (boletosApi.js).
+  // Produção: a conta vive em public.bank_accounts (RLS: admin + master/financeiro)
+  // e a credencial no Vault (salvar-integracao, antes de chamar addBankAccount).
+  // emitir/consultar/cancelar/testar acham a conta pelo id (uuid) gravado aqui.
+  // Demonstração (sem Supabase): tudo em memória.
   const bankAccountsDe = (unidadeId) => bankAccounts.filter((b) => b.unidadeId === unidadeId);
-  const addBankAccount = (unidadeId, data) =>
-    setBankAccounts((bs) => [...bs, { id: "ba_" + Date.now(), unidadeId, ativo: true, ...data }]);
-  const updateBankAccount = (id, patch) =>
-    setBankAccounts((bs) => bs.map((b) => (b.id === id ? { ...b, ...patch } : b)));
-  const removeBankAccount = (id) => setBankAccounts((bs) => bs.filter((b) => b.id !== id));
-  // Conexão (consentimento OAuth) com o banco. Em produção, o "Conectar"
-  // redireciona pro consentimento do banco e o callback marca como conectado;
-  // aqui (demo) simulamos a autorização concedida.
-  const conectarBanco = (id) =>
-    setBankAccounts((bs) => bs.map((b) => (b.id === id ? { ...b, conexao: { status: "conectado", boleto: true, pix: true, conectadoEm: new Date().toISOString().slice(0, 10) } } : b)));
-  const desconectarBanco = (id) =>
-    setBankAccounts((bs) => bs.map((b) => (b.id === id ? { ...b, conexao: { status: "desconectado", boleto: false, pix: false } } : b)));
+  const _trocarConta = (conta) =>
+    setBankAccounts((bs) => (bs.some((b) => b.id === conta.id)
+      ? bs.map((b) => (b.id === conta.id ? conta : b))
+      : [...bs.filter((b) => !(b.unidadeId === conta.unidadeId && b.credenciaisRef === conta.credenciaisRef)), conta]));
+  // Assíncrona. Modo real: grava no banco e LANÇA em falha (a tela mostra o erro).
+  const addBankAccount = async (unidadeId, data) => {
+    if (!REAL) {
+      const nova = { id: "ba_" + Date.now(), unidadeId, ativo: true, ...data };
+      setBankAccounts((bs) => [...bs, nova]);
+      return nova;
+    }
+    const unidade = unidades.find((u) => u.id === unidadeId);
+    const salva = await upsertBankAccountDb({
+      ...data, unidadeId, ativo: true,
+      franqueadoId: data.tipo === "franqueador" ? null : (unidade?.franqueadoId ?? null),
+      conexao: { status: "desconectado", boleto: false, pix: false },
+    });
+    _trocarConta(salva);
+    return salva;
+  };
+  // Persiste um patch (modo real). Otimista: aplica na tela e desfaz se o banco
+  // recusar. Retorna Promise<{ ok, error? }> para a tela avisar.
+  const _gravarContaBancaria = (id, patchLocal, patchDb) => {
+    const antes = bankAccounts.find((b) => b.id === id);
+    setBankAccounts((bs) => bs.map((b) => (b.id === id ? { ...b, ...patchLocal } : b)));
+    if (!REAL || !antes) return Promise.resolve({ ok: true });
+    return patchBankAccountDb(id, patchDb)
+      .then((salva) => { _trocarConta(salva); return { ok: true }; })
+      .catch((erro) => {
+        setBankAccounts((bs) => bs.map((b) => (b.id === id ? antes : b)));
+        return { ok: false, error: String(erro?.message || erro) };
+      });
+  };
+  const updateBankAccount = (id, patch) => {
+    const antes = bankAccounts.find((b) => b.id === id);
+    const patchDb = { ...patch };
+    // Preferências da integração moram na coluna opcoes (jsonb).
+    if ("autoRegistrar" in patch || "gerarPix" in patch) {
+      const atual = { ...antes, ...patch };
+      delete patchDb.autoRegistrar; delete patchDb.gerarPix;
+      patchDb.opcoes = { autoRegistrar: atual.autoRegistrar !== false, gerarPix: atual.gerarPix !== false };
+    }
+    return _gravarContaBancaria(id, patch, patchDb);
+  };
+  // Assíncrona. Modo real: a Edge Function remove a linha e apaga a credencial
+  // do Vault (recusa se a conta já emitiu boleto). Retorna { ok, error?, aviso? }.
+  const removeBankAccount = async (id) => {
+    if (REAL && !/^ba_/.test(String(id))) {
+      try {
+        const r = await boletosApi.removerConta(id);
+        setBankAccounts((bs) => bs.filter((b) => b.id !== id));
+        return { ok: true, aviso: r?.aviso || null };
+      } catch (e) {
+        return { ok: false, error: String(e?.message || e) };
+      }
+    }
+    setBankAccounts((bs) => bs.filter((b) => b.id !== id));
+    return { ok: true };
+  };
+  // Conexão com o banco. mTLS (Inter/Itaú/Bradesco): marcada depois que
+  // testar-banco valida as credenciais. BTG: o bank-oauth-callback grava no
+  // banco. Demo: simula a autorização concedida.
+  const conectarBanco = (id) => {
+    const conexao = { status: "conectado", boleto: true, pix: true, conectadoEm: new Date().toISOString().slice(0, 10) };
+    return _gravarContaBancaria(id, { conexao }, { conexao });
+  };
+  const desconectarBanco = (id) => {
+    const conexao = { status: "desconectado", boleto: false, pix: false };
+    return _gravarContaBancaria(id, { conexao }, { conexao });
+  };
 
   const boletosDe = (unidadeId) =>
     boletos.filter((b) => b.unidadeId === unidadeId).slice().reverse();
@@ -1220,7 +1281,7 @@ export function StoreProvider({ children }) {
 
   // Hidrata as entidades operacionais (app_state) + as de tabela própria
   // (boletos, notas, config fiscal). Chamado pelo App.jsx após o login.
-  const hydrateOperacional = ({ appState, boletos: bs, notas, config, reservas: reservasDb, creditos, cobrancas: cobrancasDb } = {}) => {
+  const hydrateOperacional = ({ appState, boletos: bs, notas, config, reservas: reservasDb, creditos, cobrancas: cobrancasDb, bankAccounts: contasBancariasDb } = {}) => {
     if (appState?.length) {
       const byEntity = {};
       for (const r of appState) (byEntity[r.entity] ||= []).push(r.doc);
@@ -1278,6 +1339,9 @@ export function StoreProvider({ children }) {
     if (notas?.length) setNotasFiscais(notas.map(_mapApiNota));
     if (config?.length) setConfigFiscal(config.map(_mapConfigFiscal));
     if (Array.isArray(cobrancasDb)) setCobrancas(cobrancasDb.map(mapCobrancaDb));
+    // Contas bancárias (tabela bank_accounts, já no formato do store). A RLS só
+    // devolve para master/financeiro/admin; a recepção recebe lista vazia.
+    if (Array.isArray(contasBancariasDb)) setBankAccounts(contasBancariasDb);
     // Reservas relacionais (tabela) — fonte das reservas novas. Mescla com as do
     // app_state por id (a relacional prevalece).
     if (reservasDb?.length) {
