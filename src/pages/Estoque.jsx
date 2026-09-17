@@ -104,9 +104,15 @@ export default function Estoque() {
       {baixos.length > 0 && filtro === "todos" && (
         <div style={{ display: "flex", alignItems: "flex-start", gap: 10, background: C.amberPale, border: `1px solid ${C.amber}55`, borderRadius: 12, padding: "12px 14px", marginBottom: 16 }}>
           <AlertTriangle size={18} color={C.amber} style={{ flexShrink: 0, marginTop: 1 }} />
+          {/* Nada é enviado por e-mail ou WhatsApp: o alerta vive nas telas
+              (aqui, no Centro de Comando e no PDV). Antes o texto dizia que a
+              recepção tinha sido avisada, o que nunca aconteceu. */}
           <div style={{ fontSize: 13, color: C.text2 }}>
             <b>{baixos.length} {baixos.length > 1 ? "itens precisam" : "item precisa"} de reposição.</b>{" "}
-            Recepção e responsável avisados: {baixos.map((b) => b.nome).join(", ")}.
+            {baixos.map((b) => b.nome).join(", ")}.
+            <div style={{ fontSize: 12, color: C.text3, marginTop: 2 }}>
+              O alerta aparece aqui, no Centro de Comando e no PDV — não sai aviso por e-mail.
+            </div>
           </div>
         </div>
       )}
@@ -486,7 +492,7 @@ function ItemForm({ inicial, onSalvar }) {
           <span>Margem de venda</span><b style={{ color: C.teal }}>{margem}%</b>
         </div>
       )}
-      <div style={{ fontSize: 11.5, color: C.text3, marginBottom: 14 }}>Quando a quantidade ficar ≤ o mínimo, recepção e responsável recebem o alerta.</div>
+      <div style={{ fontSize: 11.5, color: C.text3, marginBottom: 14 }}>Quando a quantidade ficar ≤ o mínimo, o item entra no alerta de reposição desta tela, do Centro de Comando e do PDV.</div>
       <Btn style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.5 }} onClick={() => valido && onSalvar({ ...f })}>
         <Boxes size={16} /> {inicial.id ? "Salvar item" : "Cadastrar item"}
       </Btn>
