@@ -6,6 +6,9 @@
 //   { acao: "salvar", conta_id, dados }               → { ok, conta }
 //       grava em public.contas os dados editados na tela (plano, mensalidade,
 //       razão social, documento...). O e-mail é o login do master e não muda aqui.
+//       Também os dados da rede de parceiros (tipo, percentuais, walletId,
+//       situação, e-mails de aviso). Conta que vira parceira recebe a tabela
+//       nacional nas unidades pelo gatilho do banco (20260921120000).
 //   { acao: "preparar_contrato", conta_id, nome, mime, bytes } → { ok, id, upload_url }
 //       link de envio de uso único para o bucket privado contratos-contas
 //   { acao: "confirmar_contrato", conta_id, id, nome } → { ok, conta }

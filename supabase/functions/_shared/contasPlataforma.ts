@@ -6,6 +6,8 @@
 // (as funções conferem platform_admins antes).
 // ============================================================================
 
+import { STATUS_PARCEIRO, type StatusParceiro } from "./parceiros.ts";
+
 export const BUCKET_CONTRATOS_CONTAS = "contratos-contas";
 export const MIMES_CONTRATO = ["application/pdf", "image/jpeg", "image/png"];
 /** Mesmo teto do bucket (file_size_limit). */
@@ -24,7 +26,28 @@ export type CamposConta = {
   endereco?: string | null;
   cidade?: string | null;
   observacoes?: string | null;
+  // rede de parceiros (docs/PARCEIROS.md)
+  tipo?: "propria" | "parceiro";
+  parceiro_percentual?: number;
+  garantia_percentual?: number;
+  asaas_wallet_id?: string | null;
+  parceiro_status?: StatusParceiro | null;
+  emails_aviso?: string[];
 };
+
+const EMAIL_AVISO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const WALLET = /^[A-Za-z0-9-]{8,64}$/;
+
+/** Lista de e-mails vinda da tela (texto com vírgula/linha, ou array). */
+export function listaDeEmails(v: unknown): { ok: true; emails: string[] } | { ok: false; erro: string } {
+  const itens = (Array.isArray(v) ? v : String(v ?? "").split(/[\s,;]+/))
+    .map((e) => String(e ?? "").trim().toLowerCase()).filter(Boolean);
+  const emails = [...new Set(itens)];
+  const ruim = emails.find((e) => !EMAIL_AVISO.test(e) || e.length > 200);
+  if (ruim) return { ok: false, erro: `E-mail de aviso inválido: ${ruim}` };
+  if (emails.length > 10) return { ok: false, erro: "Informe no máximo 10 e-mails de aviso." };
+  return { ok: true, emails };
+}
 
 const texto = (v: unknown, max: number): string | null => {
   const s = typeof v === "string" ? v.trim() : typeof v === "number" ? String(v) : "";
@@ -63,6 +86,44 @@ export function camposDaConta(d: Record<string, unknown> | null | undefined): { 
   if (tem("endereco")) c.endereco = texto(d.endereco, 300);
   if (tem("cidade")) c.cidade = texto(d.cidade, 120);
   if (tem("observacoes")) c.observacoes = texto(d.observacoes, 2000);
+
+  // ---- rede de parceiros ----
+  if (tem("tipo")) {
+    if (d.tipo !== "propria" && d.tipo !== "parceiro") return { ok: false, erro: "Tipo de conta inválido." };
+    c.tipo = d.tipo;
+    if (d.tipo === "propria") c.parceiro_status = null;
+  }
+  if (tem("parceiroPercentual")) {
+    const n = Number(d.parceiroPercentual);
+    if (d.parceiroPercentual === "" || !Number.isFinite(n) || n <= 0 || n >= 100) return { ok: false, erro: "Percentual do parceiro precisa ficar entre 0 e 100." };
+    c.parceiro_percentual = Math.round(n * 100) / 100;
+  }
+  if (tem("garantiaPercentual")) {
+    const n = Number(d.garantiaPercentual);
+    if (d.garantiaPercentual === "" || !Number.isFinite(n) || n < 0 || n >= 100) return { ok: false, erro: "Percentual de garantia precisa ficar entre 0 e 100." };
+    c.garantia_percentual = Math.round(n * 100) / 100;
+  }
+  if (tem("asaasWalletId")) {
+    const w = texto(d.asaasWalletId, 64);
+    if (w && !WALLET.test(w)) return { ok: false, erro: "Carteira Asaas (walletId) inválida." };
+    c.asaas_wallet_id = w;
+  }
+  if (tem("parceiroStatus") && c.tipo !== "propria") {
+    const s = d.parceiroStatus === "" || d.parceiroStatus == null ? null : String(d.parceiroStatus);
+    if (s !== null && !(STATUS_PARCEIRO as readonly string[]).includes(s)) return { ok: false, erro: "Situação do parceiro inválida." };
+    c.parceiro_status = s as StatusParceiro | null;
+  }
+  // conta que vira parceira sem situação escolhida começa em análise
+  if (c.tipo === "parceiro" && !c.parceiro_status) c.parceiro_status = "em_analise";
+  if (!tem("tipo") && tem("parceiroStatus") && c.parceiro_status === null) delete c.parceiro_status;
+  if (c.parceiro_status === "ativo" && tem("asaasWalletId") && !c.asaas_wallet_id) {
+    return { ok: false, erro: "Parceiro ativo precisa da carteira Asaas (walletId) para receber o split." };
+  }
+  if (tem("emailsAviso")) {
+    const r = listaDeEmails(d.emailsAviso);
+    if (!r.ok) return r;
+    c.emails_aviso = r.emails;
+  }
   return { ok: true, campos: c };
 }
 

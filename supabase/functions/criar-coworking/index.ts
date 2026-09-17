@@ -4,7 +4,11 @@
 // POST /functions/v1/criar-coworking
 // body: { empresa, master_nome, master_email, documento?, telefone?, plano?,
 //         mensalidade?, unidade_nome, endereco?, cidade?, senha?, tipo_pessoa?,
-//         nome_fantasia?, responsavel?, endereco_conta?, observacoes? }
+//         nome_fantasia?, responsavel?, endereco_conta?, observacoes?,
+//         tipo? ("propria" | "parceiro"), parceiro_percentual?, garantia_percentual?,
+//         asaas_wallet_id?, parceiro_status?, emails_aviso? }
+// Conta parceira: a unidade criada recebe a tabela nacional de planos pelo
+// gatilho do banco (20260921120000).
 // A conta devolvida é a linha gravada (formato do banco). O contrato anexado na
 // tela é enviado em seguida pela Edge Function contas-plataforma.
 //
@@ -55,6 +59,20 @@ Deno.serve(async (req) => {
     const email = String(body.master_email).toLowerCase().trim();
     const senha = (body.senha && String(body.senha).length >= 6) ? String(body.senha) : gerarSenha();
 
+    // Dados complementares da tela (tipo de pessoa, fantasia, endereço...) e, se
+    // vier, os da rede de parceiros. Conferidos ANTES de criar o login. O
+    // contrato vai depois, pela contas-plataforma (Storage privado).
+    const extra = camposDaConta({
+      tipoPessoa: body.tipo_pessoa, nomeFantasia: body.nome_fantasia, responsavel: body.responsavel,
+      endereco: body.endereco_conta ?? body.endereco, cidade: body.cidade, observacoes: body.observacoes,
+      ...(body.tipo ? {
+        tipo: body.tipo, parceiroPercentual: body.parceiro_percentual ?? 75, garantiaPercentual: body.garantia_percentual ?? 10,
+        asaasWalletId: body.asaas_wallet_id ?? "", parceiroStatus: body.parceiro_status ?? "", emailsAviso: body.emails_aviso ?? [],
+      } : {}),
+    });
+    if (!extra.ok && body.tipo) return json({ error: extra.erro }, 400);
+    const complemento = extra.ok ? extra.campos : {};
+
     // 2) cria o login do master no Auth
     const { data: created, error: cErr } = await admin.auth.admin.createUser({
       email, password: senha, email_confirm: true,
@@ -73,14 +91,6 @@ Deno.serve(async (req) => {
 
     // limpa em caso de falha parcial (best-effort)
     const rollback = async () => { try { await admin.auth.admin.deleteUser(userId); } catch (_) { /* noop */ } };
-
-    // Dados complementares da tela (tipo de pessoa, fantasia, endereço...). O
-    // contrato vai depois, pela contas-plataforma (Storage privado).
-    const extra = camposDaConta({
-      tipoPessoa: body.tipo_pessoa, nomeFantasia: body.nome_fantasia, responsavel: body.responsavel,
-      endereco: body.endereco_conta ?? body.endereco, cidade: body.cidade, observacoes: body.observacoes,
-    });
-    const complemento = extra.ok ? extra.campos : {};
 
     const { data: contaCriada, error: e1 } = await admin.from("contas").insert({
       id: contaId, nome: body.empresa, master: body.master_nome, email,
