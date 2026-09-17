@@ -24,10 +24,18 @@ Deno.test("salaReservavelPeloCliente: fora de locação fixa, com preço por hor
 });
 
 Deno.test("calcularReserva: crédito cobre o que dá e o resto é excedente", () => {
-  assertEquals(calcularReserva(3, 2, 50), { horas: 3, cobertas: 2, excedente: 1, valorExcedente: 50 });
-  assertEquals(calcularReserva(2, 0, 85), { horas: 2, cobertas: 0, excedente: 2, valorExcedente: 170 });
-  assertEquals(calcularReserva(1, 5, 0), { horas: 1, cobertas: 1, excedente: 0, valorExcedente: 0 });
+  assertEquals(calcularReserva(3, 2, 50), {
+    horas: 3, cobertas: 2, excedente: 1, valorSemDesconto: 50, descontoPct: 0, descontoValor: 0, valorExcedente: 50,
+  });
+  assertEquals(calcularReserva(2, 0, 85), {
+    horas: 2, cobertas: 0, excedente: 2, valorSemDesconto: 170, descontoPct: 0, descontoValor: 0, valorExcedente: 170,
+  });
+  assertEquals(calcularReserva(1, 5, 0), {
+    horas: 1, cobertas: 1, excedente: 0, valorSemDesconto: 0, descontoPct: 0, descontoValor: 0, valorExcedente: 0,
+  });
   assertEquals(calcularReserva(2, -3, 10).cobertas, 0);
+  // desconto de sala do plano entra só sobre o excedente
+  assertEquals(calcularReserva(2, 0, 85, 10).valorExcedente, 153);
 });
 
 Deno.test("validarReservaCliente recusa passado, fim de semana, fora do horário e longe demais", () => {

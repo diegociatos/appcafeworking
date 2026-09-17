@@ -89,7 +89,11 @@ export default function Reservar({ nome }) {
   const saldo = sala?.tipo_credito ? Math.max(0, Math.floor(agenda?.saldos?.[sala.unidade_id]?.[sala.tipo_credito] || 0)) : 0;
   const cobertas = Math.min(saldo, duracao);
   const excedente = duracao - cobertas;
-  const valorExcedente = Math.round(excedente * (sala?.valor_hora || 0) * 100) / 100;
+  // Desconto de sala do plano (o servidor é quem aplica; aqui é só a prévia).
+  const descontoSala = Number(agenda?.descontos?.[sala?.unidade_id]?.sala || 0);
+  const excedenteCheio = Math.round(excedente * (sala?.valor_hora || 0) * 100) / 100;
+  const descontoValor = Math.round(excedenteCheio * descontoSala) / 100;
+  const valorExcedente = Math.round((excedenteCheio - descontoValor) * 100) / 100;
   const semCobertura = sala && sala.valor_hora <= 0 && excedente > 0;
   const podeConfirmar = sala && inicio != null && duracoesPossiveis.includes(duracao) && (!bases.length || (base && livre(inicio, duracao, base))) && !semCobertura && !enviando;
 
@@ -145,7 +149,10 @@ export default function Reservar({ nome }) {
               <div style={{ fontFamily: serif, fontSize: 19, color: C.text }}>Reserva confirmada</div>
               <b>{confirmada.sala}</b>{confirmada.base ? `, base ${confirmada.base}` : ""} · {dataHoraBR(confirmada.start, { weekday: "long", day: "2-digit", month: "2-digit" })}, das {dataHoraBR(confirmada.start, { hour: "2-digit", minute: "2-digit" })} às {dataHoraBR(confirmada.end, { hour: "2-digit", minute: "2-digit" })}.
               {confirmada.credito?.cobertas > 0 && <><br />Usamos {confirmada.credito.cobertas} h do seu plano.</>}
-              {confirmada.valor > 0 && <><br />Excedente de {fmt(confirmada.valor)}, cobrado depois pela recepção.</>}
+              {confirmada.valor > 0 && (
+                <><br />Excedente de {fmt(confirmada.valor)}
+                  {confirmada.credito?.descontoPct > 0 ? ` (já com ${confirmada.credito.descontoPct}% de desconto do seu plano)` : ""}, cobrado depois pela recepção.</>
+              )}
               <br />Enviamos a confirmação por e-mail.
             </div>
             <Btn variant="ghost" onClick={() => setConfirmada(null)} style={{ padding: "6px 12px", fontSize: 13 }}>Fechar</Btn>
@@ -269,7 +276,11 @@ export default function Reservar({ nome }) {
                         <div>Horas do plano: você tem {saldo} h de {CREDITO_ROTULO[sala.tipo_credito]}; esta reserva usa {cobertas} h.</div>
                       )}
                       {sala.valor_hora > 0 && (
-                        <div>{excedente > 0 ? <>Excedente: {excedente} h × {fmt(sala.valor_hora)} = <b>{fmt(valorExcedente)}</b>, cobrado depois pela recepção.</> : "Sem valor a pagar."}</div>
+                        <div>
+                          {excedente > 0
+                            ? <>Excedente: {excedente} h × {fmt(sala.valor_hora)} = {descontoSala > 0 ? <>{fmt(excedenteCheio)} menos {descontoSala}% do seu plano = <b>{fmt(valorExcedente)}</b></> : <b>{fmt(valorExcedente)}</b>}, cobrado depois pela recepção.</>
+                            : "Sem valor a pagar."}
+                        </div>
                       )}
                       {semCobertura && <div role="alert" style={{ color: C.red }}>Seu plano não tem horas suficientes para esta sala. Diminua a duração ou fale com a recepção.</div>}
                     </div>
