@@ -44,6 +44,11 @@ const AVISO = {
   sem_email: [C.red, "Cliente sem e-mail no cadastro. Atualize em Clientes e notifique de novo."],
   erro: [C.red, "O e-mail não saiu. Tente de novo em instantes."],
 };
+// Atalho "Registrar correspondência" vindo de outra tela (ex.: detalhe do cliente):
+// a tela abre com o formulário já no cliente escolhido.
+let registroPendente = null;
+export function abrirRegistroCorrespondencia(clienteId) { registroPendente = clienteId || null; }
+
 const ehImagem = (anexo) => anexo && ((anexo.tipo || "").startsWith("image") || /^data:image|\.(png|jpe?g|webp|gif)$/i.test(anexo.url || ""));
 
 export default function Correspondencias() {
@@ -55,7 +60,8 @@ export default function Correspondencias() {
     setAvisos((a) => ({ ...a, [id]: r }));
   };
   const [filtro, setFiltro] = useState("todas");
-  const [modal, setModal] = useState(false);
+  const [modal, setModal] = useState(() => (registroPendente ? { clienteId: registroPendente } : false));
+  useEffect(() => { registroPendente = null; }, []);
   const [anexoAberto, setAnexoAberto] = useState(null);
   const [excluir, setExcluir] = useState(null);
   const confirmarExclusao = () => {
@@ -157,6 +163,7 @@ export default function Correspondencias() {
         <Modal title="Registrar correspondência" onClose={() => setModal(false)}>
           <RegistrarForm
             unidadeNome={unidadeAtiva?.nome}
+            clienteInicial={modal.clienteId}
             onSave={async (dados) => {
               // O arquivo sobe antes de gravar o registro: se o envio falhar, nada é criado.
               const id = "co" + Date.now();
@@ -223,10 +230,10 @@ function AnexoModal({ corresp, onClose }) {
   );
 }
 
-function RegistrarForm({ unidadeNome, onSave }) {
+function RegistrarForm({ unidadeNome, clienteInicial, onSave }) {
   const { clientesDe } = useStore();
   const clientesUnidade = clientesDe(unidadeNome);
-  const [f, setF] = useState({ clienteId: clientesUnidade[0]?.id || "", remetente: "", tipo: "Notificação", descricao: "", urgente: false, anexo: null });
+  const [f, setF] = useState({ clienteId: (clienteInicial && clientesUnidade.some((c) => c.id === clienteInicial) ? clienteInicial : clientesUnidade[0]?.id) || "", remetente: "", tipo: "Notificação", descricao: "", urgente: false, anexo: null });
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
   const escolhido = clientesUnidade.find((c) => c.id === f.clienteId);

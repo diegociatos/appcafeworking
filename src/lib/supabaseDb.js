@@ -249,6 +249,18 @@ export async function patchBankAccountDb(id, patch) {
   return mapBankAccountDb(r);
 }
 
+/** Documentos que o cliente enviou na assinatura pelo site (só metadados, sem
+ *  link: o arquivo abre na tela Assinaturas). RLS: equipe da unidade e admin.
+ *  Retorna null se não deu para consultar. */
+export async function fetchDocumentosAssinaturaDoCliente(unidadeId, email) {
+  const e = String(email || "").trim().toLowerCase();
+  if (!unidadeId || !e) return [];
+  return await getJson(
+    `assinatura_documentos?select=id,assinatura_id,tipo,nome_arquivo,created_at&unidade_id=eq.${encodeURIComponent(unidadeId)}` +
+    `&cliente_email=eq.${encodeURIComponent(e)}&order=created_at.desc&limit=50`,
+  );
+}
+
 export async function fetchNotasDb() {
   return (await getJson("notas_fiscais?select=*&order=created_at.desc")) || [];
 }

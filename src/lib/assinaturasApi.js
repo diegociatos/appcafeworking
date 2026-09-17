@@ -180,4 +180,9 @@ export const STATUS_DOCUMENTOS = {
   reprovado: { rotulo: "Documentos reprovados", cor: "red" },
 };
 
+export const TIPOS_DOCUMENTO = {
+  cartao_cnpj: "Cartão CNPJ", ato_constitutivo: "Ato constitutivo", documento_socio: "Documento de sócio",
+  comprovante_residencia: "Comprovante de residência", outro: "Outro",
+};
+
 export const dataBR = (iso) => (iso ? String(iso).slice(0, 10).split("-").reverse().join("/") : "—");

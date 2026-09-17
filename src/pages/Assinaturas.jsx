@@ -4,7 +4,7 @@ import { Card, Badge, Btn, PageHead, Modal, Empty, Field } from "../components/u
 import { C, serif, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 import {
-  assinaturasApi, CATEGORIAS_CONTRATO, STATUS_ASSINATURA, STATUS_DOCUMENTOS, dataBR,
+  assinaturasApi, CATEGORIAS_CONTRATO, STATUS_ASSINATURA, STATUS_DOCUMENTOS, TIPOS_DOCUMENTO, dataBR,
 } from "../lib/assinaturasApi.js";
 
 const FILTROS = [
@@ -20,10 +20,7 @@ const FILTROS = [
 const TURNOS = { manha: "Manhã (8h às 12h)", tarde: "Tarde (12h às 18h)" };
 const precisaSala = (a) => a.categoria === "sala_privativa" && !a.sala_id && ["ativa", "inadimplente"].includes(a.status);
 
-const TIPOS_DOC = {
-  cartao_cnpj: "Cartão CNPJ", ato_constitutivo: "Ato constitutivo", documento_socio: "Documento de sócio",
-  comprovante_residencia: "Comprovante de residência", outro: "Outro",
-};
+const TIPOS_DOC = TIPOS_DOCUMENTO;
 
 // Equipe: assinaturas vendidas pelo site (documentos, cancelamentos, acertos) e versões de contrato.
 export default function Assinaturas() {

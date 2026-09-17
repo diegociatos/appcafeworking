@@ -1,24 +1,35 @@
 import { useState, useEffect } from "react";
 import {
   Plus, Users, Briefcase, ChevronRight, ChevronLeft, FileText,
-  Building, Mail, Phone, Upload, Download, FileCheck, FileClock,
+  Building, Mail, Phone, FileCheck, PackageCheck,
   AlertCircle, MapPin, Edit3, Trash2, Search, X, Send, Smartphone, Clock,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Empty, Modal, Field, ConfirmDialog } from "../components/ui.jsx";
 import { C, serif, fmt, inp } from "../lib/theme.js";
-import { useStore } from "../lib/store.jsx";
+import { useStore, PERFIS } from "../lib/store.jsx";
 import { buscarCnpj, buscarCep } from "../lib/lookup.js";
 import { textoDesde } from "../lib/unidadeNome.js";
 import { acessoClienteApi, situacaoAcesso } from "../lib/acessoClienteApi.js";
 import { mensagemDe } from "../lib/erros.js";
+import { supabaseConfigured } from "../lib/supabaseAuth.js";
+import { fetchDocumentosAssinaturaDoCliente } from "../lib/supabaseDb.js";
+import { TIPOS_DOCUMENTO } from "../lib/assinaturasApi.js";
+import { abrirRegistroCorrespondencia } from "./Correspondencias.jsx";
 
 // Quem envia o acesso ao app (a Edge Function confere de novo): admin, master e recepção.
 const PERFIS_QUE_CONVIDAM = ["franqueador", "master", "recepcao"];
 const dataCurta = (iso) => (iso ? new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "");
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export default function Clientes() {
-  const { clientes, addCliente, updateCliente, removeCliente, unidades, planosDe, perfil } = useStore();
+// Correspondências do cliente: pelo vínculo (clienteId) ou, nos registros antigos
+// sem vínculo, pelo nome na mesma unidade.
+const semAcento = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+const correspondenciasDoCliente = (lista, cli) => (lista || []).filter((c) => (c.clienteId
+  ? c.clienteId === cli.id
+  : c.unidadeId === cli.unidadeId && !!c.cliente && semAcento(c.cliente) === semAcento(cli.nome)));
+
+export default function Clientes({ go }) {
+  const { clientes, addCliente, updateCliente, removeCliente, unidades, planosDe, perfil, correspondencias } = useStore();
   const [sel, setSel] = useState(null);
   const [editar, setEditar] = useState(null); // null | {} novo | cliente em edição
   const [excluir, setExcluir] = useState(null);
@@ -87,6 +98,7 @@ export default function Clientes() {
         cli={cli} onBack={() => setSel(null)} onEditar={() => { setSel(null); setEditar(cli); }} onExcluir={() => { setSel(null); setExcluir(cli); }}
         acesso={acessos ? situacaoAcesso(cli, acessos) : { tipo: cli.email ? "desconhecido" : "sem_email" }}
         podeConvidar={podeConvidar} convite={convites[cli.id]} onConvidar={() => convidar(cli)}
+        go={go}
       />
     );
   }
@@ -148,7 +160,7 @@ export default function Clientes() {
       ) : (
       <Card style={{ padding: 0, overflow: "hidden" }}>
         {lista.map((c, i) => {
-          const novos = c.docs.filter((d) => d.status === "novo").length;
+          const novos = correspondenciasDoCliente(correspondencias, c).filter((x) => x.status === "aguardando").length;
           const acesso = acessos ? situacaoAcesso(c, acessos) : null;
           const convite = convites[c.id];
           return (
@@ -195,7 +207,7 @@ export default function Clientes() {
                 {c.fiscal && <Badge color={C.teal}>Endereço Fiscal</Badge>}
                 {novos > 0 && (
                   <Badge color={C.amber} bg={C.amberPale}>
-                    {novos} doc novo
+                    {novos} correspondência{novos > 1 ? "s" : ""} aguardando
                   </Badge>
                 )}
                 <Badge
@@ -505,8 +517,7 @@ function HorasSalaMes({ cli }) {
   );
 }
 
-function ClienteDetalhe({ cli, onBack, onEditar, onExcluir, acesso, podeConvidar, convite, onConvidar }) {
-  const [docs, setDocs] = useState(cli.docs);
+function ClienteDetalhe({ cli, onBack, onEditar, onExcluir, acesso, podeConvidar, convite, onConvidar, go }) {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
@@ -598,85 +609,124 @@ function ClienteDetalhe({ cli, onBack, onEditar, onExcluir, acesso, podeConvidar
           <CreditosCliente cli={cli} />
         </Card>
 
-        <Card>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 16,
-            }}
-          >
-            <div style={{ fontFamily: serif, fontSize: 20 }}>Documentos & Correspondências</div>
-            <Btn
-              variant="teal"
-              style={{ padding: "8px 14px", fontSize: 13 }}
-              onClick={() =>
-                setDocs((d) => [
-                  {
-                    nome: "Novo documento.pdf",
-                    tipo: "Correspondência",
-                    data: "28/05/2026",
-                    status: "novo",
-                  },
-                  ...d,
-                ])
-              }
-            >
-              <Upload size={15} /> Enviar
-            </Btn>
-          </div>
-          {docs.length === 0 ? (
-            <Empty icon={FileText} title="Nenhum documento ainda" />
-          ) : (
-            docs.map((d, i) => {
-              const sc = {
-                ok: [C.green, C.greenPale, "Aprovado", FileCheck],
-                novo: [C.amber, C.amberPale, "Novo", FileClock],
-                pendente: [C.red, C.redPale, "Pendente", AlertCircle],
-              }[d.status];
-              const Ic = sc[3];
-              return (
-                <div
-                  key={i}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 12,
-                    padding: "13px 0",
-                    borderBottom: i < docs.length - 1 ? `1px solid ${C.border2}` : "none",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 38,
-                      height: 38,
-                      borderRadius: 10,
-                      background: sc[1],
-                      display: "grid",
-                      placeItems: "center",
-                    }}
-                  >
-                    <Ic size={18} color={sc[0]} />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{d.nome}</div>
-                    <div style={{ fontSize: 12, color: C.text3 }}>
-                      {d.tipo} · {d.data}
-                    </div>
-                  </div>
-                  <Badge color={sc[0]} bg={sc[1]}>
-                    {sc[2]}
-                  </Badge>
-                  <button style={{ color: C.text4, padding: 6 }} aria-label="Baixar">
-                    <Download size={17} />
-                  </button>
-                </div>
-              );
-            })
-          )}
-        </Card>
+        <DocumentosCorrespondencias cli={cli} go={go} />
       </div>
     </div>
+  );
+}
+
+const STATUS_CORRESP = {
+  aguardando: [C.amber, C.amberPale, "Aguardando retirada"],
+  digitalizada: [C.blue, C.bluePale, "Digitalizada"],
+  notificado: [C.teal, C.tealPale, "Cliente notificado"],
+  retirada: [C.green, C.greenPale, "Retirada"],
+};
+const dataCorresp = (c) => (c.recebidoEm ? dataCurta(c.recebidoEm) : c.recebido || "");
+
+// Card do detalhe: correspondências reais do cliente (as mesmas da tela
+// Correspondências) e, no modo conectado, os documentos que ele enviou na
+// assinatura pelo site (só leitura; o arquivo abre em Assinaturas).
+function DocumentosCorrespondencias({ cli, go }) {
+  const { correspondencias, setActiveUnit, perfil } = useStore();
+  const corresp = correspondenciasDoCliente(correspondencias, cli)
+    .slice()
+    .sort((a, b) => String(b.recebidoEm || b.recebido || "").localeCompare(String(a.recebidoEm || a.recebido || "")));
+  const [docs, setDocs] = useState(null); // null = carregando
+  const [erroDocs, setErroDocs] = useState(false);
+  useEffect(() => {
+    if (!supabaseConfigured || !cli.unidadeId || !cli.email) { setDocs([]); return undefined; }
+    let vivo = true;
+    setDocs(null); setErroDocs(false);
+    fetchDocumentosAssinaturaDoCliente(cli.unidadeId, cli.email).then((r) => {
+      if (!vivo) return;
+      if (r === null) { setErroDocs(true); setDocs([]); } else setDocs(r);
+    });
+    return () => { vivo = false; };
+  }, [cli.id, cli.unidadeId, cli.email]);
+
+  const irPara = (pagina) => {
+    if (!go) return;
+    if (cli.unidadeId) setActiveUnit(cli.unidadeId);
+    go(pagina);
+  };
+  const registrar = () => { abrirRegistroCorrespondencia(cli.id); irPara("corresp"); };
+  const linha = (i, total) => ({ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: i < total - 1 ? `1px solid ${C.border2}` : "none" });
+  const titulo = { fontSize: 11, fontWeight: 700, color: C.text3, letterSpacing: 0.4, margin: "4px 0 2px" };
+  // Só oferece atalho para tela que o perfil abre (financeiro não tem Correspondências).
+  const podeIr = (pagina) => { const m = PERFIS[perfil]?.modules; return Boolean(go) && (!m || m.includes(pagina)); };
+
+  return (
+    <Card>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+        <div style={{ fontFamily: serif, fontSize: 20 }}>Documentos & Correspondências</div>
+        {podeIr("corresp") && (
+          <Btn variant="teal" style={{ padding: "8px 14px", fontSize: 13 }} onClick={registrar}>
+            <PackageCheck size={15} /> Registrar correspondência
+          </Btn>
+        )}
+      </div>
+
+      <div style={titulo}>CORRESPONDÊNCIAS</div>
+      {corresp.length === 0 ? (
+        <Empty icon={PackageCheck} title="Nenhuma correspondência registrada" sub="Quando a recepção registrar um recebimento para este cliente, ele aparece aqui." />
+      ) : (
+        <>
+          {corresp.slice(0, 8).map((c, i, arr) => {
+            const s = STATUS_CORRESP[c.status] || STATUS_CORRESP.aguardando;
+            return (
+              <div key={c.id} style={linha(i, arr.length)}>
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: c.urgente ? C.redPale : s[1], display: "grid", placeItems: "center", flexShrink: 0 }}>
+                  {c.urgente ? <AlertCircle size={18} color={C.red} /> : <PackageCheck size={18} color={s[0]} />}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{c.remetente || "Remetente não informado"}</div>
+                  <div style={{ fontSize: 12, color: C.text3 }}>{[c.tipo, dataCorresp(c), c.anexo ? "com anexo" : ""].filter(Boolean).join(" · ")}</div>
+                </div>
+                <Badge color={s[0]} bg={s[1]}>{s[2]}</Badge>
+              </div>
+            );
+          })}
+          {podeIr("corresp") && (
+            <button type="button" onClick={() => irPara("corresp")} className="cw-btn" style={{ fontSize: 12.5, color: C.teal, fontWeight: 600, padding: "8px 0 0" }}>
+              {corresp.length > 8 ? `Ver as ${corresp.length} em Correspondências` : "Abrir em Correspondências"} <ChevronRight size={13} style={{ verticalAlign: -2 }} />
+            </button>
+          )}
+        </>
+      )}
+
+      {supabaseConfigured && (
+        <>
+          <div style={{ ...titulo, marginTop: 18 }}>DOCUMENTOS DA ASSINATURA</div>
+          {docs === null ? (
+            <div style={{ fontSize: 12.5, color: C.text4, padding: "10px 0" }}>Carregando…</div>
+          ) : erroDocs ? (
+            <div style={{ fontSize: 12.5, color: C.amber, padding: "10px 0" }}>Não foi possível carregar os documentos agora.</div>
+          ) : docs.length === 0 ? (
+            <div style={{ fontSize: 12.5, color: C.text4, padding: "10px 0" }}>
+              {cli.email ? "Nenhum documento enviado pelo cliente na assinatura pelo site." : "Cliente sem e-mail no cadastro: não dá para localizar a assinatura."}
+            </div>
+          ) : (
+            <>
+              {docs.map((d, i) => (
+                <div key={d.id} style={linha(i, docs.length)}>
+                  <div style={{ width: 38, height: 38, borderRadius: 10, background: C.tealPale, display: "grid", placeItems: "center", flexShrink: 0 }}>
+                    <FileCheck size={18} color={C.teal} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.nome_arquivo}</div>
+                    <div style={{ fontSize: 12, color: C.text3 }}>{TIPOS_DOCUMENTO[d.tipo] || d.tipo} · {dataCurta(d.created_at)}</div>
+                  </div>
+                </div>
+              ))}
+              {podeIr("assinaturas") && (
+                <button type="button" onClick={() => irPara("assinaturas")} className="cw-btn" style={{ fontSize: 12.5, color: C.teal, fontWeight: 600, padding: "8px 0 0" }}>
+                  Conferir e abrir os arquivos em Assinaturas <ChevronRight size={13} style={{ verticalAlign: -2 }} />
+                </button>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </Card>
   );
 }
