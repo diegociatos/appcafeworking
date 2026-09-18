@@ -1,4 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import AtendimentoLead, { dataAtendimento } from "../components/AtendimentoLead.jsx";
+import { crmApi } from "../lib/crmApi.js";
+import { getSession } from "../lib/supabaseAuth.js";
 import {
   Plus, Instagram, Globe, MessageCircle, Search as SearchIcon,
   Tag, Settings2, Trash2, Check, CheckCircle2,
@@ -29,7 +32,69 @@ const origemCor = (o) => ORIGEM_COR[o] || C.cafe2;
 const origemIcon = (o) => ORIGEM_ICON[o] || Tag;
 
 export default function CRM({ go }) {
-  const { activeUnit, unidadeAtiva, leads: leadsAll, setLeads, crmEtapas: etapas, setCrmEtapas: setEtapas, crmOrigens: origens, setCrmOrigens: setOrigens, criarClienteConfirmado, planosDe } = useStore();
+  const { activeUnit, unidadeAtiva, meuPerfil, leads: leadsAll, setLeads, crmEtapas: etapas, setCrmEtapas: setEtapas, crmOrigens: origens, setCrmOrigens: setOrigens, criarClienteConfirmado, planosDe } = useStore();
+  const [leadAtendido, setLeadAtendido] = useState(null);
+  const [crm, setCrm] = useState({ atendimentos: [], comentarios: [], retornos: [] });
+  const [erroAtendimentos, setErroAtendimentos] = useState('');
+  const [carregandoAtendimentos, setCarregandoAtendimentos] = useState(crmApi.configured);
+  const [erroMovimento, setErroMovimento] = useState('');
+  const [movendoLead, setMovendoLead] = useState(null);
+  const unidadeRef = useRef(activeUnit);
+  const versaoLeitura = useRef(0);
+  unidadeRef.current = activeUnit;
+  useEffect(() => {
+    setLeadAtendido(null);
+    if (!crmApi.configured) return;
+    let ativo = true;
+    setCrm({ atendimentos: [], comentarios: [], retornos: [] });
+    setCarregandoAtendimentos(true);
+    const carregar = async () => {
+      const versao = ++versaoLeitura.current;
+      try {
+        const dados = await crmApi.carregar(activeUnit);
+        if (ativo && versao === versaoLeitura.current) { setCrm(dados); setErroAtendimentos(''); }
+      } catch (e) { if (ativo && versao === versaoLeitura.current) setErroAtendimentos(e.message); }
+      finally { if (ativo && versao === versaoLeitura.current) setCarregandoAtendimentos(false); }
+    };
+    carregar();
+    const timer = setInterval(carregar, 30000);
+    return () => { ativo = false; clearInterval(timer); };
+  }, [activeUnit]);
+  const registrarAtendimento = async (acao, extra = {}, idLead = leadAtendido?.id) => {
+    const unidadeId = activeUnit;
+    const leadId = idLead;
+    if (crmApi.configured) {
+      ++versaoLeitura.current;
+      try { await crmApi.registrar(unidadeId, leadId, acao, extra); }
+      catch (e) {
+        // Atualiza o responsável também quando outro usuário ganhou a disputa.
+        const versao = ++versaoLeitura.current;
+        try { const dados = await crmApi.carregar(unidadeId); if (unidadeRef.current === unidadeId && versao === versaoLeitura.current) setCrm(dados); } catch { /* erro original continua visível */ }
+        throw e;
+      }
+      const versao = ++versaoLeitura.current;
+      try {
+        const dados = await crmApi.carregar(unidadeId);
+        if (unidadeRef.current === unidadeId && versao === versaoLeitura.current) { setCrm(dados); setErroAtendimentos(''); setCarregandoAtendimentos(false); }
+      } catch {
+        throw new Error('Registro salvo, mas não foi possível atualizar a tela. Atualize o quadro antes de registrar novamente.');
+      }
+      return;
+    }
+    const usuario = getSession()?.user;
+    const autorId = usuario?.id || 'demo-usuario';
+    const autorNome = meuPerfil.nome || usuario?.email || 'Usuário de demonstração';
+    const agora = new Date().toISOString();
+    setCrm(prev => {
+      if (acao === 'assumir') return { ...prev, atendimentos: [...prev.atendimentos, { unidade_id: unidadeId, lead_id: leadId, responsavel_id: autorId, responsavel_nome: autorNome, assumido_em: agora }] };
+      if (acao === 'comentar') {
+        const id = crypto.randomUUID();
+        const dono = prev.atendimentos.find(a => a.unidade_id === unidadeId && a.lead_id === leadId);
+        return { ...prev, comentarios: [...prev.comentarios, { id, unidade_id: unidadeId, lead_id: leadId, autor_id: autorId, autor_nome: autorNome, texto: extra.p_texto.trim(), created_at: agora }], retornos: extra.p_retorno_em ? [{ id: crypto.randomUUID(), unidade_id: unidadeId, lead_id: leadId, comentario_id: id, responsavel_id: dono.responsavel_id, agendado_para: extra.p_retorno_em, status: 'agendado' }, ...prev.retornos] : prev.retornos };
+      }
+      return { ...prev, retornos: prev.retornos.map(r => r.id === extra.p_retorno_id ? { ...r, status: acao === 'concluir' ? 'concluido' : 'cancelado' } : r) };
+    });
+  };
   const [convertido, setConvertido] = useState(null); // { cliente, lead }
   const [convertendo, setConvertendo] = useState(null); // id do lead em conversão
   const [erroConversao, setErroConversao] = useState(null); // { id, mensagem }
@@ -80,11 +145,20 @@ export default function CRM({ go }) {
   }, {})).sort((a, b) => b[1] - a[1])[0] || null;
   const taxa = leads.length > 0 ? Math.round((fechados.length / leads.length) * 100) : 0;
 
-  const onDrop = (etapa) => {
-    if (drag) {
-      setLeads((ls) => ls.map((l) => (l.id === drag ? { ...l, etapa } : l)));
-      setDrag(null);
-    }
+  const onDrop = async (etapa) => {
+    if (!drag || movendoLead) return;
+    const id = drag;
+    const unidadeId = activeUnit;
+    setDrag(null); setErroMovimento(''); setMovendoLead(id);
+    try {
+      // Quem puxou para Em Contato passa a ser o responsável, sem roubar
+      // um atendimento já assumido e sem alterar a etapa se o banco recusar.
+      if (etapa === 'contato' && !crm.atendimentos.some(a => a.unidade_id === unidadeId && a.lead_id === id)) {
+        await registrarAtendimento('assumir', {}, id);
+      }
+      if (unidadeRef.current === unidadeId) setLeads(ls => ls.map(l => l.id === id && l.unidadeId === unidadeId ? { ...l, etapa } : l));
+    } catch (e) { if (unidadeRef.current === unidadeId) setErroMovimento(e.message); }
+    finally { setMovendoLead(null); }
   };
 
   const addOrigem = (nome) => {
@@ -121,6 +195,9 @@ export default function CRM({ go }) {
           </Btn>
         }
       />
+
+      {erroAtendimentos && <div role="alert" style={{ color: C.red, marginBottom: 16 }}>Não foi possível atualizar responsáveis e retornos: {erroAtendimentos}</div>}
+      {erroMovimento && <div role="alert" style={{ color: C.red, marginBottom: 16 }}>{erroMovimento}</div>}
 
       {/* Resumo do funil */}
       <div
@@ -228,10 +305,12 @@ export default function CRM({ go }) {
                 {leadsEtapa.map((l) => {
                   const OI = origemIcon(l.origem);
                   const oc = origemCor(l.origem);
+                  const atendimento = crm.atendimentos.find(a => a.unidade_id === activeUnit && a.lead_id === l.id);
+                  const retorno = crm.retornos.find(r => r.unidade_id === activeUnit && r.lead_id === l.id && ['agendado','processando','enviado','erro'].includes(r.status));
                   return (
                     <div
                       key={l.id}
-                      draggable
+                      draggable={!movendoLead}
                       onDragStart={() => setDrag(l.id)}
                       style={{
                         background: "#fff",
@@ -266,6 +345,9 @@ export default function CRM({ go }) {
                         </div>
                       </div>
                       <div style={{ fontSize: 12, color: C.text3, marginBottom: 8 }}>{l.interesse}</div>
+                      <div style={{ fontSize: 11.5, color: C.text3, marginBottom: 8 }}>{carregandoAtendimentos ? 'Carregando responsável…' : atendimento ? `Atendimento: ${atendimento.responsavel_nome}` : 'Sem responsável'}</div>
+                      {retorno && <div style={{ fontSize: 11.5, color: retorno.status === 'erro' || new Date(retorno.agendado_para) < new Date() ? C.red : C.teal, marginBottom: 8 }}>Retorno: {dataAtendimento(retorno.agendado_para)}{retorno.status === 'erro' ? ' · lembrete com falha' : ''}</div>}
+                      <Btn variant="ghost" disabled={carregandoAtendimentos || !!erroAtendimentos} style={{ width: '100%', justifyContent: 'center', marginBottom: 8 }} onClick={() => setLeadAtendido(l)}>Ver atendimento</Btn>
                       <div
                         style={{
                           display: "flex",
@@ -364,6 +446,14 @@ export default function CRM({ go }) {
           />
         </Modal>
       )}
+
+      {leadAtendido && <Modal title={`Atendimento · ${leadAtendido.nome}`} onClose={() => setLeadAtendido(null)} maxWidth={560}>
+        <AtendimentoLead key={`${activeUnit}:${leadAtendido.id}`} lead={leadAtendido}
+          atendimento={crm.atendimentos.find(a => a.unidade_id === activeUnit && a.lead_id === leadAtendido.id)}
+          comentarios={crm.comentarios.filter(c => c.unidade_id === activeUnit && c.lead_id === leadAtendido.id)}
+          retornos={crm.retornos.filter(r => r.unidade_id === activeUnit && r.lead_id === leadAtendido.id)}
+          onRegistrar={registrarAtendimento} demo={!crmApi.configured} />
+      </Modal>}
 
       {etapaModal && (
         <Modal
