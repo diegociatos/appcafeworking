@@ -8,11 +8,12 @@ import { inp, C } from '../lib/theme.js';
 import DocumentosUnidade from './DocumentosUnidade.jsx';
 import { FotosGaleria } from './Unidades.jsx';
 import { documentosUnidadeApi, TIPOS_KIT } from '../lib/documentosUnidadeApi.js';
+import { supabaseConfigured } from '../lib/supabaseAuth.js';
 import { getReservaStart } from '../lib/reservas.js';
 
 const SERVICOS = { endereco_fiscal: 'Endereço fiscal', coworking: 'Estação / sala compartilhada', sala_hora: 'Sala de reunião / auditório por hora', sala_privativa: 'Sala privativa' };
 export default function MinhaUnidadeParceira({ go }) {
-  const { activeUnit, unidadeAtiva, contaDaUnidade, perfil, reservas, correspondenciasDe, salasDe, hydrateOperacional } = useStore();
+  const { activeUnit, unidadeAtiva, contaDaUnidade, perfil, reservas, correspondenciasDe, salasDe, hydrateOperacional, clientes, contratosDe } = useStore();
   const [perfis, setPerfis] = useState([]);
   const [dados, setDados] = useState({});
   const [requisitos, setRequisitos] = useState([]);
@@ -39,7 +40,7 @@ export default function MinhaUnidadeParceira({ go }) {
       setDados(p.find((x) => x.unidade_id === activeUnit)?.dados || { empresa: conta?.nome || '', responsavel: conta?.master || '', endereco: unidadeAtiva?.endereco || '', cidade: unidadeAtiva?.cidade || '', servicos: ['endereco_fiscal'], fotos: [] });
       setCarregado(true);
     }).catch((e) => vivo && setErro(e.message));
-    if (activeUnit) documentosUnidadeApi.listar(activeUnit).then((r) => vivo && setDocs(r || [])).catch((e) => vivo && setErro(e.message));
+    if (activeUnit && supabaseConfigured) documentosUnidadeApi.listar(activeUnit).then((r) => vivo && setDocs(r || [])).catch((e) => vivo && setErro(e.message));
     return () => { vivo = false; };
   }, [activeUnit, versao]); // eslint-disable-line react-hooks/exhaustive-deps
   const executar = async (acao) => {
@@ -52,6 +53,8 @@ export default function MinhaUnidadeParceira({ go }) {
   const hoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
   const reservasHoje = reservas.filter((r) => r.unidadeId === activeUnit && r.status !== 'cancelada' && getReservaStart(r).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) === hoje);
   const correspondencias = correspondenciasDe(activeUnit).filter((c) => c.status !== 'retirada');
+  const clientesUnidade = clientes.filter((c) => c.unidadeId === activeUnit);
+  const contratosUnidade = contratosDe(activeUnit);
   return <div><PageHead title={admin ? 'Análise de unidades parceiras' : 'Minha unidade parceira'} sub="Comece com o espaço que você já tem. Amplie os serviços no seu ritmo." />
     <style>{`.rede-etapas{display:flex;gap:8px;overflow-x:auto;padding:8px 0 16px}.rede-etapas button{flex-shrink:0;min-height:44px;padding:10px;border-radius:10px}.rede-acoes{display:flex;gap:10px;flex-wrap:wrap}.rede-acoes button{min-height:44px}`}</style>
     {erro && <p role="alert" style={{ color: C.red }}>{erro}</p>}{msg && <p role="status">{msg}</p>}
@@ -80,6 +83,16 @@ export default function MinhaUnidadeParceira({ go }) {
           hydrateOperacional({ reservas: await fetchReservasDb() });
         })}>{r.status === 'checkin' ? 'Registrar saída' : 'Registrar check-in'}</Btn>}
       </div>)}</Card>
+      <div className="cw-grid-stack" style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 16, marginTop: 16 }}>
+        <Card><h2>Clientes e contratos</h2><p>{clientesUnidade.length} clientes vinculados · {contratosUnidade.length} contratos operacionais</p>
+          {clientesUnidade.slice(0, 3).map((c) => <div key={c.id} style={{ borderTop: `1px solid ${C.border2}`, padding: '10px 0' }}><b>{c.nome}</b><div>{c.plano || 'Sem plano'} · {c.status}</div><small>{c.email}</small></div>)}
+          <div className="rede-acoes"><Btn onClick={() => go('clientes')}>Ver dados dos clientes</Btn><Btn variant="ghost" onClick={() => go('assinaturas')}>Contratos com clientes</Btn></div>
+        </Card>
+        <Card><h2>Endereço fiscal e documentos</h2><p>O parceiro envia o IPTU e os documentos do imóvel. Após aprovação da CafeWorking, o cliente com endereço fiscal ativo acessa o kit pelo próprio login.</p>
+          <p><b>{docs.filter((d) => d.revisao_status === 'aprovado').length}</b> documentos aprovados nesta unidade.</p>
+          <div className="rede-acoes"><Btn onClick={() => setEtapa(2)}>Gerenciar documentos</Btn><Btn variant="ghost" onClick={() => go('conversas_unidade')}>Abrir chat</Btn></div>
+        </Card>
+      </div>
       <nav className="rede-etapas" aria-label="Etapas de preparação">{ETAPAS_REDE.map((nome, i) => <button key={nome} onClick={() => setEtapa(i)} aria-current={etapa === i ? 'step' : undefined} style={{ background: etapa === i ? C.teal : C.cream, color: etapa === i ? '#fff' : C.text }}>{i + 1}. {nome}{progresso[i] ? ' ✓' : ''}</button>)}</nav>
       <Card><h2>{ETAPAS_REDE[etapa]}</h2>
         {etapa === 0 && <>{campo('empresa', 'Empresa / escritório')}{campo('responsavel', 'Responsável')}<p>Documento e contato da conta continuam no cadastro central; não duplicamos dados bancários aqui.</p></>}

@@ -41,6 +41,7 @@ export { PERFIS, SECOES };
 // Backend ligado? Em produção (Supabase configurado) o app não exibe os dados
 // de demonstração — parte vazio e hidrata do banco; mutações persistem.
 const REAL = nfseApi.configured;
+const DEMO_PARCEIRO = !REAL && new URLSearchParams(window.location.search).get('demo') === 'parceiro';
 const seedOr = (seed) => (REAL ? [] : seed);
 // As telas usam para esconder o que só existe na demonstração (ex.: boleto gerado na tela).
 export const MODO_REAL = REAL;
@@ -66,9 +67,12 @@ let _nfSeq = 124;
 
 export function StoreProvider({ children }) {
   const [unidades, setUnidades] = useState(seedOr(seedUnidades));
-  const [franqueados, setFranqueados] = useState(seedOr(seedFranqueados));
+  const [franqueados, setFranqueados] = useState(() => seedOr(seedFranqueados).map((c) => DEMO_PARCEIRO ? { ...c, tipo: 'parceiro', parceiroStatus: 'ativo', parceiroPercentual: 75, garantiaPercentual: 0 } : c));
   const [usuarios, setUsuarios] = useState(seedOr(seedUsuarios));
-  const [clientes, setClientes] = useState(seedOr(CLIENTES));
+  const [clientes, setClientes] = useState(() => seedOr(DEMO_PARCEIRO ? [
+    { id: 'cli_demo_1', unidadeId: 'lux', nome: 'Empresa Horizonte Ltda.', email: 'contato@horizonte.demo', telefone: '(31) 99999-1001', documento: '00.000.000/0001-01', plano: 'Endereço Fiscal', fiscal: true, status: 'ativo' },
+    { id: 'cli_demo_2', unidadeId: 'lux', nome: 'Marina Consultoria', email: 'marina@consultoria.demo', telefone: '(31) 99999-1002', documento: '000.000.000-02', plano: 'Sala de reunião', fiscal: false, status: 'ativo' },
+  ] : CLIENTES));
   const [contas, setContas] = useState(seedOr(seedContas));
   const [lancamentos, setLancamentos] = useState(() => seedOr(seedLancamentos.map((l) => ({ ano: ANO_ATUAL, ...l }))));
   const [catalogo, setCatalogo] = useState(seedOr(seedCatalogo));
@@ -234,7 +238,7 @@ export function StoreProvider({ children }) {
   useEffect(() => { _gravarDocGlobal("configVenda", configVenda); }, [configVenda, activeUnit]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [viewAs, setViewAs] = useState(null); // id do franqueado, ou null = franqueador
-  const [perfil, setPerfilState] = useState("franqueador"); // perfil de acesso previewado
+  const [perfil, setPerfilState] = useState(DEMO_PARCEIRO ? "master" : "franqueador"); // perfil de acesso previewado
   perfilRef.current = perfil;
   const [meuPerfil, setMeuPerfil] = useState({
     nome: "Diego Garcia",
