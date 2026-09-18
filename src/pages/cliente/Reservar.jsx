@@ -2,7 +2,8 @@
 // horário livre e, em sala compartilhada, a base. Antes de confirmar mostra
 // quantas horas o plano cobre e o valor do excedente. Confirmação na própria
 // tela. "Minhas reservas" com status real e cancelamento até 24h antes.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ultimaSolicitacao } from "../../lib/ultimaSolicitacao.js";
 import { CalendarDays, Clock, CheckCircle2, Users, XCircle } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Empty, ConfirmDialog } from "../../components/ui.jsx";
 import { C, serif, fmt, inp } from "../../lib/theme.js";
@@ -45,16 +46,22 @@ export default function Reservar({ nome }) {
   const [confirmada, setConfirmada] = useState(null);
   const [cancelar, setCancelar] = useState(null);
   const [msgCancelamento, setMsgCancelamento] = useState("");
+  const carga = useRef(ultimaSolicitacao());
 
   const carregar = (d = data, forcar = false) => {
+    const atual = carga.current.iniciar();
     setCarregando(true);
     setErro("");
     return clienteApi.agendaReservas(d, forcar)
-      .then((r) => { setAgenda(r); if (!d) setData(r.data); return r; })
-      .catch((e) => setErro(mensagemDe(e)))
-      .finally(() => setCarregando(false));
+      .then((r) => { if (atual()) { setAgenda(r); if (!d) setData(r.data); } return r; })
+      .catch((e) => { if (atual()) setErro(mensagemDe(e)); })
+      .finally(() => { if (atual()) setCarregando(false); });
   };
-  useEffect(() => { carregar(""); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const controle = carga.current;
+    carregar("");
+    return () => controle.invalidar();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const trocarData = (d) => { setData(d); setInicio(null); setBase(null); setErroReserva(""); carregar(d); };
 
@@ -95,7 +102,7 @@ export default function Reservar({ nome }) {
   const descontoValor = Math.round(excedenteCheio * descontoSala) / 100;
   const valorExcedente = Math.round((excedenteCheio - descontoValor) * 100) / 100;
   const semCobertura = sala && sala.valor_hora <= 0 && excedente > 0;
-  const podeConfirmar = sala && inicio != null && duracoesPossiveis.includes(duracao) && (!bases.length || (base && livre(inicio, duracao, base))) && !semCobertura && !enviando;
+  const podeConfirmar = !carregando && !erro && sala && inicio != null && duracoesPossiveis.includes(duracao) && (!bases.length || (base && livre(inicio, duracao, base))) && !semCobertura && !enviando;
 
   const confirmar = async () => {
     if (!podeConfirmar) return;
@@ -167,7 +174,11 @@ export default function Reservar({ nome }) {
               <CartaoRecepcao titulo="Reserve com a recepção" texto="Ainda não há salas disponíveis para reservar pelo app na sua unidade. A recepção faz a reserva para você." mensagemWhatsapp="Olá! Quero reservar uma sala no CafeWorking." />
             </div>
           ) : (
-            <Card style={{ marginBottom: 16 }}>
+            <Card style={{ marginBottom: 16 }} aria-busy={carregando}>
+              <div role="status" aria-live="polite" style={{ marginBottom: 12, color: C.text3 }}>
+                {carregando ? "Conferindo os horários disponíveis…" : erro ? "Atualize a agenda antes de reservar." : "Escolha seu espaço. Você confere o valor antes de confirmar."}
+              </div>
+              <fieldset disabled={carregando || !!erro || enviando} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
               {unidades.length > 1 && (
                 <div style={{ marginBottom: 14 }}>
                   <label htmlFor="res-unidade" style={{ fontSize: 13, fontWeight: 600, color: C.text3, display: "block", marginBottom: 6 }}>Unidade</label>
@@ -293,6 +304,7 @@ export default function Reservar({ nome }) {
                   {inicio != null && bases.length > 0 && !base && <div style={{ fontSize: 13, color: C.text3, marginTop: 6 }}>Escolha uma base livre para confirmar.</div>}
                 </>
               )}
+              </fieldset>
             </Card>
           )}
 
