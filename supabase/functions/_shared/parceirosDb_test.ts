@@ -15,7 +15,7 @@ function bancoFalso(tabelas: Record<string, Linha[]>, unicos: Record<string, str
     tabelas,
     rpc(nome: string, args: Linha) {
       chamadasRpc.push([nome, args]);
-      return Promise.resolve({ data: rpc ? rpc(nome, args) : null, error: null });
+      return Promise.resolve({ data: rpc ? rpc(nome, args) : nome === 'unidade_publicavel' ? true : null, error: null });
     },
     from(tabela: string) {
       const linhasDa = () => (tabelas[tabela] ||= []);
@@ -83,6 +83,14 @@ Deno.test("regraDaUnidade: parceira com split, própria sem, suspensa recusada",
   db.contas[0].parceiro_status = "suspenso";
   const s = await regraDaUnidade(admin, "un_parc");
   assert(s.parceiro && !s.ok && s.codigo === "PARCEIRO_INATIVO");
+});
+
+Deno.test('Publicação pendente bloqueia contratação nova, mas preserva cobrança operacional', async () => {
+  const admin = bancoFalso(base(), {}, () => false);
+  const operacional = await regraDaUnidade(admin, 'un_parc');
+  assert(operacional.parceiro && operacional.ok);
+  const nova = await regraDaUnidade(admin, 'un_parc', true);
+  assert(nova.parceiro && !nova.ok);
 });
 
 Deno.test("credenciaisAsaas: unidade parceira usa a conta da CafeWorking, nunca a chave do parceiro", async () => {

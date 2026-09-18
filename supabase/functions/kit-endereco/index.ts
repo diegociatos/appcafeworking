@@ -76,6 +76,8 @@ Deno.serve(async (req) => {
       if (etapa === "preparando") {
         const { data: docs, error: dErr } = await admin.from("unidade_documentos")
           .select("id, tipo, titulo, numero, nome_arquivo, mime, validade, storage_path, created_at")
+          .eq("revisao_status", "aprovado")
+          .or(`validade.is.null,validade.gte.${new Date().toISOString().slice(0, 10)}`)
           .eq("unidade_id", unidadeId).order("tipo").order("created_at", { ascending: false });
         if (dErr) throw new Error(`unidade_documentos: ${dErr.message}`);
         if (docs?.length) {

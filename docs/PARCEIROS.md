@@ -1,5 +1,7 @@
 # Rede de parceiros CafeWorking
 
+> Atualização de escopo em 18/09/2026: o texto abaixo registra decisões anteriores e não define enquadramento jurídico nem condições comerciais desta implementação. Para a versão em revisão, consultar `REDE-UNIDADES-DIAGNOSTICO.md` e `REDE-UNIDADES-HOMOLOGACAO.md`. Percentuais existentes foram preservados no backend, mas não são apresentados como condições fixas na nova página pública. Nenhuma minuta foi publicada ou alterada.
+
 Decisões do Diego em 17/09/2026:
 
 - **Parceiro = franqueado sem a burocracia de franquia.** Escritórios de contabilidade, advocacia e similares, em qualquer município, oferecem endereço fiscal e, se quiserem, sala privativa e escritório compartilhado.

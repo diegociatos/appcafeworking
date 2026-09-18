@@ -136,7 +136,7 @@ Deno.serve(async (req) => {
     if (!unidade) return json({ error: "Unidade inválida." }, 404, req);
 
     // unidade parceira: nunca cobra sem split
-    const regra = await regraDaUnidade(admin, unidade.id);
+    const regra = await regraDaUnidade(admin, unidade.id, true);
     if (regra.parceiro && !regra.ok) return json({ error: regra.erro, codigo: regra.codigo }, 412, req);
     const split = regra.parceiro && regra.ok ? regra.split : null;
 
@@ -144,6 +144,10 @@ Deno.serve(async (req) => {
     const plano = (planosRows || []).map((r) => r.doc)
       .find((p) => p && p.id === body.plano_id && p.ativo !== false && (!regra.parceiro || p.modelo === true));
     if (!plano) return json({ error: "Plano indisponível." }, 404, req);
+    if (regra.parceiro) {
+      const { data: ok, error } = await admin.rpc('servico_publicavel', { p_unidade: unidade.id, p_categoria: plano.categoria });
+      if (error || ok !== true) return json({ error: 'Serviço ainda não aprovado para esta unidade.' }, 412, req);
+    }
     if (origem === "site" && plano.venderNoSite !== true) return json({ error: "Plano indisponível para contratação online." }, 404, req);
     if (plano.sobConsulta === true) {
       return json({ error: "Este plano é sob consulta. Peça uma proposta.", codigo: "SOB_CONSULTA" }, 400, req);

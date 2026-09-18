@@ -36,6 +36,8 @@ import Catalogo from "./pages/Catalogo.jsx";
 import Planos from "./pages/Planos.jsx";
 import PlanosNacionais from "./pages/PlanosNacionais.jsx";
 import Parceiros from "./pages/Parceiros.jsx";
+import MinhaUnidadeParceira from "./pages/MinhaUnidadeParceira.jsx";
+import ConversasUnidade from "./pages/ConversasUnidade.jsx";
 import Salas from "./pages/Salas.jsx";
 import Configuracoes from "./pages/Configuracoes.jsx";
 import Auditoria from "./pages/Auditoria.jsx";
@@ -55,6 +57,8 @@ import Aberturas from "./pages/Aberturas.jsx";
 import { aberturasApi } from "./lib/aberturasApi.js";
 
 const NAV = [
+  { id: "minha_unidade_parceira", label: "Unidade parceira", icon: Handshake, group: "principal" },
+  { id: "conversas_unidade", label: "Conversas", icon: MessageSquare, group: "relacionamento" },
   { id: "dash", label: "Dashboard", icon: LayoutDashboard, group: "principal" },
   { id: "franqueados", label: "Contas", icon: Store, group: "comercial" },
   { id: "parceiros", label: "Parceiros", icon: Handshake, group: "comercial" },
@@ -95,6 +99,7 @@ const NAV_GRUPOS = [
 ];
 
 const PAGES = {
+  minha_unidade_parceira: MinhaUnidadeParceira, conversas_unidade: ConversasUnidade,
   dash: Dashboard, franqueados: Franqueados, crm: CRM, unidades: Unidades,
   reservas: Reservas, corresp: Correspondencias, pdv: PDV, clientes: Clientes,
   financeiro: Financeiro, boletos: Boletos, cobrancas: Cobrancas, notafiscal: NotaFiscal, estoque: Estoque, patrimonio: Patrimonio, eventos: Eventos,
@@ -132,7 +137,7 @@ export default function App() {
     const TELA_EQUIPE_DO_CLIENTE = { cli_reservar: "reservas", cli_docs: "corresp" };
     const bruta = telaPedidaRef.current;
     const pedida = bruta && !podeAbrir(bruta) && podeAbrir(TELA_EQUIPE_DO_CLIENTE[bruta]) ? TELA_EQUIPE_DO_CLIENTE[bruta] : bruta;
-    const destino = pedida && podeAbrir(pedida) ? pedida : cfg.landing;
+    const destino = pedida && podeAbrir(pedida) ? pedida : perfil === "master" && unidadeEhParceira(activeUnit) ? "minha_unidade_parceira" : cfg.landing;
     if (sessaoAplicada) telaPedidaRef.current = null;
     pularSyncUrlRef.current = destino !== page; // espera a tela nova renderizar antes de mexer na URL
     setPage(destino);
@@ -188,6 +193,7 @@ export default function App() {
   // Com Supabase configurado, exige login. Sem configurar (demo), libera direto.
   if (supabaseConfigured && session && precisaDefinirSenha()) return <DefinirSenha />;
   if (supabaseConfigured && !session) return <Login />;
+  if (supabaseConfigured && session && sessaoAplicada && perfil === 'sem_acesso') return <main style={{ padding: 24, fontFamily: sans }}><h1>Acesso aguardando configuração</h1><p>Seu login ainda não tem vínculo com uma unidade. Fale com a equipe CafeWorking.</p><button onClick={signOut}>Sair da conta</button></main>;
 
   // No perfil cliente, a navegação do portal vai toda para o sidebar. O cadastro
   // do próprio cliente vem da tabela clientes (a RLS só devolve o dele).
@@ -203,6 +209,7 @@ export default function App() {
     { id: "cli_docs", label: "Correspondências", icon: Mail },
     ...(meusCadastros.some((c) => c.fiscal) ? [{ id: "cli_fiscal", label: "Endereço fiscal", icon: Building2 }] : []),
     { id: "cli_contato", label: "Fale com a recepção", icon: MessageSquare },
+    { id: "conversas_unidade", label: "Conversas no app", icon: MessageSquare },
     { id: "cli_notif", label: "Notificações", icon: Bell },
     { id: "cli_conta", label: "Minha conta", icon: UserCircle },
   ];
@@ -213,6 +220,7 @@ export default function App() {
   } else {
     nav = NAV.filter((n) => !(viewAs && n.id === "franqueados"));
     if (allowed) nav = nav.filter((n) => allowed.includes(n.id));
+    if (perfil !== "franqueador" && !unidadeEhParceira(activeUnit)) nav = nav.filter((n) => n.id !== "minha_unidade_parceira");
   }
 
   // Sidebar organizado por assunto. No portal do cliente fica sem cabeçalhos.

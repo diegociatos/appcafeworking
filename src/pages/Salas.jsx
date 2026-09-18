@@ -56,6 +56,7 @@ export default function Salas() {
                     {s.cap} pessoas{s.bases > 0 ? ` · ${s.bases} bases` : ""} · {s.contratada && s.valorMensal ? `${fmt(s.valorMensal)}/mês` : (s.valor || "—")}
                   </div>
                   {s.descricao && <div style={{ fontSize: 12, color: C.text3, marginTop: 4, lineHeight: 1.45 }}>{s.descricao}</div>}
+                  {s.regras && <p style={{ fontSize: 12 }}>Regras de uso: {s.regras}</p>}
                   {s.planos?.length > 0 && (
                     <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 6 }}>
                       {s.planos.slice(0, 5).map((p) => (

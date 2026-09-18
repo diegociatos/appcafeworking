@@ -1313,9 +1313,9 @@ export function StoreProvider({ children }) {
       _aplicarIdentidade(ident, "franqueador");
       return;
     }
-    if (!membros || !membros.length) { setPerfilState("franqueador"); setViewAs(null); _aplicarIdentidade(ident, "franqueador"); return; }
+    if (!membros || !membros.length) { setPerfilState("sem_acesso"); setViewAs(null); _aplicarIdentidade(ident, "sem_acesso"); return; }
     const m = membros[0];
-    const perfilKey = ROLE_PERFIL[m.role] || "master";
+    const perfilKey = ROLE_PERFIL[m.role] || "sem_acesso";
     setPerfilState(perfilKey);
     setViewAs(m.franqueado_id || null);
     if (m.unidade_id) setActiveUnit(m.unidade_id);
