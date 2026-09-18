@@ -157,7 +157,7 @@ export default function Boletos() {
           <EmitirForm
             contas={contas}
             contaPadrao={contaSel}
-            onEmitir={(dados) => { store.emitirBoleto(activeUnit, dados); setEmitModal(false); }}
+            onEmitir={async (dados) => { await store.emitirBoletoConfirmado(activeUnit, dados); setEmitModal(false); }}
           />
         </Modal>
       )}
@@ -447,7 +447,7 @@ function IntegracaoBanco({ conta, onConectar, onDesconectar, onToggle }) {
 }
 
 // ===========================================================================
-function EmitirForm({ contas, contaPadrao, onEmitir }) {
+export function EmitirForm({ contas, contaPadrao, onEmitir }) {
   const [f, setF] = useState({
     bankAccountId: contaPadrao || contas[0]?.id || "",
     sacado: "",
@@ -461,7 +461,17 @@ function EmitirForm({ contas, contaPadrao, onEmitir }) {
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const [buscando, setBuscando] = useState(false);
   const [erroBusca, setErroBusca] = useState("");
-  const valido = f.bankAccountId && f.sacado.trim() && f.sacadoDocumento.trim() && +f.valor > 0 && f.vencimento;
+  const valido = contas.some(c => c.id === f.bankAccountId) && f.sacado.trim() && f.sacadoDocumento.trim() && Number.isFinite(+f.valor) && +f.valor > 0 && f.vencimento;
+  const [emitindo, setEmitindo] = useState(false);
+  const [erroEmissao, setErroEmissao] = useState("");
+  const emitir = async () => {
+    if (!valido || emitindo) return;
+    setEmitindo(true); setErroEmissao("");
+    try {
+      await onEmitir({ ...f, valor: +f.valor, sacadoEmail: f.email, sacadoCep: f.cep, sacadoLogradouro: f.logradouro, sacadoNumero: f.numero, sacadoBairro: f.bairro, sacadoCidade: f.cidade, sacadoUf: f.uf });
+    } catch (e) { setErroEmissao(e.message || "Não foi possível confirmar a emissão. Consulte os boletos antes de tentar novamente."); }
+    finally { setEmitindo(false); }
+  };
 
   // Busca dados da empresa pelo CNPJ (14 dígitos) e preenche sacado/e-mail/endereço.
   const buscarDoc = (v) => {
@@ -533,9 +543,9 @@ function EmitirForm({ contas, contaPadrao, onEmitir }) {
       <Field label="Instruções (opcional)">
         <input value={f.instrucoes} onChange={set("instrucoes")} style={inp} placeholder="Ex: Mensalidade sala privativa - Junho" />
       </Field>
-      <Btn style={{ width: "100%", justifyContent: "center", marginTop: 4, opacity: valido ? 1 : 0.5 }}
-        onClick={() => valido && onEmitir({ ...f, valor: +f.valor, sacadoEmail: f.email, sacadoCep: f.cep, sacadoLogradouro: f.logradouro, sacadoNumero: f.numero, sacadoBairro: f.bairro, sacadoCidade: f.cidade, sacadoUf: f.uf })}>
-        <Barcode size={16} /> Emitir boleto
+      {erroEmissao && <p role="alert" style={{ color: C.red, marginBottom: 12 }}>{erroEmissao}</p>}
+      <Btn disabled={!valido || emitindo} style={{ width: "100%", justifyContent: "center", marginTop: 4 }} onClick={emitir}>
+        <Barcode size={16} /> {emitindo ? "Confirmando emissão no banco…" : "Emitir boleto no banco selecionado"}
       </Btn>
     </>
   );

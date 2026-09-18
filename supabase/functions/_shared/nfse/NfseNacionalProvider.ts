@@ -1,3 +1,4 @@
+import { buscarSefin } from "./transporteNacional.ts";
 // ============================================================================
 // NfseNacionalProvider — emissor padrão NFS-e Nacional (Sistema Nacional
 // NFS-e). A EMISSÃO pelo contribuinte é feita no módulo SEFIN NACIONAL
@@ -66,29 +67,7 @@ export class NfseNacionalProvider implements NfseProvider {
    * negocia h2 por ALPN, então desligamos http2 no cliente.
    */
   private async mtlsFetch(url: string, init?: RequestInit): Promise<Response> {
-    const anyDeno = (globalThis as any).Deno;
-    if (this.creds.cert_pem && this.creds.key_pem && anyDeno?.createHttpClient) {
-      const opcoes: Record<string, unknown> = {
-        cert: this.creds.cert_pem,
-        key: this.creds.key_pem,
-        certChain: this.creds.cert_pem,
-        privateKey: this.creds.key_pem,
-        http1: true,
-        http2: false,
-      };
-      let client: unknown;
-      try {
-        client = anyDeno.createHttpClient(opcoes);
-      } catch {
-        // Runtime antigo sem as opções http1/http2: segue sem elas.
-        delete opcoes.http1;
-        delete opcoes.http2;
-        client = anyDeno.createHttpClient(opcoes);
-      }
-      return await fetch(url, { ...init, client } as RequestInit);
-    }
-    // Sem PEM disponível: tenta sem mTLS (provavelmente 496) — o erro é tratado.
-    return await fetch(url, init);
+    return buscarSefin(url, init, this.creds.cert_pem, this.creds.key_pem);
   }
 
   async emitirNfse(input: EmitirNfseInput): Promise<EmitirNfseResult> {

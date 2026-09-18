@@ -335,7 +335,7 @@ function clienteToRow(c) {
   const row = {
     id: c.id, unidade_id: c.unidadeId, nome: c.nome, documento: c.cnpj,
     plano: c.plano, fiscal: c.fiscal, status: c.status, desde: c.desde,
-    contato: c.contato, email: c.email, telefone: c.tel,
+    contato: c.contato, email: c.email, emails_adicionais: c.emailsAdicionais, telefone: c.tel,
     endereco: c.endereco, numero: c.numero, cep: c.cep,
     bairro: c.bairro, cidade: c.cidade, uf: c.uf,
   };
@@ -362,6 +362,13 @@ export async function patchCliente(id, patch) {
 }
 export async function deleteClienteDb(id) {
   return await writeJson(`clientes?id=eq.${encodeURIComponent(id)}`, "DELETE");
+}
+export async function patchClienteOuFalhar(id, patch) {
+  const rows = await writeRowsOrThrow(`clientes?id=eq.${encodeURIComponent(id)}`, "PATCH", clienteToRow({ ...patch, id: undefined }), "return=representation", {
+    semPermissao: "Sem permissão para editar este cliente.", falha: "Não foi possível salvar o cliente",
+  });
+  if (!rows?.[0]) throw new Error("Cliente não encontrado ou sem permissão de edição.");
+  return rows[0];
 }
 
 // Mapeiam as colunas do banco (snake_case) para o formato do store (camelCase).
@@ -398,7 +405,7 @@ const mapUsuario = (r) => ({ id: r.id, unidadeId: r.unidade_id, nome: r.nome, em
 // resolve o unidade_id para o nome usado no front.
 const mapCliente = (r, nomeDaUnidade) => ({
   id: r.id, nome: r.nome, cnpj: r.documento, plano: r.plano, fiscal: r.fiscal,
-  status: r.status, desde: r.desde, contato: r.contato, email: r.email, tel: r.telefone,
+  status: r.status, desde: r.desde, contato: r.contato, email: r.email, emailsAdicionais: r.emails_adicionais || [], tel: r.telefone,
   endereco: r.endereco, numero: r.numero, cep: r.cep, bairro: r.bairro, cidade: r.cidade, uf: r.uf,
   unidade: nomeDaUnidade(r.unidade_id), unidadeId: r.unidade_id, docs: [],
 });

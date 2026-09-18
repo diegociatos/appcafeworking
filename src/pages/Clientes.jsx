@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { validarEmailsCliente } from "../lib/contatosCliente.js";
 import {
   Plus, Users, Briefcase, ChevronRight, ChevronLeft, FileText,
   Building, Mail, Phone, FileCheck, PackageCheck,
@@ -29,7 +30,7 @@ const correspondenciasDoCliente = (lista, cli) => (lista || []).filter((c) => (c
   : c.unidadeId === cli.unidadeId && !!c.cliente && semAcento(c.cliente) === semAcento(cli.nome)));
 
 export default function Clientes({ go }) {
-  const { clientes, addCliente, updateCliente, removeCliente, unidades, planosDe, perfil, correspondencias } = useStore();
+  const { clientes, criarClienteConfirmado, atualizarClienteConfirmado, removeCliente, unidades, planosDe, perfil, correspondencias } = useStore();
   const [sel, setSel] = useState(null);
   const [editar, setEditar] = useState(null); // null | {} novo | cliente em edição
   const [excluir, setExcluir] = useState(null);
@@ -237,7 +238,7 @@ export default function Clientes({ go }) {
 
       {editar && (
         <Modal title={editar.id ? "Editar cliente" : "Novo cliente"} onClose={() => setEditar(null)} maxWidth={460}>
-          <NovoClienteForm inicial={editar} unidades={unidades} planosDe={planosDe} onSalvar={(dados) => { if (editar.id) updateCliente(editar.id, dados); else addCliente(dados); setEditar(null); }} />
+          <NovoClienteForm inicial={editar} unidades={unidades} planosDe={planosDe} onSalvar={async (dados) => { if (editar.id) await atualizarClienteConfirmado(editar.id, dados); else await criarClienteConfirmado(dados); setEditar(null); }} />
         </Modal>
       )}
 
@@ -306,7 +307,7 @@ function NovoClienteForm({ inicial = {}, unidades, planosDe, onSalvar }) {
   const [f, setF] = useState({
     nome: inicial.nome || "", cnpj: inicial.cnpj || "", plano: inicial.plano || "",
     unidade: inicial.unidade || unidades[0]?.nome || "", fiscal: inicial.fiscal || false,
-    contato: inicial.contato || "", email: inicial.email || "", tel: inicial.tel || "",
+    contato: inicial.contato || "", email: inicial.email || "", emailsAdicionais: inicial.emailsAdicionais || [], tel: inicial.tel || "",
     cep: inicial.cep || "", endereco: inicial.endereco || "", numero: inicial.numero || "",
     bairro: inicial.bairro || "", cidade: inicial.cidade || "", uf: inicial.uf || "",
   });
@@ -314,6 +315,17 @@ function NovoClienteForm({ inicial = {}, unidades, planosDe, onSalvar }) {
   const [buscando, setBuscando] = useState(false);
   const [erroBusca, setErroBusca] = useState("");
   const valido = f.nome.trim();
+  const [salvando, setSalvando] = useState(false);
+  const [erroSalvar, setErroSalvar] = useState("");
+  const salvar = async () => {
+    if (!valido || salvando) return;
+    setErroSalvar(""); setSalvando(true);
+    try {
+      const contatos = validarEmailsCliente(f.email, f.emailsAdicionais);
+      await onSalvar({ ...f, ...contatos, desde: inicial.desde || new Date().toISOString().slice(0, 10) });
+    } catch (e) { setErroSalvar(e.message || "Não foi possível salvar o cliente."); }
+    finally { setSalvando(false); }
+  };
   const unidadeId = unidades.find((u) => u.nome === f.unidade)?.id;
   const planos = (planosDe && unidadeId) ? planosDe(unidadeId) : [];
   // Busca dados da empresa pelo CNPJ (só CNPJ = 14 dígitos) e preenche os campos.
@@ -379,7 +391,15 @@ function NovoClienteForm({ inicial = {}, unidades, planosDe, onSalvar }) {
       </div>
       <Field label="E-mail">
         <input value={f.email} onChange={set("email")} style={inp} type="email" placeholder="contato@empresa.com.br" />
-        <div style={{ fontSize: 11, color: C.text4, marginTop: 4 }}>Usado para enviar cobranças, boletos e notas fiscais ao cliente.</div>
+        <div style={{ fontSize: 11, color: C.text3, marginTop: 4 }}>E-mail principal para acesso ao app e comunicações.</div>
+      </Field>
+      <Field label="E-mails adicionais para cópias financeiras">
+        {f.emailsAdicionais.map((email, i) => <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <input type="email" aria-label={`E-mail adicional ${i + 1}`} value={email} style={{ ...inp, minWidth: 0 }} onChange={e => setF({ ...f, emailsAdicionais: f.emailsAdicionais.map((v, j) => j === i ? e.target.value : v) })} />
+          <Btn variant="ghost" aria-label={`Remover e-mail adicional ${i + 1}`} onClick={() => setF({ ...f, emailsAdicionais: f.emailsAdicionais.filter((_, j) => j !== i) })}>Remover</Btn>
+        </div>)}
+        <Btn variant="ghost" disabled={f.emailsAdicionais.length >= 10} onClick={() => setF({ ...f, emailsAdicionais: [...f.emailsAdicionais, ""] })}>+ Adicionar e-mail</Btn>
+        <p style={{ fontSize: 12, color: C.text3, marginTop: 6 }}>Recebem cópias de cobranças, boletos e notas enviados pelo CafeWorking. Não recebem convites nem acesso à conta.</p>
       </Field>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 0.8fr", gap: 12 }}>
         <Field label="CEP"><input value={f.cep} onChange={onCep} style={inp} placeholder="00000-000" inputMode="numeric" aria-label="CEP do cliente" /></Field>
@@ -395,8 +415,9 @@ function NovoClienteForm({ inicial = {}, unidades, planosDe, onSalvar }) {
       <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.text2, margin: "4px 0 14px", cursor: "pointer" }}>
         <input type="checkbox" checked={f.fiscal} onChange={(e) => setF({ ...f, fiscal: e.target.checked })} /> Usa endereço fiscal (recebe correspondências)
       </label>
-      <Btn style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.5 }} onClick={() => valido && onSalvar({ ...f, desde: inicial.desde || new Date().toISOString().slice(0, 10) })}>
-        <Plus size={16} /> {inicial.id ? "Salvar cliente" : "Cadastrar cliente"}
+      {erroSalvar && <p role="alert" style={{ color: C.red, marginBottom: 12 }}>{erroSalvar}</p>}
+      <Btn disabled={!valido || salvando} style={{ width: "100%", justifyContent: "center" }} onClick={salvar}>
+        <Plus size={16} /> {salvando ? "Salvando…" : inicial.id ? "Salvar cliente" : "Cadastrar cliente"}
       </Btn>
     </>
   );
@@ -567,6 +588,7 @@ function ClienteDetalhe({ cli, onBack, onEditar, onExcluir, acesso, podeConvidar
             [Building, "Unidade", cli.unidade],
             [Users, "Contato", cli.contato],
             [Mail, "E-mail", cli.email],
+            [Mail, "Cópias financeiras", (cli.emailsAdicionais || []).join(", ") || "—"],
             [Phone, "Telefone", cli.tel],
             [MapPin, "Endereço", [[cli.endereco, cli.numero].filter(Boolean).join(", "), cli.cep].filter(Boolean).join(" · ")],
           ].map(([Ic, l, v], i) => (

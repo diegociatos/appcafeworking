@@ -20,7 +20,7 @@
 import { handleOptions, json } from "../_shared/cors.ts";
 import { adminClient } from "../_shared/supabaseAdmin.ts";
 import { ehEquipe } from "../_shared/assinaturas.ts";
-import { getNotifProvider, NotifyError, preferenciaPermite, renderTemplate, type Canal, type Evento } from "../_shared/notify/index.ts";
+import { getNotifProvider, NotifyError, preferenciaPermite, renderTemplate, enviarCopiasFinanceiras, type Canal, type Evento } from "../_shared/notify/index.ts";
 import { emailValido } from "../_shared/venda.ts";
 
 /** Avisos ao cliente que a equipe pode disparar pelo app. */
@@ -95,6 +95,9 @@ Deno.serve(async (req) => {
       : { status: "erro", assunto: msg.assunto, erro: result.erro };
     const { data: updated } = await admin.from("notificacoes").update(patch).eq("id", row.id).select().single();
 
+    if (result.ok && row.canal === "email") await enviarCopiasFinanceiras(admin, {
+      unidade_id: row.unidade_id, evento: row.evento as Evento, email: row.destinatario, cliente: row.cliente_nome, dados: row.dados ?? {},
+    });
     return json({ notificacao: updated, enviado: result.ok }, result.ok ? 200 : 502, req);
   } catch (e) {
     if (e instanceof NotifyError) {

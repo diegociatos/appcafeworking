@@ -18,7 +18,7 @@ import { UNIDADES, RESERVAS_INIT, CLIENTES, LEADS_INIT, ETAPAS_CRM, ORIGENS_INIT
 import { boletosApi } from "./boletosApi.js";
 import { nfseApi } from "./nfseApi.js";
 import {
-  upsertConfigFiscal, insertCliente, insertClienteOuFalhar, patchCliente, deleteClienteDb,
+  upsertConfigFiscal, insertCliente, insertClienteOuFalhar, patchCliente, patchClienteOuFalhar, deleteClienteDb,
   putAppState, delAppState, upsertSalaDb, deleteSalaDb, insertCreditoDb, inserirCreditoOuFalhar,
   upsertBankAccountDb, patchBankAccountDb,
 } from "./supabaseDb.js";
@@ -749,6 +749,12 @@ export function StoreProvider({ children }) {
     setClientes((cs) => cs.filter((c) => c.id !== id));
     if (nfseApi.configured) deleteClienteDb(id).catch(() => {});
   };
+  const atualizarClienteConfirmado = async (id, patch) => {
+    const unidadeId = patch.unidadeId || unidades.find(u => u.nome === patch.unidade)?.id;
+    const dados = { ...patch, ...(unidadeId ? { unidadeId } : {}) };
+    if (REAL) await patchClienteOuFalhar(id, dados);
+    setClientes(cs => cs.map(c => c.id === id ? { ...c, ...dados } : c));
+  };
 
   // Estoque -----------------------------------------------------------------
   const estoqueDe = (unidadeId) => estoque.filter((e) => e.unidadeId === unidadeId);
@@ -1127,6 +1133,21 @@ export function StoreProvider({ children }) {
     return novo;
   };
 
+  const emitirBoletoConfirmado = async (unidadeId, dados) => {
+    if (!boletosApi.configured) return emitirBoleto(unidadeId, dados);
+    const { boleto } = await boletosApi.emitir({
+      bank_account_id: dados.bankAccountId, sacado: dados.sacado,
+      sacado_documento: dados.sacadoDocumento, sacado_email: dados.sacadoEmail,
+      sacado_cep: dados.sacadoCep, sacado_logradouro: dados.sacadoLogradouro, sacado_numero: dados.sacadoNumero,
+      sacado_bairro: dados.sacadoBairro, sacado_cidade: dados.sacadoCidade, sacado_uf: dados.sacadoUf,
+      valor: dados.valor, vencimento: dados.vencimento, instrucoes: dados.instrucoes,
+    });
+    if (!boleto?.id) throw new Error("O banco não confirmou o boleto. Consulte a emissão antes de tentar novamente.");
+    const b = _mapApiBoleto(boleto, unidadeId);
+    setBoletos(bs => [...bs.filter(x => x.id !== b.id), b]);
+    _avisarBoletoEmail(unidadeId, b, dados.sacadoEmail);
+    return b;
+  };
   const cancelarBoleto = (id) => {
     const aplicar = () => setBoletos((bs) => bs.map((b) => (b.id === id ? { ...b, status: "cancelado" } : b)));
     if (boletosApi.configured) { boletosApi.cancelar(id).then(aplicar).catch(() => {}); return; }
@@ -1199,7 +1220,7 @@ export function StoreProvider({ children }) {
       descricao: `${c.plano} · ${c.cliente}${sufixo}`,
       categoria: "Receita Operacional Bruta", subcategoria: "",
       valor, contaId: contaCx, data: String(c.diaVencimento || "10"),
-      recorrente: true, contratoId: c.id, ano: ANO_ATUAL,
+      recorrente: true, contratoId: c.id, clienteId: c.clienteId || null, ano: ANO_ATUAL,
     };
     addContaRecorrente(c.unidadeId, base, meses, {
       gerar: true, bankAccountId: c.bankAccountId, sacado: c.cliente, sacadoDocumento: c.documento,
@@ -1209,7 +1230,7 @@ export function StoreProvider({ children }) {
   const addContrato = (unidadeId, cfg) => {
     const id = "ct_" + Date.now();
     const contrato = {
-      id, unidadeId, cliente: cfg.cliente, documento: cfg.documento, plano: cfg.plano, planoId: cfg.planoId || null,
+      id, unidadeId, cliente: cfg.cliente, clienteId: cfg.clienteId || null, itens: cfg.itens || [], documento: cfg.documento, plano: cfg.plano, planoId: cfg.planoId || null,
       valorMensal: cfg.valorMensal, bankAccountId: cfg.bankAccountId, diaVencimento: cfg.diaVencimento || "10",
       mesInicial: cfg.mesInicial, meses: cfg.meses, status: "ativo", criadoEm: new Date().toISOString().slice(0, 7),
     };
@@ -1467,7 +1488,7 @@ export function StoreProvider({ children }) {
       notificacoesEmail, notificacoesEmailDe, enfileirarEmail,
       addFranqueado, updateFranqueado, removeFranqueado,
       addUsuario, adicionarUsuario, updateUsuario, removeUsuario, usuariosDe,
-      clientes, clientesDe, addCliente, criarClienteConfirmado, updateCliente, removeCliente,
+      clientes, clientesDe, addCliente, criarClienteConfirmado, atualizarClienteConfirmado, updateCliente, removeCliente,
       addUnidade, updateUnidade,
       addSala, updateSala, removeSala,
       addProduto, updateProduto, removeProduto,
@@ -1482,7 +1503,7 @@ export function StoreProvider({ children }) {
       addCategoria, updateCategoria, removeCategoria,
       bankAccounts, boletos,
       bankAccountsDe, addBankAccount, updateBankAccount, removeBankAccount, conectarBanco, desconectarBanco,
-      boletosDe, emitirBoleto, cancelarBoleto, baixarBoleto, darBaixaLancamento, sincronizarBoleto,
+      boletosDe, emitirBoleto, emitirBoletoConfirmado, cancelarBoleto, baixarBoleto, darBaixaLancamento, sincronizarBoleto,
       contratos, contratosDe, contratosVencendoDe, mesFimContrato,
       addContrato, renovarContrato, encerrarContrato,
       estoque, estoqueDe, estoqueBaixoDe, addItemEstoque, updateItemEstoque, removeItemEstoque, ajustarEstoque, comprarEstoque, venderEstoque, registrarSaidaEstoque,
