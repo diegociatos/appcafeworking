@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { EmitirForm, BANCOS } from "./Boletos.jsx";
 import { CreditCard, Plus, Barcode, QrCode, Link2, CheckCircle2, Copy, ExternalLink, AlertTriangle, Wallet, KeyRound, ShieldCheck, FileText, Receipt } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
 import { C, serif, fmt, inp } from "../lib/theme.js";
@@ -29,11 +30,14 @@ const mapCob = (c) => ({
   pixPayload: c.pix_payload, descricao: c.descricao,
 });
 
-export default function Cobrancas() {
+export default function Cobrancas({ go }) {
   const store = useStore();
   const { activeUnit, unidadeAtiva } = store;
   const [lista, setLista] = useState([]);
   const [novo, setNovo] = useState(false);
+  const [emissor, setEmissor] = useState("");
+  const [avisoBanco, setAvisoBanco] = useState("");
+  const contasBancarias = store.bankAccountsDe(activeUnit).filter(c => c.ativo !== false);
   const [detalhe, setDetalhe] = useState(null);
   const [erroNota, setErroNota] = useState("");
   const [config, setConfig] = useState(false);
@@ -58,7 +62,7 @@ export default function Cobrancas() {
         action={
           <div style={{ display: "flex", gap: 8 }}>
             <Btn variant="ghost" onClick={() => setConfig(true)}><KeyRound size={15} /> Configurar recebimento</Btn>
-            <Btn onClick={() => setNovo(true)}><Plus size={16} /> Nova cobrança</Btn>
+            <Btn onClick={() => { setEmissor(""); setNovo(true); }}><Plus size={16} /> Nova cobrança</Btn>
           </div>
         }
       />
@@ -76,6 +80,7 @@ export default function Cobrancas() {
         <Kpi label="Cobranças" valor={cobrancas.length} cor={C.teal} icon={CreditCard} />
       </div>
 
+      {avisoBanco && <Card role="status" style={{ marginBottom: 16 }}>{avisoBanco} <Btn variant="ghost" onClick={() => go?.("boletos")}>Ver boletos bancários</Btn></Card>}
       {cobrancas.length === 0 ? (
         <Card><Empty icon={CreditCard} title="Nenhuma cobrança" sub="Crie a primeira cobrança — você escolhe boleto, PIX, cartão (link), nota fiscal ou recibo." /></Card>
       ) : (
@@ -101,10 +106,24 @@ export default function Cobrancas() {
 
       {novo && (
         <Modal title="Nova conta a receber" onClose={() => setNovo(false)} maxWidth={500}>
-          <CobrancaForm
+          <Field label="Onde emitir a cobrança">
+            <select aria-label="Emissor da cobrança" value={emissor} onChange={e => setEmissor(e.target.value)} style={inp}>
+              <option value="">— escolha o emissor —</option>
+              <option value="asaas">Asaas · boleto, PIX ou cartão</option>
+              <option value="banco">Banco Inter / outros bancos · boleto bancário</option>
+            </select>
+          </Field>
+          {emissor === "banco" && (contasBancarias.length ? <>
+            <p style={{ color: C.text3, fontSize: 13, marginBottom: 12 }}>Emissão pela conta bancária escolhida abaixo. O boleto ficará em Boletos; uma cobrança já emitida no Asaas não é transferida para o banco.</p>
+            <EmitirForm contas={contasBancarias.map(c => ({ ...c, apelido: `${BANCOS[c.banco]?.label || c.banco} · ${c.apelido}` }))} onEmitir={async dados => {
+              await store.emitirBoletoConfirmado(activeUnit, dados);
+              setNovo(false); setAvisoBanco(asaasApi.configured ? "Boleto confirmado pelo banco selecionado." : "Boleto de demonstração criado. Nenhuma cobrança real foi emitida.");
+            }} />
+          </> : <div role="status"><p>Cadastre e configure a conta do Banco Inter em Boletos → Contas bancárias para emitir por ela.</p><Btn variant="ghost" onClick={() => { setNovo(false); go?.("boletos"); }}>Configurar banco</Btn></div>)}
+          {emissor === "asaas" && <CobrancaForm
             store={store}
             onCriada={(c, rec, erroNota) => { setLista((l) => [c, ...l]); setNovo(false); setErroNota(erroNota || ""); if (rec) setRecibo(rec); else setDetalhe(c); }}
-          />
+          />}
         </Modal>
       )}
       {detalhe && (

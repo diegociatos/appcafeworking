@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import SelecionarCliente from "../components/SelecionarCliente.jsx";
 import {
   Wallet, TrendingUp, Landmark, BarChart3, FileText, Tags,
   Plus, Edit3, Trash2, Check, X, ArrowUpRight, ArrowDownRight, Receipt, Paperclip, Download, Barcode, Copy, QrCode,
@@ -888,6 +889,7 @@ function Contratos({ store, activeUnit }) {
                     <div style={{ fontSize: 12.5, color: C.text3, marginTop: 2 }}>
                       {c.plano} · {conta?.apelido || "—"} · venc. dia {c.diaVencimento}
                     </div>
+                    {!!c.itens?.length && <ul style={{ fontSize: 12, color: C.text3, marginTop: 8 }}>{c.itens.map(it => <li key={it.catalogoId}>{it.quantidade} × {it.nome} · {fmt(it.valorUnitario)} cada</li>)}</ul>}
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <div style={{ fontFamily: serif, fontSize: 20, color: C.cafe }}>{fmt(c.valorMensal)}</div>
@@ -922,7 +924,7 @@ function Contratos({ store, activeUnit }) {
 
       {novo && (
         <Modal title="Novo contrato recorrente" onClose={() => setNovo(false)} maxWidth={520}>
-          <ContratoForm bankAccounts={bankAccounts} planos={store.planosDe(activeUnit)} onSalvar={(cfg) => { store.addContrato(activeUnit, cfg); setNovo(false); }} />
+          <ContratoForm bankAccounts={bankAccounts} planos={store.planosDe(activeUnit)} clientes={store.clientes.filter(c => c.unidadeId === activeUnit)} catalogo={store.catalogoDe(activeUnit)} onSalvar={(cfg) => { store.addContrato(activeUnit, cfg); setNovo(false); }} />
         </Modal>
       )}
       {renovar && (
@@ -934,9 +936,10 @@ function Contratos({ store, activeUnit }) {
   );
 }
 
-function ContratoForm({ bankAccounts, planos = [], onSalvar }) {
+function ContratoForm({ bankAccounts, planos = [], clientes = [], catalogo = [], onSalvar }) {
+  const [buscaItem, setBuscaItem] = useState("");
   const [f, setF] = useState({
-    cliente: "", documento: "", planoId: "", plano: "", valorMensal: "", bankAccountId: bankAccounts[0]?.id || "",
+    clienteId: "", itens: [], cliente: "", documento: "", planoId: "", plano: "", valorMensal: "", bankAccountId: bankAccounts[0]?.id || "",
     diaVencimento: "10", mesInicial: MES_ATUAL, meses: 12,
   });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
@@ -946,12 +949,14 @@ function ContratoForm({ bankAccounts, planos = [], onSalvar }) {
   };
   const valido = f.cliente.trim() && f.plano.trim() && +f.valorMensal > 0 && (MODO_REAL || f.bankAccountId);
   const ate = Math.min(f.mesInicial + (+f.meses) - 1, 11);
+  const totalItens = f.itens.reduce((s, it) => s + Math.round(it.quantidade * it.valorUnitario * 100), 0) / 100;
 
   return (
     <>
+      <SelecionarCliente clientes={clientes} value={f.clienteId} onChange={c => setF({ ...f, clienteId: c?.id || "", cliente: c?.nome || "", documento: c?.cnpj || "" })} />
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <Field label="Cliente"><input value={f.cliente} onChange={set("cliente")} style={inp} placeholder="Nome / razão social" /></Field>
-        <Field label="CPF / CNPJ"><input value={f.documento} onChange={set("documento")} style={inp} placeholder="000.000.000-00" /></Field>
+        <Field label="Cliente"><input aria-label="Nome do cliente no contrato" readOnly={!!f.clienteId} value={f.cliente} onChange={set("cliente")} style={inp} placeholder="Nome / razão social" /></Field>
+        <Field label="CPF / CNPJ"><input aria-label="Documento do cliente no contrato" readOnly={!!f.clienteId} value={f.documento} onChange={set("documento")} style={inp} placeholder="000.000.000-00" /></Field>
       </div>
       {planos.length > 0 && (
         <Field label="Vincular a um plano cadastrado">
@@ -962,6 +967,21 @@ function ContratoForm({ bankAccounts, planos = [], onSalvar }) {
         </Field>
       )}
       <Field label="Contrato / plano"><input value={f.plano} onChange={set("plano")} style={inp} placeholder="Ex: Sala Privativa 12" /></Field>
+      <fieldset style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: 12, marginBottom: 14 }}>
+        <legend>Serviços / produtos contratados</legend>
+        <input type="search" aria-label="Buscar produto ou serviço" placeholder="Buscar produto ou serviço" value={buscaItem} onChange={e => setBuscaItem(e.target.value)} style={{ ...inp, marginBottom: 8 }} />
+        <div style={{ maxHeight: 180, overflowY: "auto" }}>
+        {catalogo.filter(it => it.tipo !== "plano" && (f.itens.some(x => x.catalogoId === it.id) || it.nome.toLocaleLowerCase().includes(buscaItem.toLocaleLowerCase()))).map(it => {
+          const escolhido = f.itens.find(x => x.catalogoId === it.id);
+          return <div key={it.id} style={{ padding: "8px 0" }}>
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={!!escolhido} onChange={e => setF({ ...f, itens: e.target.checked ? [...f.itens, { catalogoId: it.id, nome: it.nome, tipo: it.tipo, quantidade: 1, valorUnitario: Number(it.preco) || 0 }] : f.itens.filter(x => x.catalogoId !== it.id) })} />{it.nome} · {fmt(it.preco || 0)}</label>
+            {escolhido && <input type="number" aria-label={`Quantidade de ${it.nome}`} min="1" max="999" step="1" value={escolhido.quantidade} style={{ ...inp, width: 100, marginTop: 6 }} onChange={e => setF({ ...f, itens: f.itens.map(x => x.catalogoId === it.id ? { ...x, quantidade: Math.max(1, Math.min(999, Math.floor(Number(e.target.value) || 1))) } : x) })} />}
+          </div>;
+        })}
+        </div>
+        {!catalogo.some(it => it.tipo !== "plano") && <p>Cadastre os itens em Produtos e Serviços para selecioná-los aqui.</p>}
+        {!!f.itens.length && <><p>Soma dos itens: {fmt(totalItens)}. O valor mensal abaixo é o valor final do contrato, incluindo o plano.</p><Btn variant="ghost" onClick={() => setF({ ...f, valorMensal: String(totalItens) })}>Usar soma dos itens como valor mensal</Btn></>}
+      </fieldset>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Field label="Valor mensal (R$)"><input type="number" min="0" step="0.01" value={f.valorMensal} onChange={set("valorMensal")} style={inp} placeholder="0,00" /></Field>
         <Field label="Dia de vencimento"><input value={f.diaVencimento} onChange={set("diaVencimento")} style={inp} placeholder="10" /></Field>
@@ -986,7 +1006,7 @@ function ContratoForm({ bankAccounts, planos = [], onSalvar }) {
       <div style={{ fontSize: 12, color: C.text3, background: C.cafePale, borderRadius: 9, padding: "9px 12px", marginBottom: 14, display: "flex", alignItems: "center", gap: 7 }}>
         <Barcode size={14} color={C.cafe} /> {MODO_REAL ? "Provisiona" : "Emite"} {Math.min(f.meses, MESES.length - f.mesInicial)} {MODO_REAL ? "parcelas" : "boletos"} ({MESES[f.mesInicial]}–{MESES[ate]}), 1 por mês.
       </div>
-      <Btn style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.5 }} onClick={() => valido && onSalvar({ ...f, valorMensal: +f.valorMensal, meses: +f.meses })}>
+      <Btn disabled={!valido} style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.5 }} onClick={() => valido && onSalvar({ ...f, valorMensal: +f.valorMensal, meses: +f.meses })}>
         <FileSignature size={16} /> {MODO_REAL ? "Criar contrato" : "Criar contrato e emitir boletos"}
       </Btn>
     </>
