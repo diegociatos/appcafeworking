@@ -37,6 +37,7 @@ import Planos from "./pages/Planos.jsx";
 import PlanosNacionais from "./pages/PlanosNacionais.jsx";
 import Parceiros from "./pages/Parceiros.jsx";
 import MinhaUnidadeParceira from "./pages/MinhaUnidadeParceira.jsx";
+import PainelParceiro from "./pages/PainelParceiro.jsx";
 import ConversasUnidade from "./pages/ConversasUnidade.jsx";
 import Salas from "./pages/Salas.jsx";
 import Configuracoes from "./pages/Configuracoes.jsx";
@@ -57,7 +58,8 @@ import Aberturas from "./pages/Aberturas.jsx";
 import { aberturasApi } from "./lib/aberturasApi.js";
 
 const NAV = [
-  { id: "minha_unidade_parceira", label: "Unidade parceira", icon: Handshake, group: "principal" },
+  { id: "painel_parceiro", label: "Painel da unidade", icon: LayoutDashboard, group: "principal" },
+  { id: "minha_unidade_parceira", label: "Configurar unidade", icon: Building2, group: "gestao" },
   { id: "conversas_unidade", label: "Conversas", icon: MessageSquare, group: "relacionamento" },
   { id: "dash", label: "Dashboard", icon: LayoutDashboard, group: "principal" },
   { id: "franqueados", label: "Contas", icon: Store, group: "comercial" },
@@ -99,7 +101,7 @@ const NAV_GRUPOS = [
 ];
 
 const PAGES = {
-  minha_unidade_parceira: MinhaUnidadeParceira, conversas_unidade: ConversasUnidade,
+  painel_parceiro: PainelParceiro, minha_unidade_parceira: MinhaUnidadeParceira, conversas_unidade: ConversasUnidade,
   dash: Dashboard, franqueados: Franqueados, crm: CRM, unidades: Unidades,
   reservas: Reservas, corresp: Correspondencias, pdv: PDV, clientes: Clientes,
   financeiro: Financeiro, boletos: Boletos, cobrancas: Cobrancas, notafiscal: NotaFiscal, estoque: Estoque, patrimonio: Patrimonio, eventos: Eventos,
@@ -137,7 +139,7 @@ export default function App() {
     const TELA_EQUIPE_DO_CLIENTE = { cli_reservar: "reservas", cli_docs: "corresp" };
     const bruta = telaPedidaRef.current;
     const pedida = bruta && !podeAbrir(bruta) && podeAbrir(TELA_EQUIPE_DO_CLIENTE[bruta]) ? TELA_EQUIPE_DO_CLIENTE[bruta] : bruta;
-    const destino = pedida && podeAbrir(pedida) ? pedida : perfil === "master" && unidadeEhParceira(activeUnit) ? "minha_unidade_parceira" : cfg.landing;
+    const destino = pedida && podeAbrir(pedida) ? pedida : perfil === "master" && unidadeEhParceira(activeUnit) ? "painel_parceiro" : cfg.landing;
     if (sessaoAplicada) telaPedidaRef.current = null;
     pularSyncUrlRef.current = destino !== page; // espera a tela nova renderizar antes de mexer na URL
     setPage(destino);
@@ -220,7 +222,11 @@ export default function App() {
   } else {
     nav = NAV.filter((n) => !(viewAs && n.id === "franqueados"));
     if (allowed) nav = nav.filter((n) => allowed.includes(n.id));
-    if (perfil !== "franqueador" && !unidadeEhParceira(activeUnit)) nav = nav.filter((n) => n.id !== "minha_unidade_parceira");
+    if (perfil !== "franqueador" && !unidadeEhParceira(activeUnit)) nav = nav.filter((n) => !["painel_parceiro", "minha_unidade_parceira"].includes(n.id));
+    if (unidadeEhParceira(activeUnit) && perfil !== "franqueador") {
+      const menuParceiro = new Set(["painel_parceiro", "reservas", "corresp", "conversas_unidade", "clientes", "assinaturas", "salas", "equipe", "financeiro", "minha_unidade_parceira"]);
+      nav = nav.filter((n) => menuParceiro.has(n.id));
+    }
   }
 
   // Sidebar organizado por assunto. No portal do cliente fica sem cabeçalhos.
@@ -246,8 +252,8 @@ export default function App() {
   // Identidade exibida no rodapé da sidebar
   const identidade = {
     franqueador: { nome: "Administrador", papel: "Plataforma CafeWorking" },
-    master: { nome: franqueadoAtivo?.nome || "Master", papel: "Coworking (master)" },
-    recepcao: { nome: "Recepção", papel: "Operador de recepção" },
+    master: { nome: franqueadoAtivo?.nome || "Parceiro", papel: unidadeEhParceira(activeUnit) ? "Gestor da unidade parceira" : "Coworking (master)" },
+    recepcao: { nome: "Recepção", papel: unidadeEhParceira(activeUnit) ? "Recepção da unidade" : "Operador de recepção" },
     financeiro: { nome: "Financeiro", papel: "Contas a receber" },
     contabilidade: { nome: "Contabilidade", papel: "Contabilidade parceira" },
     cliente: { nome: nomeCliente || "Minha conta", papel: "Minha conta" },
