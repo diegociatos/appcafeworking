@@ -39,6 +39,7 @@ import Parceiros from "./pages/Parceiros.jsx";
 import MinhaUnidadeParceira from "./pages/MinhaUnidadeParceira.jsx";
 import PainelParceiro from "./pages/PainelParceiro.jsx";
 import ConversasUnidade from "./pages/ConversasUnidade.jsx";
+import { redeUnidadesApi } from "./lib/redeUnidadesApi.js";
 import Salas from "./pages/Salas.jsx";
 import Configuracoes from "./pages/Configuracoes.jsx";
 import Auditoria from "./pages/Auditoria.jsx";
@@ -123,6 +124,15 @@ export default function App() {
   // login ser conhecido; depois disso a URL acompanha a tela aberta.
   const telaPedidaRef = useRef(telaDaUrl());
   const [sessaoAplicada, setSessaoAplicada] = useState(!supabaseConfigured);
+  const [servicosParceiro, setServicosParceiro] = useState(null);
+  useEffect(() => {
+    let vivo = true;
+    if (!unidadeEhParceira(activeUnit)) { setServicosParceiro(null); return () => { vivo = false; }; }
+    redeUnidadesApi.listar().then((lista) => {
+      if (vivo) setServicosParceiro(lista?.find((p) => p.unidade_id === activeUnit)?.dados?.servicos || null);
+    }).catch(() => vivo && setServicosParceiro(null));
+    return () => { vivo = false; };
+  }, [activeUnit]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const cfg = PERFIS[perfil] || PERFIS.franqueador;
   const ehFranqueador = perfil === "franqueador";
@@ -139,7 +149,7 @@ export default function App() {
     const TELA_EQUIPE_DO_CLIENTE = { cli_reservar: "reservas", cli_docs: "corresp" };
     const bruta = telaPedidaRef.current;
     const pedida = bruta && !podeAbrir(bruta) && podeAbrir(TELA_EQUIPE_DO_CLIENTE[bruta]) ? TELA_EQUIPE_DO_CLIENTE[bruta] : bruta;
-    const destino = pedida && podeAbrir(pedida) ? pedida : perfil === "master" && unidadeEhParceira(activeUnit) ? "painel_parceiro" : cfg.landing;
+    const destino = pedida && podeAbrir(pedida) ? pedida : ["master", "recepcao"].includes(perfil) && unidadeEhParceira(activeUnit) ? "painel_parceiro" : cfg.landing;
     if (sessaoAplicada) telaPedidaRef.current = null;
     pularSyncUrlRef.current = destino !== page; // espera a tela nova renderizar antes de mexer na URL
     setPage(destino);
@@ -226,6 +236,7 @@ export default function App() {
     if (unidadeEhParceira(activeUnit) && perfil !== "franqueador") {
       const menuParceiro = new Set(["painel_parceiro", "reservas", "corresp", "conversas_unidade", "clientes", "assinaturas", "salas", "equipe", "financeiro", "minha_unidade_parceira"]);
       nav = nav.filter((n) => menuParceiro.has(n.id));
+      if (servicosParceiro?.length === 1 && servicosParceiro[0] === "endereco_fiscal") nav = nav.filter((n) => !["salas", "reservas"].includes(n.id));
     }
   }
 

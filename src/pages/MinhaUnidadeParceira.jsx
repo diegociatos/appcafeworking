@@ -1,19 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../lib/store.jsx';
-import { redeUnidadesApi, redeRest } from '../lib/redeUnidadesApi.js';
-import { fetchReservasDb } from '../lib/supabaseDb.js';
+import { redeUnidadesApi } from '../lib/redeUnidadesApi.js';
 import { ETAPAS_REDE, progressoRede } from '../lib/redeUnidades.js';
-import { Card, Btn, PageHead, Field } from '../components/ui.jsx';
+import { Card, Btn, PageHead, Field, Badge } from '../components/ui.jsx';
 import { inp, C } from '../lib/theme.js';
 import DocumentosUnidade from './DocumentosUnidade.jsx';
 import { FotosGaleria } from './Unidades.jsx';
 import { documentosUnidadeApi, TIPOS_KIT } from '../lib/documentosUnidadeApi.js';
 import { supabaseConfigured } from '../lib/supabaseAuth.js';
-import { getReservaStart } from '../lib/reservas.js';
 
 const SERVICOS = { endereco_fiscal: 'Endereço fiscal', coworking: 'Estação / sala compartilhada', sala_hora: 'Sala de reunião / auditório por hora', sala_privativa: 'Sala privativa' };
 export default function MinhaUnidadeParceira({ go }) {
-  const { activeUnit, unidadeAtiva, contaDaUnidade, perfil, reservas, correspondenciasDe, salasDe, hydrateOperacional, clientes, contratosDe } = useStore();
+  const { activeUnit, unidadeAtiva, contaDaUnidade, perfil, salasDe } = useStore();
   const [perfis, setPerfis] = useState([]);
   const [dados, setDados] = useState({});
   const [requisitos, setRequisitos] = useState([]);
@@ -50,13 +48,10 @@ export default function MinhaUnidadeParceira({ go }) {
   };
   const campo = (chave, label, tipo = 'text') => <Field key={chave} label={label}><input aria-label={label} type={tipo} style={inp} maxLength={500} value={dados[chave] || ''} onChange={(e) => setDados({ ...dados, [chave]: e.target.value })} disabled={busy} /></Field>;
   const progresso = progressoRede(dados, docs, requisitos);
-  const hoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-  const reservasHoje = reservas.filter((r) => r.unidadeId === activeUnit && r.status !== 'cancelada' && getReservaStart(r).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) === hoje);
-  const correspondencias = correspondenciasDe(activeUnit).filter((c) => c.status !== 'retirada');
-  const clientesUnidade = clientes.filter((c) => c.unidadeId === activeUnit);
-  const contratosUnidade = contratosDe(activeUnit);
-  return <div><PageHead title={admin ? 'Análise de unidades parceiras' : 'Minha unidade parceira'} sub="Comece com o espaço que você já tem. Amplie os serviços no seu ritmo." />
-    <style>{`.rede-etapas{display:flex;gap:8px;overflow-x:auto;padding:8px 0 16px}.rede-etapas button{flex-shrink:0;min-height:44px;padding:10px;border-radius:10px}.rede-acoes{display:flex;gap:10px;flex-wrap:wrap}.rede-acoes button{min-height:44px}`}</style>
+  const feitos = progresso.slice(0, 7).filter(Boolean).length;
+  const soEnderecoFiscal = dados.servicos?.length === 1 && dados.servicos[0] === 'endereco_fiscal';
+  return <div><PageHead title={admin ? 'Análise de unidades parceiras' : 'Configurar unidade'} sub="Dados públicos, imóvel, documentos, espaços e serviços desta unidade." action={!admin && <Badge color={registro?.status === 'publicado' ? C.green : C.amber}>{registro?.status === 'publicado' ? 'Publicada' : feitos + '/7 etapas'}</Badge>} />
+    <style>{`.rede-config-grid{display:grid;grid-template-columns:230px minmax(0,1fr);gap:16px;align-items:start}.rede-etapas{display:grid;gap:5px;position:sticky;top:92px}.rede-etapas button{min-height:44px;padding:10px 12px;border-radius:10px;text-align:left}.rede-acoes{display:flex;gap:10px;flex-wrap:wrap}.rede-acoes button{min-height:44px}@media(max-width:800px){.rede-config-grid{grid-template-columns:1fr}.rede-etapas{display:flex;overflow-x:auto;position:static;padding-bottom:4px}.rede-etapas button{flex:0 0 auto}}`}</style>
     {erro && <p role="alert" style={{ color: C.red }}>{erro}</p>}{msg && <p role="status">{msg}</p>}
     {admin ? <Card>{perfis.length === 0 && <p>Nenhuma unidade enviada.</p>}{perfis.map((p) => <div key={p.unidade_id} style={{ borderBottom: `1px solid ${C.border2}`, padding: 16 }}>
       <h3>{p.dados.empresa} · {p.dados.cidade} / {p.dados.uf}</h3><p>{p.status} · {p.dados.endereco} · {p.dados.bairro}</p>
@@ -71,40 +66,21 @@ export default function MinhaUnidadeParceira({ go }) {
         <Btn variant="ghost" disabled={busy || !parecer.trim()} onClick={() => executar(() => redeUnidadesApi.revisar(p.unidade_id, 'rejeitado', parecer))}>Solicitar correções</Btn></div></>}
     </div>)}<h3>Documentos exigidos pela rede</h3><p>Configuração operacional, não uma lista de exigências legais. Revise por município antes de publicar.</p>
       {requisitos.map((r) => <label key={r.tipo} style={{ display: 'block', padding: 10 }}><input type="checkbox" checked={r.obrigatorio} disabled={busy} onChange={(e) => executar(() => redeUnidadesApi.configurarRequisito(r.tipo, e.target.checked))} /> {TIPOS_KIT[r.tipo]}</label>)}
-    </Card> : conta?.tipo !== 'parceiro' ? <Card>Escolha uma unidade de conta parceira no seletor do topo.</Card> : <>
-      <Card><h2>O que preciso fazer hoje?</h2><div className="rede-acoes">
-        <Btn onClick={() => go('reservas')}>{reservasHoje.length} reservas hoje</Btn>
-        <Btn onClick={() => go('corresp')}>{correspondencias.length} correspondências para tratar</Btn>
-        <Btn onClick={() => go('clientes')}>Clientes</Btn><Btn onClick={() => go('conversas_unidade')}>Conversas</Btn><Btn onClick={() => go('financeiro')}>Financeiro e repasses</Btn>
-      </div><p>Publicação: {registro?.status || 'rascunho'}{registro?.parecer ? ` · ${registro.parecer}` : ''}</p>
-      {reservasHoje.map((r) => <div key={r.id} style={{ padding: 12, borderTop: `1px solid ${C.border2}` }}><p>{r.cliente} · {getReservaStart(r).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} · {r.status}</p>
-        {['confirmada','checkin'].includes(r.status) && <Btn disabled={busy} onClick={() => executar(async () => {
-          await redeRest('rpc/presenca_reserva_parceira', { p_reserva: r.id, p_status: r.status === 'checkin' ? 'concluida' : 'checkin' });
-          hydrateOperacional({ reservas: await fetchReservasDb() });
-        })}>{r.status === 'checkin' ? 'Registrar saída' : 'Registrar check-in'}</Btn>}
-      </div>)}</Card>
-      <div className="cw-grid-stack" style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 16, marginTop: 16 }}>
-        <Card><h2>Clientes e contratos</h2><p>{clientesUnidade.length} clientes vinculados · {contratosUnidade.length} contratos operacionais</p>
-          {clientesUnidade.slice(0, 3).map((c) => <div key={c.id} style={{ borderTop: `1px solid ${C.border2}`, padding: '10px 0' }}><b>{c.nome}</b><div>{c.plano || 'Sem plano'} · {c.status}</div><small>{c.email}</small></div>)}
-          <div className="rede-acoes"><Btn onClick={() => go('clientes')}>Ver dados dos clientes</Btn><Btn variant="ghost" onClick={() => go('assinaturas')}>Contratos com clientes</Btn></div>
-        </Card>
-        <Card><h2>Endereço fiscal e documentos</h2><p>O parceiro envia o IPTU e os documentos do imóvel. Após aprovação da CafeWorking, o cliente com endereço fiscal ativo acessa o kit pelo próprio login.</p>
-          <p><b>{docs.filter((d) => d.revisao_status === 'aprovado').length}</b> documentos aprovados nesta unidade.</p>
-          <div className="rede-acoes"><Btn onClick={() => setEtapa(2)}>Gerenciar documentos</Btn><Btn variant="ghost" onClick={() => go('conversas_unidade')}>Abrir chat</Btn></div>
-        </Card>
-      </div>
+    </Card> : conta?.tipo !== 'parceiro' ? <Card>Escolha uma unidade de conta parceira no seletor do topo.</Card> : <div className="rede-config-grid">
       <nav className="rede-etapas" aria-label="Etapas de preparação">{ETAPAS_REDE.map((nome, i) => <button key={nome} onClick={() => setEtapa(i)} aria-current={etapa === i ? 'step' : undefined} style={{ background: etapa === i ? C.teal : C.cream, color: etapa === i ? '#fff' : C.text }}>{i + 1}. {nome}{progresso[i] ? ' ✓' : ''}</button>)}</nav>
       <Card><h2>{ETAPAS_REDE[etapa]}</h2>
         {etapa === 0 && <>{campo('empresa', 'Empresa / escritório')}{campo('responsavel', 'Responsável')}<p>Documento e contato da conta continuam no cadastro central; não duplicamos dados bancários aqui.</p></>}
-        {etapa === 1 && <>{['endereco', 'cidade', 'uf', 'bairro', 'horarios', 'caracteristicas', 'acessibilidade', 'estacionamento', 'comodidades'].map((k) => campo(k, ({ endereco: 'Endereço completo', cidade: 'Cidade', uf: 'UF', bairro: 'Bairro', horarios: 'Horários de atendimento', caracteristicas: 'Características do imóvel', acessibilidade: 'Acessibilidade', estacionamento: 'Estacionamento', comodidades: 'Comodidades' })[k]))}</>}
+        {etapa === 1 && <>{['endereco', 'cidade', 'uf', 'bairro', 'horarios', 'caracteristicas', 'acessibilidade', 'estacionamento', 'comodidades'].map((k) => campo(k, ({ endereco: 'Endereço completo', cidade: 'Cidade', uf: 'UF', bairro: 'Bairro', horarios: 'Horários de atendimento', caracteristicas: 'Características do imóvel', acessibilidade: 'Acessibilidade', estacionamento: 'Estacionamento', comodidades: 'Comodidades' })[k]))}
+          {dados.servicos?.includes('endereco_fiscal') && <div style={{ padding: 14, borderRadius: 12, background: C.cream, marginTop: 8 }}><h3 style={{ marginTop: 0 }}>Operação do endereço fiscal</h3><p style={{ fontSize: 13, color: C.text3 }}>Estas informações ajudam a CafeWorking a validar a capacidade operacional; não substituem a viabilidade de cada atividade no município.</p>{campo('responsavelCorrespondencias', 'Responsável pelas correspondências')}{campo('armazenamentoCorrespondencias', 'Como os documentos e encomendas ficam armazenados')}{campo('capacidadeClientesFiscais', 'Capacidade estimada de clientes de endereço fiscal', 'number')}</div>}
+        </>}
         {etapa === 2 && <><p>Envie os documentos já previstos no projeto. A equipe define quais se aplicam à sua unidade.</p><DocumentosUnidade unidade={unidadeAtiva} /></>}
-        {etapa === 3 && <><p>{salasDe(activeUnit).length} espaços cadastrados. Endereço fiscal sozinho não exige cadastrar sala reservável.</p><Btn onClick={() => go('salas')}>Cadastrar / editar espaços e fotos</Btn><label style={{ display: 'block', padding: 12 }}><input type="checkbox" checked={dados.espacosConferidos === true} onChange={(e) => setDados({ ...dados, espacosConferidos: e.target.checked })} /> Conferi capacidade, preço, disponibilidade e regras dos espaços</label></>}
+        {etapa === 3 && (soEnderecoFiscal ? <div style={{ padding: 18, borderRadius: 12, background: C.greenPale }}><b>Esta etapa não é necessária agora.</b><p style={{ marginBottom: 0 }}>Sua unidade oferece somente endereço fiscal, portanto não precisa cadastrar sala, estação ou agenda. Você poderá ativar esses serviços depois.</p></div> : <><p>{salasDe(activeUnit).length} espaços cadastrados.</p><Btn onClick={() => go('salas')}>Cadastrar / editar espaços e fotos</Btn><label style={{ display: 'block', padding: 12 }}><input type="checkbox" checked={dados.espacosConferidos === true} onChange={(e) => setDados({ ...dados, espacosConferidos: e.target.checked })} /> Conferi capacidade, preço, disponibilidade e regras dos espaços</label></>)}
         {etapa === 4 && <><p>Envie fotos públicas do imóvel pelo celular. Não inclua documentos ou dados de clientes. O envio usa a galeria existente, com redução de tamanho; salve o rascunho ao concluir. Até 20 fotos.</p><FotosGaleria key={activeUnit} fotos={dados.fotos || []} unidadeId={activeUnit} onChange={(fotos) => { if (unidadeRef.current === activeUnit) setDados((d) => ({ ...d, fotos })); }} /></>}
-        {etapa === 5 && Object.entries(SERVICOS).map(([id, nome]) => <label key={id} style={{ display: 'block', padding: 12 }}><input type="checkbox" checked={dados.servicos?.includes(id) || false} onChange={(e) => setDados({ ...dados, servicos: e.target.checked ? [...(dados.servicos || []), id] : dados.servicos.filter((s) => s !== id) })} /> {nome}</label>)}
+        {etapa === 5 && <><p>Comece apenas com o que sua estrutura consegue operar bem. Novos serviços podem ser adicionados e enviados para aprovação depois.</p>{Object.entries(SERVICOS).map(([id, nome]) => <label key={id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: 14, marginBottom: 8, border: `1px solid ${dados.servicos?.includes(id) ? C.teal : C.border2}`, borderRadius: 12, background: dados.servicos?.includes(id) ? C.tealPale : C.white }}><input type="checkbox" checked={dados.servicos?.includes(id) || false} onChange={(e) => setDados({ ...dados, servicos: e.target.checked ? [...(dados.servicos || []), id] : dados.servicos.filter((s) => s !== id) })} /><span><b>{nome}</b>{id === 'endereco_fiscal' && <small style={{ display: 'block', color: C.text3, marginTop: 3 }}>Pode ser oferecido sozinho, sem cadastrar salas.</small>}</span></label>)}</>}
         {etapa === 6 && <><p>Percentuais e carteira de recebimento são configurados pela CafeWorking em Contas. O financeiro existente usa os valores registrados em cada cobrança, sem recalcular com percentuais fixos.</p><Btn onClick={() => go('financeiro')}>Ver extrato de repasses</Btn><label style={{ display: 'block', padding: 12 }}><input type="checkbox" checked={dados.financeiroConferido === true} onChange={(e) => setDados({ ...dados, financeiroConferido: e.target.checked })} /> Conferi os dados com a equipe CafeWorking</label></>}
         {etapa >= 7 && <><p>{progresso.filter(Boolean).length} de 7 etapas conferidas. O admin revisa documentos, informações e recebimento antes da publicação.</p><p>{registro?.parecer || 'Após enviar, acompanhe as observações aqui. Alterar e salvar uma unidade publicada retorna o conteúdo para rascunho.'}</p><Btn disabled={busy || !carregado} onClick={() => executar(() => redeUnidadesApi.salvar(activeUnit, dados, true))}>Enviar para análise</Btn></>}
         {etapa < 7 && etapa !== 2 && <div className="rede-acoes"><Btn disabled={busy || !carregado} onClick={() => executar(() => redeUnidadesApi.salvar(activeUnit, dados))}>{busy ? 'Salvando…' : 'Salvar rascunho'}</Btn><Btn variant="ghost" onClick={() => setEtapa(etapa + 1)}>Próxima etapa</Btn></div>}
       </Card>
-    </>}
+    </div>}
   </div>;
 }
