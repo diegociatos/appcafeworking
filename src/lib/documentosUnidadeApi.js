@@ -68,7 +68,7 @@ export const documentosUnidadeApi = {
   listar: async (unidadeId) => {
     const t = await token();
     return pedir(
-      `/rest/v1/unidade_documentos?select=id,tipo,titulo,numero,nome_arquivo,mime,bytes,validade,storage_path,created_at&unidade_id=eq.${encodeURIComponent(unidadeId)}&order=tipo.asc,created_at.desc`,
+      `/rest/v1/unidade_documentos?select=id,tipo,titulo,numero,nome_arquivo,mime,bytes,validade,storage_path,created_at,revisao_status,revisao_observacoes&unidade_id=eq.${encodeURIComponent(unidadeId)}&order=tipo.asc,created_at.desc`,
       { headers: { apikey: ANON, authorization: `Bearer ${t}` } }, "kit-listar",
     );
   },

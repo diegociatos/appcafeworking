@@ -105,8 +105,12 @@ Deno.serve(async (req) => {
       return json({ error: "É preciso aceitar a versão atual do contrato.", codigo: "ACEITE_NECESSARIO", contrato }, 412, req);
     }
 
-    const regra = await regraDaUnidade(admin, body.unidade_id);
+    const regra = await regraDaUnidade(admin, body.unidade_id, true);
     if (regra.parceiro && !regra.ok) return json({ error: regra.erro, codigo: regra.codigo }, 412, req);
+    if (regra.parceiro) {
+      const { data: ok, error } = await admin.rpc('servico_publicavel', { p_unidade: body.unidade_id, p_categoria: 'sala_hora' });
+      if (error || ok !== true) return json({ error: 'Reservas por hora ainda não aprovadas nesta unidade.' }, 412, req);
+    }
     const split = regra.parceiro && regra.ok ? regra.split : null;
 
     const cred = await credenciaisAsaas(admin, body.unidade_id);

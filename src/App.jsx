@@ -36,6 +36,10 @@ import Catalogo from "./pages/Catalogo.jsx";
 import Planos from "./pages/Planos.jsx";
 import PlanosNacionais from "./pages/PlanosNacionais.jsx";
 import Parceiros from "./pages/Parceiros.jsx";
+import MinhaUnidadeParceira from "./pages/MinhaUnidadeParceira.jsx";
+import PainelParceiro from "./pages/PainelParceiro.jsx";
+import ConversasUnidade from "./pages/ConversasUnidade.jsx";
+import { redeUnidadesApi } from "./lib/redeUnidadesApi.js";
 import Salas from "./pages/Salas.jsx";
 import Configuracoes from "./pages/Configuracoes.jsx";
 import Auditoria from "./pages/Auditoria.jsx";
@@ -55,6 +59,9 @@ import Aberturas from "./pages/Aberturas.jsx";
 import { aberturasApi } from "./lib/aberturasApi.js";
 
 const NAV = [
+  { id: "painel_parceiro", label: "Painel da unidade", icon: LayoutDashboard, group: "principal" },
+  { id: "minha_unidade_parceira", label: "Configurar unidade", icon: Building2, group: "gestao" },
+  { id: "conversas_unidade", label: "Conversas", icon: MessageSquare, group: "relacionamento" },
   { id: "dash", label: "Dashboard", icon: LayoutDashboard, group: "principal" },
   { id: "franqueados", label: "Contas", icon: Store, group: "comercial" },
   { id: "parceiros", label: "Parceiros", icon: Handshake, group: "comercial" },
@@ -95,6 +102,7 @@ const NAV_GRUPOS = [
 ];
 
 const PAGES = {
+  painel_parceiro: PainelParceiro, minha_unidade_parceira: MinhaUnidadeParceira, conversas_unidade: ConversasUnidade,
   dash: Dashboard, franqueados: Franqueados, crm: CRM, unidades: Unidades,
   reservas: Reservas, corresp: Correspondencias, pdv: PDV, clientes: Clientes,
   financeiro: Financeiro, boletos: Boletos, cobrancas: Cobrancas, notafiscal: NotaFiscal, estoque: Estoque, patrimonio: Patrimonio, eventos: Eventos,
@@ -116,6 +124,15 @@ export default function App() {
   // login ser conhecido; depois disso a URL acompanha a tela aberta.
   const telaPedidaRef = useRef(telaDaUrl());
   const [sessaoAplicada, setSessaoAplicada] = useState(!supabaseConfigured);
+  const [servicosParceiro, setServicosParceiro] = useState(null);
+  useEffect(() => {
+    let vivo = true;
+    if (!unidadeEhParceira(activeUnit)) { setServicosParceiro(null); return () => { vivo = false; }; }
+    redeUnidadesApi.listar().then((lista) => {
+      if (vivo) setServicosParceiro(lista?.find((p) => p.unidade_id === activeUnit)?.dados?.servicos || null);
+    }).catch(() => vivo && setServicosParceiro(null));
+    return () => { vivo = false; };
+  }, [activeUnit]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const cfg = PERFIS[perfil] || PERFIS.franqueador;
   const ehFranqueador = perfil === "franqueador";
@@ -132,7 +149,7 @@ export default function App() {
     const TELA_EQUIPE_DO_CLIENTE = { cli_reservar: "reservas", cli_docs: "corresp" };
     const bruta = telaPedidaRef.current;
     const pedida = bruta && !podeAbrir(bruta) && podeAbrir(TELA_EQUIPE_DO_CLIENTE[bruta]) ? TELA_EQUIPE_DO_CLIENTE[bruta] : bruta;
-    const destino = pedida && podeAbrir(pedida) ? pedida : cfg.landing;
+    const destino = pedida && podeAbrir(pedida) ? pedida : ["master", "recepcao"].includes(perfil) && unidadeEhParceira(activeUnit) ? "painel_parceiro" : cfg.landing;
     if (sessaoAplicada) telaPedidaRef.current = null;
     pularSyncUrlRef.current = destino !== page; // espera a tela nova renderizar antes de mexer na URL
     setPage(destino);
@@ -188,6 +205,7 @@ export default function App() {
   // Com Supabase configurado, exige login. Sem configurar (demo), libera direto.
   if (supabaseConfigured && session && precisaDefinirSenha()) return <DefinirSenha />;
   if (supabaseConfigured && !session) return <Login />;
+  if (supabaseConfigured && session && sessaoAplicada && perfil === 'sem_acesso') return <main style={{ padding: 24, fontFamily: sans }}><h1>Acesso aguardando configuração</h1><p>Seu login ainda não tem vínculo com uma unidade. Fale com a equipe CafeWorking.</p><button onClick={signOut}>Sair da conta</button></main>;
 
   // No perfil cliente, a navegação do portal vai toda para o sidebar. O cadastro
   // do próprio cliente vem da tabela clientes (a RLS só devolve o dele).
@@ -203,6 +221,7 @@ export default function App() {
     { id: "cli_docs", label: "Correspondências", icon: Mail },
     ...(meusCadastros.some((c) => c.fiscal) ? [{ id: "cli_fiscal", label: "Endereço fiscal", icon: Building2 }] : []),
     { id: "cli_contato", label: "Fale com a recepção", icon: MessageSquare },
+    { id: "conversas_unidade", label: "Conversas no app", icon: MessageSquare },
     { id: "cli_notif", label: "Notificações", icon: Bell },
     { id: "cli_conta", label: "Minha conta", icon: UserCircle },
   ];
@@ -213,6 +232,12 @@ export default function App() {
   } else {
     nav = NAV.filter((n) => !(viewAs && n.id === "franqueados"));
     if (allowed) nav = nav.filter((n) => allowed.includes(n.id));
+    if (perfil !== "franqueador" && !unidadeEhParceira(activeUnit)) nav = nav.filter((n) => !["painel_parceiro", "minha_unidade_parceira"].includes(n.id));
+    if (unidadeEhParceira(activeUnit) && perfil !== "franqueador") {
+      const menuParceiro = new Set(["painel_parceiro", "reservas", "corresp", "conversas_unidade", "clientes", "assinaturas", "salas", "equipe", "financeiro", "minha_unidade_parceira"]);
+      nav = nav.filter((n) => menuParceiro.has(n.id));
+      if (servicosParceiro?.length === 1 && servicosParceiro[0] === "endereco_fiscal") nav = nav.filter((n) => !["salas", "reservas"].includes(n.id));
+    }
   }
 
   // Sidebar organizado por assunto. No portal do cliente fica sem cabeçalhos.
@@ -238,8 +263,8 @@ export default function App() {
   // Identidade exibida no rodapé da sidebar
   const identidade = {
     franqueador: { nome: "Administrador", papel: "Plataforma CafeWorking" },
-    master: { nome: franqueadoAtivo?.nome || "Master", papel: "Coworking (master)" },
-    recepcao: { nome: "Recepção", papel: "Operador de recepção" },
+    master: { nome: franqueadoAtivo?.nome || "Parceiro", papel: unidadeEhParceira(activeUnit) ? "Gestor da unidade parceira" : "Coworking (master)" },
+    recepcao: { nome: "Recepção", papel: unidadeEhParceira(activeUnit) ? "Recepção da unidade" : "Operador de recepção" },
     financeiro: { nome: "Financeiro", papel: "Contas a receber" },
     contabilidade: { nome: "Contabilidade", papel: "Contabilidade parceira" },
     cliente: { nome: nomeCliente || "Minha conta", papel: "Minha conta" },

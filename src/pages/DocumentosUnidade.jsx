@@ -9,11 +9,23 @@ import { Card, Badge, Btn, Field, Empty, ConfirmDialog } from "../components/ui.
 import { C, serif, inp } from "../lib/theme.js";
 import { documentosUnidadeApi, TIPOS_KIT, TAMANHO_MAX_KIT, ROTULO_NUMERO_KIT } from "../lib/documentosUnidadeApi.js";
 import { mensagemDe } from "../lib/erros.js";
+import { statusDocumento } from '../lib/redeUnidades.js';
+import { redeRest } from '../lib/redeUnidadesApi.js';
+import { fetchIsPlatformAdmin } from '../lib/supabaseDb.js';
 
 const dataBR = (iso) => (iso ? String(iso).slice(0, 10).split("-").reverse().join("/") : "");
 
 export default function DocumentosUnidade({ unidade }) {
   const [docs, setDocs] = useState(null);
+  const [admin, setAdmin] = useState(false);
+  const [observacoes, setObservacoes] = useState({});
+  useEffect(() => { let vivo = true; fetchIsPlatformAdmin().then((r) => vivo && setAdmin(r)); return () => { vivo = false; }; }, []);
+  const revisar = async (d, status) => {
+    try {
+      await redeRest(`unidade_documentos?id=eq.${encodeURIComponent(d.id)}`, { revisao_status: status, revisao_observacoes: observacoes[d.id] ?? d.revisao_observacoes ?? '' }, 'PATCH');
+      carregar();
+    } catch (e) { setErro(mensagemDe(e)); }
+  };
   const [erro, setErro] = useState("");
   const [f, setF] = useState({ tipo: "iptu", titulo: "", numero: "", validade: "", arquivo: null });
   const [enviando, setEnviando] = useState(false);
@@ -35,7 +47,7 @@ export default function DocumentosUnidade({ unidade }) {
       await documentosUnidadeApi.enviar(unidade.id, f);
       setF({ tipo: f.tipo, titulo: "", numero: "", validade: "", arquivo: null });
       setInputKey((k) => k + 1);
-      setMsg("Documento enviado. Ele já aparece para os clientes com endereço fiscal aprovado nesta unidade.");
+      setMsg("Documento enviado. Em unidade parceira, a CafeWorking precisa aprová-lo antes de liberar ao cliente.");
       carregar();
     } catch (e) {
       setErro(mensagemDe(e, "Não foi possível enviar o documento."));
@@ -101,7 +113,7 @@ export default function DocumentosUnidade({ unidade }) {
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border2}` }}>
           <div style={{ fontFamily: serif, fontSize: 19 }}>Documentos do endereço fiscal</div>
-          <div style={{ fontSize: 13, color: C.text3 }}>Liberados para clientes com endereço fiscal ativo e documentos aprovados em {unidade.nome}.</div>
+          <div style={{ fontSize: 13, color: C.text3 }}>Documentos aprovados e válidos são liberados aos clientes elegíveis em {unidade.nome}.</div>
         </div>
         {docs === null ? (
           <div style={{ padding: 20, fontSize: 14, color: C.text3 }}><Loader2 size={15} className="cw-spin" /> Carregando…</div>
@@ -111,9 +123,13 @@ export default function DocumentosUnidade({ unidade }) {
           docs.map((d, i) => (
             <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 20px", borderTop: i ? `1px solid ${C.border2}` : "none", flexWrap: "wrap" }}>
               <FileText size={18} color={C.teal} aria-hidden="true" />
+              <Badge color={statusDocumento(d) === 'aprovado' ? C.green : C.amber}>{statusDocumento(d)}</Badge>
               <div style={{ flex: 1, minWidth: 160 }}>
                 <div style={{ fontSize: 14, fontWeight: 600 }}>{d.titulo}</div>
                 <div style={{ fontSize: 12, color: C.text3 }}>{TIPOS_KIT[d.tipo] || d.tipo}{d.numero ? ` · nº ${d.numero}` : ""} · enviado em {dataBR(d.created_at)}{d.validade ? ` · válido até ${dataBR(d.validade)}` : ""}</div>
+                {d.revisao_observacoes && <p>{d.revisao_observacoes}</p>}
+                {admin && <><input aria-label={`Observações de ${d.titulo}`} style={inp} maxLength={2000} value={observacoes[d.id] ?? d.revisao_observacoes ?? ''} onChange={(e) => setObservacoes({ ...observacoes, [d.id]: e.target.value })} />
+                  {['em_analise', 'aprovado', 'rejeitado'].map((status) => <Btn key={status} variant="ghost" onClick={() => revisar(d, status)}>{status.replace('_', ' ')}</Btn>)}</>}
               </div>
               {d.validade && d.validade < new Date().toISOString().slice(0, 10) && <Badge color={C.red}>Vencido</Badge>}
               <Btn variant="ghost" onClick={() => abrir(d)} style={{ padding: "6px 10px", fontSize: 13 }}><ExternalLink size={14} /> Abrir</Btn>

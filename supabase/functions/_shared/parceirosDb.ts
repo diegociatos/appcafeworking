@@ -20,7 +20,7 @@ import {
  * com banco imitado rodam sem baixar os tipos do SDK (o SupabaseClient encaixa).
  */
 // deno-lint-ignore no-explicit-any
-export type ClienteBanco = { from(tabela: string): any };
+export type ClienteBanco = { from(tabela: string): any; rpc(nome: string, args: Record<string, unknown>): any };
 type ClienteAdmin = ClienteBanco;
 
 export const APP_URL_PARCEIRO = (Deno.env.get("APP_URL") ?? "https://app.cafeworking.com.br").replace(/\/+$/, "");
@@ -43,8 +43,14 @@ export async function unidadeEhParceira(admin: ClienteAdmin, unidadeId: string |
   return ehContaParceira(await contaDaUnidade(admin, unidadeId));
 }
 
-export async function regraDaUnidade(admin: ClienteAdmin, unidadeId: string): Promise<RegraVenda> {
-  return regraDeVenda(await contaDaUnidade(admin, unidadeId));
+export async function regraDaUnidade(admin: ClienteAdmin, unidadeId: string, exigirPublicacao = false): Promise<RegraVenda> {
+  const regra = regraDeVenda(await contaDaUnidade(admin, unidadeId));
+  if (exigirPublicacao && regra.parceiro && regra.ok) {
+    const { data, error } = await admin.rpc('unidade_publicavel', { p_unidade: unidadeId });
+    if (error) throw new Error('Não foi possível conferir a publicação da unidade.');
+    if (data !== true) return { parceiro: true, ok: false, codigo: 'PARCEIRO_INATIVO', erro: 'Esta unidade está em preparação ou análise pela CafeWorking.' };
+  }
+  return regra;
 }
 
 /**
