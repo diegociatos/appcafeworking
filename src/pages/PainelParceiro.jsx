@@ -23,6 +23,7 @@ export default function PainelParceiro({ go }) {
     return () => { vivo = false; };
   }, [activeUnit]);
   const soEnderecoFiscal = perfilUnidade?.dados?.servicos?.length === 1 && perfilUnidade.dados.servicos[0] === 'endereco_fiscal';
+  const servicosAtivos = perfilUnidade?.dados?.servicos || [];
   const hoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
   const reservasHoje = reservas.filter((r) => r.unidadeId === activeUnit && r.status !== 'cancelada' && getReservaStart(r).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) === hoje);
   const correspondencias = correspondenciasDe(activeUnit).filter((c) => c.status !== 'retirada');
@@ -47,7 +48,7 @@ export default function PainelParceiro({ go }) {
     <Card style={{ marginBottom: 20, background: C.cream }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
         <div><div style={{ fontFamily: 'serif', fontSize: 20, color: C.text }}>Central da recepção</div><p style={{ margin: '5px 0 0', color: C.text3, fontSize: 13 }}>Prioridades da equipe para hoje, em um só lugar.</p></div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{!soEnderecoFiscal && <Badge color={C.teal}>{reservasHoje.length} reservas</Badge>}<Badge color={C.cafe}>{correspondencias.length} correspondências</Badge><Badge color={C.green}>{clientesUnidade.length} clientes</Badge>{soEnderecoFiscal && <Badge color={C.teal}>Operação de endereço fiscal</Badge>}</div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{!soEnderecoFiscal && <Badge color={C.teal}>{reservasHoje.length} reservas</Badge>}<Badge color={C.cafe}>{correspondencias.length} correspondências</Badge><Badge color={C.green}>{clientesUnidade.length} clientes</Badge>{soEnderecoFiscal && <Badge color={C.teal}>Somente endereço fiscal</Badge>}{servicosAtivos.includes('coworking') && <Badge color={C.teal}>Coworking</Badge>}{servicosAtivos.includes('sala_hora') && <Badge color={C.cafe}>Salas por hora</Badge>}{servicosAtivos.includes('sala_privativa') && <Badge color={C.green}>Salas privativas</Badge>}</div>
       </div>
     </Card>
 
