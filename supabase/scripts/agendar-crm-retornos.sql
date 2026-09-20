@@ -1,4 +1,6 @@
--- Executar só após publicar crm-retornos e configurar os secrets em homologação.
+-- ATENÇÃO: em produção o agendador já existe (job cafeworking-crm-retornos) e usa
+-- o token da rotina diária. Este script só serve para recriar o agendamento com
+-- um token próprio. Executar só após publicar crm-retornos e gravar os secrets.
 -- Vault: crm_retorno_token = mesmo valor de CRM_RETORNO_TOKEN (>=32 caracteres),
 -- crm_supabase_url = URL do projeto Supabase (sem barra final).
 -- Não coloca o token no frontend, no repositório ou em notificações.
