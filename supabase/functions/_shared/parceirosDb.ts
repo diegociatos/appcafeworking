@@ -43,14 +43,76 @@ export async function unidadeEhParceira(admin: ClienteAdmin, unidadeId: string |
   return ehContaParceira(await contaDaUnidade(admin, unidadeId));
 }
 
+/**
+ * Regra de venda da unidade. Com `exigirPublicacao`, a unidade PARCEIRA ainda
+ * precisa estar publicada (perfil aprovado, carteira e documentos em dia) —
+ * a conta própria nunca passa por essa régua. Falha de banco recusa a venda
+ * nova da parceira (fecha por segurança), sem afetar unidade própria.
+ */
 export async function regraDaUnidade(admin: ClienteAdmin, unidadeId: string, exigirPublicacao = false): Promise<RegraVenda> {
   const regra = regraDeVenda(await contaDaUnidade(admin, unidadeId));
   if (exigirPublicacao && regra.parceiro && regra.ok) {
-    const { data, error } = await admin.rpc('unidade_publicavel', { p_unidade: unidadeId });
-    if (error) throw new Error('Não foi possível conferir a publicação da unidade.');
-    if (data !== true) return { parceiro: true, ok: false, codigo: 'PARCEIRO_INATIVO', erro: 'Esta unidade está em preparação ou análise pela CafeWorking.' };
+    const { data, error } = await admin.rpc("unidade_publicavel", { p_unidade: unidadeId });
+    if (error) {
+      console.error(`[parceiro] unidade_publicavel(${unidadeId}) falhou: ${error.message ?? error}`);
+      return { parceiro: true, ok: false, codigo: "PARCEIRO_INATIVO", erro: "Não foi possível conferir a liberação desta unidade agora. Tente de novo em instantes." };
+    }
+    if (data !== true) {
+      return { parceiro: true, ok: false, codigo: "PARCEIRO_INATIVO", erro: "Esta unidade está em preparação ou análise pela CafeWorking." };
+    }
   }
   return regra;
+}
+
+/**
+ * Quais das unidades podem aparecer no site, numa chamada só
+ * (public.unidades_publicaveis). RESILIÊNCIA: o catálogo público não pode cair
+ * porque a régua da rede de parceiros falhou — se a RPC não responder (migration
+ * ainda não aplicada, por exemplo), as unidades PRÓPRIAS continuam publicadas e
+ * as parceiras ficam de fora, que é o lado seguro dos dois.
+ */
+export async function unidadesPublicaveis(
+  admin: ClienteAdmin, ids: string[], ehParceira: (id: string) => boolean,
+): Promise<Set<string>> {
+  const unicos = [...new Set(ids.filter(Boolean))];
+  if (!unicos.length) return new Set<string>();
+  const proprias = () => new Set(unicos.filter((id) => !ehParceira(id)));
+  try {
+    const { data, error } = await admin.rpc("unidades_publicaveis", { p_unidades: unicos });
+    if (error) {
+      console.error(`[parceiro] unidades_publicaveis indisponível (${error.message ?? error}); catálogo segue só com as unidades próprias.`);
+      return proprias();
+    }
+    if (!Array.isArray(data)) {
+      console.error("[parceiro] unidades_publicaveis devolveu formato inesperado; catálogo segue só com as unidades próprias.");
+      return proprias();
+    }
+    return new Set(
+      data.map((linha: unknown) => (typeof linha === "string" ? linha : (linha as { unidade_id?: string })?.unidade_id))
+        .filter((id): id is string => Boolean(id)),
+    );
+  } catch (e) {
+    console.error(`[parceiro] unidades_publicaveis quebrou (${(e as Error).message}); catálogo segue só com as unidades próprias.`);
+    return proprias();
+  }
+}
+
+/**
+ * Perfis publicados das unidades parceiras (unidade_id → dados). Nunca lança:
+ * sem os perfis o catálogo ainda sai, só sem os extras do parceiro.
+ */
+export async function perfisPublicados(admin: ClienteAdmin): Promise<Map<string, Record<string, unknown>>> {
+  try {
+    const { data, error } = await admin.from("parceiro_unidade_perfis").select("unidade_id, dados").eq("status", "publicado");
+    if (error) {
+      console.error(`[parceiro] parceiro_unidade_perfis indisponível (${error.message ?? error}); catálogo sai sem os dados do parceiro.`);
+      return new Map();
+    }
+    return new Map((data || []).map((p: { unidade_id: string; dados?: Record<string, unknown> }) => [p.unidade_id, p.dados || {}]));
+  } catch (e) {
+    console.error(`[parceiro] parceiro_unidade_perfis quebrou (${(e as Error).message}); catálogo sai sem os dados do parceiro.`);
+    return new Map();
+  }
 }
 
 /**

@@ -144,9 +144,11 @@ Deno.serve(async (req) => {
     const plano = (planosRows || []).map((r) => r.doc)
       .find((p) => p && p.id === body.plano_id && p.ativo !== false && (!regra.parceiro || p.modelo === true));
     if (!plano) return json({ error: "Plano indisponível." }, 404, req);
+    // Unidade parceira só vende a categoria que a CafeWorking aprovou no perfil.
     if (regra.parceiro) {
-      const { data: ok, error } = await admin.rpc('servico_publicavel', { p_unidade: unidade.id, p_categoria: plano.categoria });
-      if (error || ok !== true) return json({ error: 'Serviço ainda não aprovado para esta unidade.' }, 412, req);
+      const { data: ok, error: sErr } = await admin.rpc("servico_publicavel", { p_unidade: unidade.id, p_categoria: plano.categoria });
+      if (sErr) console.error(`[parceiro] servico_publicavel(${unidade.id}, ${plano.categoria}) falhou: ${sErr.message}`);
+      if (sErr || ok !== true) return json({ error: "Serviço ainda não aprovado para esta unidade." }, 412, req);
     }
     if (origem === "site" && plano.venderNoSite !== true) return json({ error: "Plano indisponível para contratação online." }, 404, req);
     if (plano.sobConsulta === true) {

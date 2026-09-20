@@ -87,3 +87,33 @@ Decisões do Diego em 17/09/2026:
    unidade).
 3. **Subconta Asaas do parceiro:** a carteira (`walletId`) continua informada à
    mão em Contas. Criar a subconta por API exige decisão sobre o KYC.
+
+## Publicação da unidade (migration 20260927120000)
+
+Decisões tomadas ao integrar o branch `codex/rede-unidades-parceiras`:
+
+- **Unidade de conta própria não muda.** `unidade_publicavel()` só cobra perfil
+  aprovado, carteira Asaas e documentos em dia de conta `parceiro`. Unidade
+  própria (e qualquer unidade cuja conta não esteja marcada como parceira)
+  continua publicável e vendendo só por estar ativa — é o que mantém Luxemburgo
+  e Estoril no site.
+- **Documento do kit.** Na unidade própria o documento nasce `aprovado` e a
+  equipe da unidade continua cuidando dele sozinha; na parceira nasce
+  `pendente` e só o admin da plataforma muda a situação. Número, validade e
+  arquivo seguem imutáveis para todo mundo: para trocar, apaga e envia de novo.
+- **Uma fonte da verdade por pergunta.** *Quais* documentos pedir ao parceiro
+  continua em `_shared/parceiroCandidatura.ts` (`KIT_ENDERECO_PARCEIRO`, que a
+  tela Parceiros e o e-mail de boas-vindas usam). *Qual* deles trava a
+  publicação é a tabela `parceiro_requisitos`, semeada com os mesmos valores e
+  ajustável pelo admin em `configurar_requisito_parceiro`. Hoje só o IPTU trava:
+  a autorização do proprietário é condicional (imóvel de terceiro) e o AVCB
+  depende do prédio.
+- **Catálogo público não cai por causa da rede.** `unidades_publicaveis(text[])`
+  responde a lista inteira numa chamada; se a RPC falhar, as unidades próprias
+  continuam no catálogo e as parceiras ficam de fora (o lado seguro dos dois).
+- **Vocabulário de serviços.** A candidatura do site usa os rótulos comerciais
+  (`endereco_fiscal`, `sala_privativa`, `escritorio_compartilhado`,
+  `sala_reuniao`); o perfil aprovado usa as categorias de plano
+  (`endereco_fiscal`, `coworking`, `sala_hora`, `sala_privativa`), porque é
+  contra elas que `servico_publicavel()` libera a venda. São coisas diferentes
+  de propósito: o que o candidato pediu e o que a CafeWorking aprovou.

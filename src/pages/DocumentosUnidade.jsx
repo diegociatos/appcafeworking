@@ -17,16 +17,9 @@ const dataBR = (iso) => (iso ? String(iso).slice(0, 10).split("-").reverse().joi
 
 export default function DocumentosUnidade({ unidade }) {
   const [docs, setDocs] = useState(null);
+  const [erro, setErro] = useState("");
   const [admin, setAdmin] = useState(false);
   const [observacoes, setObservacoes] = useState({});
-  useEffect(() => { let vivo = true; fetchIsPlatformAdmin().then((r) => vivo && setAdmin(r)); return () => { vivo = false; }; }, []);
-  const revisar = async (d, status) => {
-    try {
-      await redeRest(`unidade_documentos?id=eq.${encodeURIComponent(d.id)}`, { revisao_status: status, revisao_observacoes: observacoes[d.id] ?? d.revisao_observacoes ?? '' }, 'PATCH');
-      carregar();
-    } catch (e) { setErro(mensagemDe(e)); }
-  };
-  const [erro, setErro] = useState("");
   const [f, setF] = useState({ tipo: "iptu", titulo: "", numero: "", validade: "", arquivo: null });
   const [enviando, setEnviando] = useState(false);
   const [msg, setMsg] = useState("");
@@ -38,6 +31,20 @@ export default function DocumentosUnidade({ unidade }) {
     documentosUnidadeApi.listar(unidade.id).then((l) => setDocs(l || [])).catch((e) => { setDocs([]); setErro(mensagemDe(e)); });
   };
   useEffect(carregar, [unidade.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A revisão pelo admin da plataforma só faz sentido em unidade parceira: na
+  // unidade própria o documento já nasce aprovado (migration 20260927120000).
+  useEffect(() => { let vivo = true; fetchIsPlatformAdmin().then((r) => vivo && setAdmin(Boolean(r))); return () => { vivo = false; }; }, []);
+  const revisar = async (d, status) => {
+    try {
+      await redeRest(`unidade_documentos?id=eq.${encodeURIComponent(d.id)}`, {
+        revisao_status: status, revisao_observacoes: observacoes[d.id] ?? d.revisao_observacoes ?? "",
+      }, "PATCH");
+      carregar();
+    } catch (e) {
+      setErro(mensagemDe(e, "Não foi possível registrar a revisão do documento."));
+    }
+  };
 
   const enviar = async () => {
     setEnviando(true);

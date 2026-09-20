@@ -53,7 +53,7 @@ test('Migração, ACL, RLS e workflow de unidade parceira em Postgres isolado', 
       await login('a'); await salvar('ua');
       await assert.rejects(salvar('ub'), /Sem acesso/);
       await assert.rejects(db.query("update public.parceiro_unidade_perfis set status='publicado'"), /permission denied/);
-      await assert.rejects(db.query("select public.revisar_perfil_parceiro('ua','publicado','')"), /Somente admin/);
+      await assert.rejects(db.query("select public.revisar_perfil_parceiro('ua','publicado','')"), /Somente a CafeWorking/);
       await assert.rejects(salvar('ua', { ...dados, fotos: ['javascript:alert(1)'] }, true), /HTTPS/);
       await assert.rejects(salvar('ua', { ...dados, servicos: ['inventado'] }, true), /Serviços inválidos/);
     });

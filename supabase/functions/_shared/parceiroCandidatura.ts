@@ -147,10 +147,18 @@ export function resumoDaCandidatura(c: Candidatura): string[] {
 // Checklist da entrada (tela Parceiros e e-mail de boas-vindas)
 // ---------------------------------------------------------------------------
 
-/** Documentos do imóvel que o parceiro precisa enviar em Unidades → Documentos. */
+/**
+ * Documentos do imóvel que o parceiro precisa enviar em Unidades → Documentos.
+ * Esta é a lista de QUAIS documentos pedir (checklist e e-mail de boas-vindas).
+ * QUAL deles trava a publicação da unidade é decisão da tabela
+ * public.parceiro_requisitos (migration 20260927120000), que nasce semeada com
+ * exatamente estes valores de `obrigatorio` e que o admin muda por
+ * configurar_requisito_parceiro. Não duplique a regra: mude nos dois se mudar.
+ */
 export const KIT_ENDERECO_PARCEIRO = [
   { tipo: "iptu", titulo: "IPTU do imóvel", detalhe: "com o índice cadastral, que a abertura de empresa usa", obrigatorio: true },
-  { tipo: "autorizacao_proprietario", titulo: "Autorização do proprietário", detalhe: "se o imóvel não é do parceiro", obrigatorio: true },
+  // condicional: só existe quando o imóvel não é do parceiro, por isso não trava
+  { tipo: "autorizacao_proprietario", titulo: "Autorização do proprietário", detalhe: "se o imóvel não é do parceiro", obrigatorio: false },
   { tipo: "avcb", titulo: "AVCB (Corpo de Bombeiros)", detalhe: "quando o imóvel tiver", obrigatorio: false },
 ] as const;
 

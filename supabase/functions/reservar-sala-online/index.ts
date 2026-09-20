@@ -107,9 +107,11 @@ Deno.serve(async (req) => {
 
     const regra = await regraDaUnidade(admin, body.unidade_id, true);
     if (regra.parceiro && !regra.ok) return json({ error: regra.erro, codigo: regra.codigo }, 412, req);
+    // Unidade parceira só vende sala por hora depois que a CafeWorking aprova.
     if (regra.parceiro) {
-      const { data: ok, error } = await admin.rpc('servico_publicavel', { p_unidade: body.unidade_id, p_categoria: 'sala_hora' });
-      if (error || ok !== true) return json({ error: 'Reservas por hora ainda não aprovadas nesta unidade.' }, 412, req);
+      const { data: ok, error: sErr } = await admin.rpc("servico_publicavel", { p_unidade: body.unidade_id, p_categoria: "sala_hora" });
+      if (sErr) console.error(`[parceiro] servico_publicavel(${body.unidade_id}, sala_hora) falhou: ${sErr.message}`);
+      if (sErr || ok !== true) return json({ error: "Reservas por hora ainda não aprovadas nesta unidade." }, 412, req);
     }
     const split = regra.parceiro && regra.ok ? regra.split : null;
 

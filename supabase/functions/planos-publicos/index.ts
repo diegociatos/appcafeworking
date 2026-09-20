@@ -21,6 +21,7 @@ import { categoriaValida, DESCONTO_ANUAL_PADRAO, descontoAnualValido } from "../
 import { ordenarPlanos, planoPublico, visivelNoSite } from "../_shared/catalogo.ts";
 import { salasDoPlano } from "../_shared/disponibilidade.ts";
 import { type RegraVenda, regraDeVenda } from "../_shared/parceiros.ts";
+import { perfisPublicados, unidadesPublicaveis } from "../_shared/parceirosDb.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -58,20 +59,26 @@ Deno.serve(async (req) => {
     ]);
     if (ucErr || cpErr) return json({ error: (ucErr || cpErr)!.message }, 500, req);
     const parceiraPorId = new Map((contasParceiras || []).map((c) => [c.id, c]));
-    const { data: perfis, error: pErr } = await admin.from('parceiro_unidade_perfis').select('unidade_id,dados').eq('status','publicado');
-    if (pErr) throw new Error('Não foi possível conferir os serviços aprovados.');
-    const servicosPorUnidade = new Map((perfis || []).map((p) => [p.unidade_id, p.dados?.servicos || []]));
-    const publicaveis = new Set<string>();
-    await Promise.all((unidadesConta || []).map(async (u) => {
-      const { data: ok, error } = await admin.rpc('unidade_publicavel', { p_unidade: u.id });
-      if (error) throw new Error('Não foi possível conferir a publicação das unidades.');
-      if (ok === true) publicaveis.add(u.id);
-    }));
     const regraPorUnidade = new Map<string, RegraVenda>();
     for (const u of unidadesConta || []) {
       const conta = parceiraPorId.get(u.franqueado_id);
       if (conta) regraPorUnidade.set(u.id, regraDeVenda(conta));
     }
+
+    // Régua da rede (perfil publicado, carteira, documentos). Unidade própria
+    // nunca depende disso; e se a régua falhar, o catálogo das próprias continua
+    // de pé — foi o que derrubou o catálogo em 26/09.
+    const publicaveis = await unidadesPublicaveis(
+      admin,
+      (unidadesConta || []).map((u) => u.id),
+      (id) => regraPorUnidade.has(id),
+    );
+    const perfis = await perfisPublicados(admin);
+    const servicosAprovados = (unidade: string): string[] => {
+      const lista = perfis.get(unidade)?.servicos;
+      return Array.isArray(lista) ? lista.map((s) => String(s)) : [];
+    };
+
     const vendivel = (unidade: string, doc: Record<string, unknown>) => {
       if (!publicaveis.has(unidade)) return false;
       const regra = regraPorUnidade.get(unidade);
@@ -88,7 +95,8 @@ Deno.serve(async (req) => {
     const planos = (data || [])
       .filter((r) => r.entity === "planos" && r.doc && r.doc.ativo !== false && vendivel(r.unidade_id, r.doc))
       .map((r) => planoPublico(r.doc, r.unidade_id, descontoPorUnidade.get(r.unidade_id) ?? DESCONTO_ANUAL_PADRAO))
-      .filter((p) => !regraPorUnidade.has(p.unidade_id) || servicosPorUnidade.get(p.unidade_id)?.includes(p.categoria))
+      // parceira só vende a categoria que a CafeWorking aprovou no perfil
+      .filter((p) => !regraPorUnidade.has(p.unidade_id) || servicosAprovados(p.unidade_id).includes(String(p.categoria ?? "")))
       .filter((p) => (soSite ? visivelNoSite(p) : !p.sobConsulta))
       .filter((p) => !categoria || p.categoria === categoria)
       .sort(ordenarPlanos);

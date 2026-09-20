@@ -116,7 +116,11 @@ export const SERVICOS_PARCEIRO = {
   sala_reuniao: "Sala de reunião",
 };
 
-/** Documentos do imóvel esperados na unidade parceira (Unidades → Documentos). */
+/**
+ * Documentos do imóvel esperados na unidade parceira (Unidades → Documentos).
+ * Espelho de _shared/parceiroCandidatura.ts. O que trava a publicação da
+ * unidade fica em public.parceiro_requisitos, não aqui.
+ */
 export const KIT_ENDERECO_PARCEIRO = [
   { tipo: "iptu", titulo: "IPTU do imóvel", detalhe: "com o índice cadastral, que a abertura de empresa usa" },
   { tipo: "autorizacao_proprietario", titulo: "Autorização do proprietário", detalhe: "se o imóvel não é do parceiro" },
