@@ -28,6 +28,7 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { renderTemplate } from "./templates.ts";
 import type { Evento } from "./types.ts";
 import { preferenciaPermite } from "./preferencias.ts";
+import { permiteCopiasFinanceiras, normalizarCopias } from "./contatosFinanceiros.ts";
 export { categoriaOpcional, deveEnviar, preferenciaPermite } from "./preferencias.ts";
 
 /**
@@ -37,7 +38,7 @@ export { categoriaOpcional, deveEnviar, preferenciaPermite } from "./preferencia
  */
 export async function dispatchNotificacao(
   admin: SupabaseClient,
-  opts: { unidade_id: string; evento: Evento; email?: string; cliente?: string; dados?: Record<string, unknown>; canal?: Canal },
+  opts: { unidade_id: string; evento: Evento; email?: string; cliente?: string; dados?: Record<string, unknown>; canal?: Canal; copiaFinanceira?: boolean },
 ): Promise<{ ok: boolean; erro?: string; ignorado?: boolean }> {
   const canal: Canal = opts.canal ?? "email";
   if (!opts.email) return { ok: false, erro: "destinatário sem e-mail" };
@@ -64,10 +65,27 @@ export async function dispatchNotificacao(
           : { status: "erro", assunto: msg.assunto, erro: result.erro },
       ).eq("id", rowId);
     }
+    if (result.ok && canal === "email" && !opts.copiaFinanceira) await enviarCopiasFinanceiras(admin, opts);
     return { ok: result.ok, erro: result.erro };
   } catch (e) {
     const erro = (e as Error).message ?? String(e);
     if (rowId) { try { await admin.from("notificacoes").update({ status: "erro", erro }).eq("id", rowId); } catch (_) { /* */ } }
     return { ok: false, erro };
   }
+}
+
+export async function enviarCopiasFinanceiras(admin: SupabaseClient, opts: {
+  unidade_id: string; evento: Evento; email?: string; cliente?: string; dados?: Record<string, unknown>;
+}, enviar = dispatchNotificacao): Promise<void> {
+  if (!opts.email || !permiteCopiasFinanceiras(opts.evento)) return;
+  try {
+    // Só o cadastro da mesma unidade e do mesmo titular; ambiguidade não expande destinatários.
+    const email = opts.email.trim().replace(/[\\%_]/g, "\\$&");
+    const { data, error } = await admin.from("clientes").select("emails_adicionais")
+      .eq("unidade_id", opts.unidade_id).ilike("email", email).limit(2);
+    if (error || data?.length !== 1) return;
+    for (const destino of normalizarCopias(opts.email, data[0].emails_adicionais)) {
+      await enviar(admin, { ...opts, email: destino, canal: "email", copiaFinanceira: true });
+    }
+  } catch { /* Falha de cópia não repete cobrança nem bloqueia envio principal. */ }
 }
