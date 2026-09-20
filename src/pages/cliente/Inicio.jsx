@@ -58,6 +58,16 @@ export default function Inicio({ go, nome }) {
   return (
     <div>
       <PageHead title={primeiroNome ? `Olá, ${primeiroNome}` : "Início"} sub="Seu plano, faturas, reservas e correspondências em um só lugar." />
+      <section className="cw-welcome" aria-label="Seu dia no CafeWorking">
+        <div><span className="cw-welcome-eyebrow">SEU ESPAÇO, NO SEU TEMPO</span>
+          <h2>Um bom dia começa com espaço para suas ideias.</h2>
+          <p>Reserve sua próxima reunião ou conte com a nossa equipe para organizar sua visita.</p>
+        </div>
+        <div className="cw-welcome-actions">
+          <Btn onClick={() => go("cli_reservar")}><CalendarDays size={18} aria-hidden="true" /> Reservar um espaço</Btn>
+          <Btn variant="ghost" onClick={() => go("cli_contato")}>Falar com a recepção <ArrowRight size={16} aria-hidden="true" /></Btn>
+        </div>
+      </section>
 
       {novas > 0 && (
         <button type="button" onClick={() => go("cli_docs")} className="cw-btn"
