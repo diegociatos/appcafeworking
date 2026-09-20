@@ -15,17 +15,18 @@ const NOME_TO_ID = { Luxemburgo: "lux", Estoril: "est" };
 
 // Perfis de acesso (RBAC). `modules: null` = vê tudo. `landing` = página inicial.
 export const PERFIS = {
-  franqueador: { label: "Administrador (plataforma)", cor: "#0E4B4F", modules: ["dash", "franqueados", "parceiros", "tabela_nacional", "auditoria"], landing: "dash" },
+  sem_acesso: { label: 'Sem vínculo de acesso', cor: '#6E4E3B', modules: [], landing: 'dash' },
+  franqueador: { label: "Administrador (plataforma)", cor: "#0E4B4F", modules: ["dash", "franqueados", "parceiros", "minha_unidade_parceira", "conversas_unidade", "tabela_nacional", "auditoria"], landing: "dash" },
   master: {
     label: "Master (coworking)",
     cor: "#B8862F",
-    modules: ["dash", "equipe", "crm", "planos", "assinaturas", "aberturas", "unidades", "salas", "patrimonio", "reservas", "corresp", "pdv", "kds", "catalogo", "estoque", "clientes", "financeiro", "boletos", "cobrancas", "notafiscal", "eventos", "auditoria"],
+    modules: ["painel_parceiro", "minha_unidade_parceira", "conversas_unidade", "dash", "equipe", "crm", "planos", "assinaturas", "aberturas", "unidades", "salas", "patrimonio", "reservas", "corresp", "pdv", "kds", "catalogo", "estoque", "clientes", "financeiro", "boletos", "cobrancas", "notafiscal", "eventos", "auditoria"],
     landing: "dash",
   },
   recepcao: {
     label: "Recepção",
     cor: "#335C81",
-    modules: ["salas", "reservas", "pdv", "kds", "catalogo", "estoque", "crm", "assinaturas", "aberturas", "corresp", "clientes"],
+    modules: ["painel_parceiro", "conversas_unidade", "salas", "reservas", "pdv", "kds", "catalogo", "estoque", "crm", "assinaturas", "aberturas", "corresp", "clientes"],
     landing: "reservas",
   },
   financeiro: {
@@ -39,7 +40,7 @@ export const PERFIS = {
     cor: "#6E4E3B",
     // Cafeteria e chat saíram do cliente: dependiam de app_state (o cliente não
     // grava lá) e descartavam o pedido/mensagem. Contato real em cli_contato.
-    modules: ["cli_inicio", "cli_plano", "cli_abertura", "cli_reservar", "cli_faturas", "cli_docs", "cli_fiscal", "cli_contato", "cli_notif", "cli_conta"],
+    modules: ["conversas_unidade", "cli_inicio", "cli_plano", "cli_abertura", "cli_reservar", "cli_faturas", "cli_docs", "cli_fiscal", "cli_contato", "cli_notif", "cli_conta"],
     landing: "cli_inicio",
   },
   // Contabilidade parceira (Ciatos Contabilidade): login próprio que só acompanha

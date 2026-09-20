@@ -22,8 +22,8 @@ const ROTULO_NUMERO = { iptu: "Índice cadastral", avcb: "Nº do AVCB", habite_s
 
 const PASSOS = [
   { id: 1, icon: Upload, titulo: "Envie os documentos da empresa", sub: "Cartão CNPJ, contrato social e documento dos sócios, em Meu plano." },
-  { id: 2, icon: Search, titulo: "Conferência pela equipe", sub: "Até 5 dias úteis. Avisamos por e-mail." },
-  { id: 3, icon: CheckCircle2, titulo: "Documentos do imóvel liberados", sub: "IPTU, alvará e modelo de anuência para registrar o endereço." },
+  { id: 2, icon: Search, titulo: "Conferência e viabilidade", sub: "A equipe confere os documentos. A aceitação do endereço depende da atividade e da análise do município." },
+  { id: 3, icon: CheckCircle2, titulo: "Documentos do imóvel liberados", sub: "Você recebe somente os documentos aprovados e válidos para seguir com o registro." },
 ];
 const PASSO_DA_ETAPA = { enviar_documentos: 1, reprovado: 1, em_conferencia: 2, pagamento_pendente: 3, preparando: 3, liberado: 3 };
 
@@ -59,6 +59,10 @@ export default function EnderecoFiscal({ go }) {
   return (
     <div>
       <PageHead title="Endereço fiscal" sub="Andamento da liberação e documentos do imóvel para registrar o endereço da sua empresa." />
+      <Card style={{ marginBottom: 16, background: C.cream }}>
+        <div style={{ fontWeight: 600, marginBottom: 5 }}>Antes de registrar o endereço</div>
+        <div style={{ fontSize: 13.5, color: C.text2, lineHeight: 1.55 }}>A contratação não substitui a Consulta Prévia de Viabilidade. A possibilidade de usar o imóvel depende das atividades da empresa, das regras do município e dos licenciamentos aplicáveis. Se a atividade não for aceita nesse endereço, fale com a recepção antes de concluir qualquer registro.</div>
+      </Card>
       {carregando && !dados && <Card><Carregando /></Card>}
       {erro && <div style={{ marginBottom: 16 }}><ErroCarga mensagem={erro} onTentar={recarregar} /></div>}
       {dados && unidades.length === 0 && (

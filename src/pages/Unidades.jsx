@@ -123,7 +123,7 @@ export default function Unidades({ go }) {
                 </div>
                 {franq && (
                   <div style={{ fontSize: 12, color: C.text3, marginTop: 3 }}>
-                    Franqueado: <b style={{ color: C.text2 }}>{franq.nome}</b>
+                    Conta: <b style={{ color: C.text2 }}>{franq.nome}</b>
                   </div>
                 )}
               </div>
@@ -368,7 +368,7 @@ const PERIODOS_SALA = [
 ];
 const periodoLabel = (v) => (PERIODOS_SALA.find((p) => p.v === v)?.lb || v);
 
-function FotosGaleria({ fotos, onChange, unidadeId }) {
+export function FotosGaleria({ fotos, onChange, unidadeId }) {
   const [enviando, setEnviando] = useState(0);
   const [erro, setErro] = useState("");
   const adicionar = async (e) => {
@@ -423,6 +423,7 @@ export function SalaForm({ inicial, unidade, onSave }) {
     cap: inicial.cap || 4,
     bases: inicial.bases || 0,
     descricao: inicial.descricao || "",
+    regras: inicial.regras || "",
     comodidades: inicial.comodidades || [],
     fotos: inicial.fotos || (inicial.foto ? [inicial.foto] : []),
     valor: inicial.valor || "",
@@ -481,6 +482,9 @@ export function SalaForm({ inicial, unidade, onSave }) {
       </div>
       <Field label="O que tem nesta sala (descrição)">
         <textarea value={f.descricao} onChange={set("descricao")} rows={3} style={{ ...inp, resize: "vertical", lineHeight: 1.5 }} placeholder="Descreva a sala: mobília, equipamentos, diferenciais..." />
+      </Field>
+      <Field label="Regras de uso do espaço">
+        <textarea aria-label="Regras de uso do espaço" value={f.regras} onChange={set("regras")} rows={3} maxLength={2000} style={inp} placeholder="Orientações de acesso, equipamentos e organização após o uso." />
       </Field>
       <Field label="Comodidades">
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
