@@ -83,8 +83,8 @@ export const clienteApi = {
   },
 
   loja: (forcar) => lerComCache("loja", () => chamar("/functions/v1/loja-cliente", { contexto: "cafeteria" }), forcar),
-  comprar: async (unidade_id, itens) => {
-    const r = await chamar("/functions/v1/loja-cliente", { method: "POST", body: { unidade_id, itens }, contexto: "compra da cafeteria" });
+  comprar: async (unidade_id, itens, forma_pagamento = "agora") => {
+    const r = await chamar("/functions/v1/loja-cliente", { method: "POST", body: { unidade_id, itens, forma_pagamento }, contexto: "compra da cafeteria" });
     limparCacheCliente("faturas");
     return r;
   },

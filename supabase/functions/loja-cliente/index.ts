@@ -19,13 +19,25 @@ Deno.serve(async (req) => {
     const clientes = (await clientesDoEmail(admin, usuario.email)).filter((c) => c.status !== "inativo");
     if (!clientes.length) return json({ error: "Seu cadastro de cliente não foi encontrado." }, 403, req);
     const unidadeIds = [...new Set(clientes.map((c) => String(c.unidade_id)).filter(Boolean))];
-    const { data: linhas, error } = await admin.from("app_state").select("unidade_id, item_id, doc")
-      .eq("entity", "catalogo").in("unidade_id", unidadeIds);
+    const { data: linhas, error } = await admin.from("app_state").select("unidade_id, entity, item_id, doc")
+      .in("entity", ["catalogo", "contratos"]).in("unidade_id", unidadeIds);
     if (error) throw new Error(`app_state: ${error.message}`);
+    const clienteIds = clientes.map((c) => String(c.id));
+    const { data: assinaturas } = await admin.from("assinaturas").select("cliente_id, unidade_id, recorrencia, status")
+      .in("cliente_id", clienteIds).eq("status", "ativa");
+    const { data: consumosMes } = await admin.from("consumos_cafeteria").select("unidade_id, valor")
+      .eq("cliente_email", usuario.email).eq("competencia", hojeBRT().slice(0, 7)).eq("status", "aberto");
+    const mensalPor = new Set((assinaturas || []).filter((a) => a.recorrencia === "mensal").map((a) => `${a.unidade_id}|${a.cliente_id}`));
+    for (const c of clientes) {
+      const contrato = (linhas || []).find((l) => l.entity === "contratos" && l.unidade_id === c.unidade_id && l.doc?.clienteId === c.id && l.doc?.status === "ativo");
+      if (contrato) mensalPor.add(`${c.unidade_id}|${c.id}`);
+    }
     const nomes = await nomesDasUnidades(admin, unidadeIds);
     const unidades = unidadeIds.map((id) => ({
       id, nome: nomes.get(id) || "CafeWorking",
-      produtos: produtosDaAreaCliente((linhas || []).filter((l) => l.unidade_id === id)),
+      produtos: produtosDaAreaCliente((linhas || []).filter((l) => l.entity === "catalogo" && l.unidade_id === id)),
+      cliente_mensal: clientes.some((c) => c.unidade_id === id && mensalPor.has(`${id}|${c.id}`)),
+      consumo_mes: Math.round((consumosMes || []).filter((c) => c.unidade_id === id).reduce((s, c) => s + Number(c.valor), 0) * 100) / 100,
     })).filter((u) => u.produtos.length);
     if (req.method === "GET") return json({ unidades }, 200, req);
 
@@ -39,6 +51,28 @@ Deno.serve(async (req) => {
     let compra;
     try { compra = montarCompra(unidade.produtos, body?.itens); }
     catch (_) { return json({ error: "Revise os itens e as quantidades do pedido." }, 400, req); }
+
+    const pedidoId = crypto.randomUUID();
+    const pedidoBase = {
+      id: pedidoId, unidadeId, cliente: cadastro.nome, clienteId: cadastro.id, origem: "app",
+      total: compra.total, itens: compra.itens.map((i) => ({ id: i.id, nome: i.nome, preco: i.preco, q: i.quantidade, emoji: i.emoji })),
+      hora: "agora", createdAt: new Date().toISOString(),
+    };
+    if (body?.forma_pagamento === "mensal") {
+      if (!unidade.cliente_mensal) return json({ error: "A compra mensal está disponível somente para contratos recorrentes ativos." }, 403, req);
+      const { data: consumo, error: consumoErr } = await admin.from("consumos_cafeteria").insert({
+        unidade_id: unidadeId, cliente_id: cadastro.id, cliente_email: usuario.email,
+        competencia: hojeBRT().slice(0, 7), itens: pedidoBase.itens, valor: compra.total, pedido_id: pedidoId,
+      }).select("id").single();
+      if (consumoErr) throw new Error(`consumo mensal: ${consumoErr.message}`);
+      const pedido = { ...pedidoBase, status: "recebido", formaPagamento: "fatura_mensal" };
+      const { error: pedErr } = await admin.from("app_state").insert({ unidade_id: unidadeId, entity: "pedidos", item_id: pedidoId, doc: pedido });
+      if (pedErr) {
+        await admin.from("consumos_cafeteria").delete().eq("id", consumo.id);
+        throw new Error(`pedido: ${pedErr.message}`);
+      }
+      return json({ pedido_id: pedidoId, faturado_no_mes: true, competencia: hojeBRT().slice(0, 7) }, 201, req);
+    }
 
     const regra = await regraDaUnidade(admin, unidadeId);
     if (regra.parceiro && !regra.ok) return json({ error: regra.erro }, 412, req);
@@ -62,12 +96,8 @@ Deno.serve(async (req) => {
       ...camposDaDivisao(snapshot, compra.total),
     }).select("id, invoice_url, boleto_url, pix_payload, status").single();
     if (cobErr) throw new Error(`cobrancas: ${cobErr.message}`);
-    const pedidoId = crypto.randomUUID();
     const pedido = {
-      id: pedidoId, unidadeId, cliente: cadastro.nome, clienteId: cadastro.id, origem: "app",
-      status: "aguardando_pagamento", formaPagamento: "online", total: compra.total, cobrancaId: cobranca.id,
-      itens: compra.itens.map((i) => ({ id: i.id, nome: i.nome, preco: i.preco, q: i.quantidade, emoji: i.emoji })),
-      hora: "agora", createdAt: new Date().toISOString(),
+      ...pedidoBase, status: "aguardando_pagamento", formaPagamento: "online", cobrancaId: cobranca.id,
     };
     const { error: pedErr } = await admin.from("app_state").insert({ unidade_id: unidadeId, entity: "pedidos", item_id: pedidoId, doc: pedido });
     if (pedErr) throw new Error(`pedido: ${pedErr.message}`);
