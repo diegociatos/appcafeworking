@@ -140,6 +140,7 @@ export const seedCatalogoProdutos = UNIDADES.flatMap((u) =>
     id: `cafe-${u.id}-${p.id}`, unidadeId: u.id, nome: p.nome,
     tipo: "produto", categoria: p.cat, preco: p.preco, custo: p.cmv,
     emoji: p.emoji, foto: p.foto || null, recorrente: false, ativo: true,
+    publicarNoSite: ["Café", "Salgados", "Doces", "Bebidas"].includes(p.cat), venderNoAppCliente: true,
   }))
 );
 
