@@ -10,6 +10,7 @@
 // 3. Libera horários de sala segurados e não pagos
 // 4. Avisa o parceiro e a CafeWorking da correspondência que passou de 1 dia
 //    útil sem o cliente ser notificado (docs/PARCEIROS.md, fase 3)
+// 5. No último dia do mês, consolida os consumos da cafeteria em uma fatura.
 // Idempotente: rodar duas vezes no mesmo dia não repete aviso nem encerramento.
 // ============================================================================
 
@@ -30,7 +31,7 @@ Deno.serve(async (req) => {
 
   const admin = adminClient();
   const hoje = hojeBRT();
-  const resumo = { avisos_renovacao: 0, encerradas: 0, reservas_liberadas: 0, correspondencias_atrasadas: 0, erros: [] as string[] };
+  const resumo = { avisos_renovacao: 0, encerradas: 0, reservas_liberadas: 0, correspondencias_atrasadas: 0, faturas_cafeteria: 0, erros: [] as string[] };
 
   // 1) aviso de renovação do anual
   try {
@@ -123,6 +124,22 @@ Deno.serve(async (req) => {
     }
   } catch (e) {
     resumo.erros.push(`correspondências: ${(e as Error).message}`);
+  }
+
+  // 5) fechamento mensal da cafeteria. A função chamada decide se hoje é o
+  //    último dia; nos demais dias responde sem criar cobrança.
+  try {
+    const base = (Deno.env.get("SUPABASE_URL") || "").replace(/\/+$/, "");
+    if (!base) throw new Error("SUPABASE_URL não configurada");
+    const r = await fetch(`${base}/functions/v1/fechar-consumos-cafeteria`, {
+      method: "POST", headers: { "content-type": "application/json", "x-rotina-token": esperado }, body: "{}",
+    });
+    const dados = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(dados?.error || `HTTP ${r.status}`);
+    resumo.faturas_cafeteria = (dados?.resultados || []).filter((x: { status?: string }) => x.status === "faturado").length;
+    for (const x of dados?.resultados || []) if (x.status === "erro") resumo.erros.push(`cafeteria ${x.cliente_id}: ${x.erro}`);
+  } catch (e) {
+    resumo.erros.push(`fechamento cafeteria: ${(e as Error).message}`);
   }
 
   if (resumo.erros.length) await avisarEquipe("Rotina diária com erros", resumo.erros);

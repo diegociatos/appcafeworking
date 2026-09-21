@@ -13,8 +13,9 @@ const somarDias = (iso: string, dias: number) => {
 Deno.serve(async (req) => {
   const pre = handleOptions(req); if (pre) return pre;
   if (req.method !== "POST") return json({ error: "Método não permitido" }, 405, req);
-  const segredo = Deno.env.get("CRON_SECRET") || "";
-  if (!segredo || req.headers.get("authorization") !== `Bearer ${segredo}`) return json({ error: "Não autorizado" }, 401, req);
+  const segredo = Deno.env.get("CRON_SECRET") || Deno.env.get("ROTINA_DIARIA_TOKEN") || "";
+  const tokenRecebido = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || req.headers.get("x-rotina-token") || "";
+  if (!segredo || tokenRecebido !== segredo) return json({ error: "Não autorizado" }, 401, req);
   const admin = adminClient();
   const body = await req.json().catch(() => ({}));
   const hoje = hojeBRT();
