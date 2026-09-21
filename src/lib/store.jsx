@@ -1243,6 +1243,41 @@ export function StoreProvider({ children }) {
     return contrato;
   };
 
+  // Edita o cadastro sem reescrever o histórico financeiro. Somente provisões
+  // ainda não pagas, do mês atual em diante, são substituídas pelos novos dados.
+  const updateContrato = (id, patch) => {
+    const atual = contratos.find((x) => x.id === id);
+    if (!atual) return null;
+    const atualizado = {
+      ...atual,
+      ...patch,
+      clienteId: patch.clienteId || null,
+      planoId: patch.planoId || null,
+      itens: patch.itens || [],
+      valorMensal: Number(patch.valorMensal),
+      mesInicial: Number(patch.mesInicial),
+      meses: Number(patch.meses),
+      atualizadoEm: new Date().toISOString(),
+    };
+    const inicioRecalculo = Math.max(MES_ATUAL, atualizado.mesInicial);
+    const fimAtualizado = Math.min(atualizado.mesInicial + atualizado.meses - 1, 11);
+    const provisoesSubstituidas = lancamentos.filter((l) =>
+      l.contratoId === id && l.status === "previsto" &&
+      (anoDoLancamento(l) > ANO_ATUAL || (anoDoLancamento(l) === ANO_ATUAL && l.mes >= MES_ATUAL)));
+    const idsLancamentos = new Set(provisoesSubstituidas.map((l) => l.id));
+    const idsBoletos = new Set(provisoesSubstituidas.map((l) => l.boletoId).filter(Boolean));
+
+    setContratos((cs) => cs.map((c) => (c.id === id ? atualizado : c)));
+    setLancamentos((ls) => ls.filter((l) => !idsLancamentos.has(l.id)));
+    if (idsBoletos.size) {
+      setBoletos((bs) => bs.filter((b) => !idsBoletos.has(b.id) || b.status === "pago" || b.status === "cancelado"));
+    }
+    if (atualizado.status === "ativo" && inicioRecalculo <= fimAtualizado) {
+      gerarCobrancasContrato(atualizado, inicioRecalculo, fimAtualizado, atualizado.valorMensal, " (atualizado)");
+    }
+    return atualizado;
+  };
+
   // Renova: novo prazo a partir do mês seguinte, com valor atualizado.
   const renovarContrato = (id, patch) => {
     const c = contratos.find((x) => x.id === id);
@@ -1509,7 +1544,7 @@ export function StoreProvider({ children }) {
       bankAccountsDe, addBankAccount, updateBankAccount, removeBankAccount, conectarBanco, desconectarBanco,
       boletosDe, emitirBoleto, emitirBoletoConfirmado, cancelarBoleto, baixarBoleto, darBaixaLancamento, sincronizarBoleto,
       contratos, contratosDe, contratosVencendoDe, mesFimContrato,
-      addContrato, renovarContrato, encerrarContrato,
+      addContrato, updateContrato, renovarContrato, encerrarContrato,
       estoque, estoqueDe, estoqueBaixoDe, addItemEstoque, updateItemEstoque, removeItemEstoque, ajustarEstoque, comprarEstoque, venderEstoque, registrarSaidaEstoque,
       patrimonio, patrimonioDe, addAtivo, updateAtivo, removeAtivo,
       configFiscal, configFiscalDe, updateConfigFiscal, salvarConfigFiscal, notasFiscais, notasFiscaisDe, emitirNFSe, cancelarNF, salvarCertificadoFiscal,

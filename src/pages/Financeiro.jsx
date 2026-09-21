@@ -841,6 +841,7 @@ function Contratos({ store, activeUnit }) {
   const bankAccounts = store.bankAccountsDe(activeUnit);
   const vencendo = store.contratosVencendoDe(activeUnit);
   const [novo, setNovo] = useState(false);
+  const [editar, setEditar] = useState(null);
   const [renovar, setRenovar] = useState(null);
   const venceuIds = new Set(vencendo.map((c) => c.id));
 
@@ -908,14 +909,15 @@ function Contratos({ store, activeUnit }) {
                   </div>
                 </div>
 
-                {(venceu || encerrado) && (
-                  <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+                  <Btn variant="ghost" onClick={() => setEditar(c)}><Edit3 size={15} /> Editar contrato</Btn>
+                  {(venceu || encerrado) && <>
                     <Btn onClick={() => setRenovar(c)} style={{ background: C.amber }}><RefreshCw size={15} /> Renovar / atualizar valores</Btn>
                     {!encerrado && (
                       <Btn variant="ghost" onClick={() => store.encerrarContrato(c.id)}>Encerrar</Btn>
                     )}
-                  </div>
-                )}
+                  </>}
+                </div>
               </Card>
             );
           })}
@@ -927,6 +929,11 @@ function Contratos({ store, activeUnit }) {
           <ContratoForm bankAccounts={bankAccounts} planos={store.planosDe(activeUnit)} clientes={store.clientes.filter(c => c.unidadeId === activeUnit)} onSalvar={(cfg) => { store.addContrato(activeUnit, cfg); setNovo(false); }} />
         </Modal>
       )}
+      {editar && (
+        <Modal title="Editar contrato recorrente" onClose={() => setEditar(null)} maxWidth={520}>
+          <ContratoForm inicial={editar} bankAccounts={bankAccounts} planos={store.planosDe(activeUnit)} clientes={store.clientes.filter(c => c.unidadeId === activeUnit)} onSalvar={(cfg) => { store.updateContrato(editar.id, cfg); setEditar(null); }} />
+        </Modal>
+      )}
       {renovar && (
         <Modal title="Renovar contrato" onClose={() => setRenovar(null)} maxWidth={460}>
           <RenovarForm contrato={renovar} onSalvar={(patch) => { store.renovarContrato(renovar.id, patch); setRenovar(null); }} />
@@ -936,9 +943,14 @@ function Contratos({ store, activeUnit }) {
   );
 }
 
-function ContratoForm({ bankAccounts, planos = [], clientes = [], onSalvar }) {
+function ContratoForm({ bankAccounts, planos = [], clientes = [], inicial = null, onSalvar }) {
   const [buscaItem, setBuscaItem] = useState("");
-  const [f, setF] = useState({
+  const [f, setF] = useState(() => inicial ? {
+    clienteId: inicial.clienteId || "", itens: inicial.itens || [], cliente: inicial.cliente || "", documento: inicial.documento || "",
+    planoId: inicial.planoId || "", plano: inicial.plano || "", valorMensal: String(inicial.valorMensal ?? ""),
+    bankAccountId: inicial.bankAccountId || bankAccounts[0]?.id || "", diaVencimento: inicial.diaVencimento || "10",
+    mesInicial: Number(inicial.mesInicial ?? MES_ATUAL), meses: Number(inicial.meses ?? 12),
+  } : {
     clienteId: "", itens: [], cliente: "", documento: "", planoId: "", plano: "", valorMensal: "", bankAccountId: bankAccounts[0]?.id || "",
     diaVencimento: "10", mesInicial: MES_ATUAL, meses: 12,
   });
@@ -1004,10 +1016,10 @@ function ContratoForm({ bankAccounts, planos = [], clientes = [], onSalvar }) {
         </Field>
       </div>
       <div style={{ fontSize: 12, color: C.text3, background: C.cafePale, borderRadius: 9, padding: "9px 12px", marginBottom: 14, display: "flex", alignItems: "center", gap: 7 }}>
-        <Barcode size={14} color={C.cafe} /> {MODO_REAL ? "Provisiona" : "Emite"} {Math.min(f.meses, MESES.length - f.mesInicial)} {MODO_REAL ? "parcelas" : "boletos"} ({MESES[f.mesInicial]}–{MESES[ate]}), 1 por mês.
+        <Barcode size={14} color={C.cafe} /> {inicial ? "As parcelas pagas e os meses anteriores serão preservados. As previsões futuras serão recalculadas." : <>{MODO_REAL ? "Provisiona" : "Emite"} {Math.min(f.meses, MESES.length - f.mesInicial)} {MODO_REAL ? "parcelas" : "boletos"} ({MESES[f.mesInicial]}–{MESES[ate]}), 1 por mês.</>}
       </div>
       <Btn disabled={!valido} style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.5 }} onClick={() => valido && onSalvar({ ...f, valorMensal: +f.valorMensal, meses: +f.meses })}>
-        <FileSignature size={16} /> {MODO_REAL ? "Criar contrato" : "Criar contrato e emitir boletos"}
+        {inicial ? <Edit3 size={16} /> : <FileSignature size={16} />} {inicial ? "Salvar alterações" : MODO_REAL ? "Criar contrato" : "Criar contrato e emitir boletos"}
       </Btn>
     </>
   );
