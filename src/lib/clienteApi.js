@@ -10,6 +10,7 @@
 //   agendaReservas(data)      → reservas-cliente
 //   criarReserva(dados)       → criar-reserva
 //   cancelarReserva(id)       → reservas-cliente (POST cancelar)
+//   loja() / comprar(itens)   → loja-cliente
 //   preferencias() / salvarPreferencias(patch) → tabela preferencias_notificacao (RLS do dono)
 //
 // Leituras ficam 30 s em memória para trocar de aba sem esperar de novo;
@@ -78,6 +79,13 @@ export const clienteApi = {
   cancelarReserva: async (reserva_id) => {
     const r = await chamar("/functions/v1/reservas-cliente", { method: "POST", body: { acao: "cancelar", reserva_id }, contexto: "cancelar-reserva" });
     limparCacheCliente("agenda:");
+    return r;
+  },
+
+  loja: (forcar) => lerComCache("loja", () => chamar("/functions/v1/loja-cliente", { contexto: "cafeteria" }), forcar),
+  comprar: async (unidade_id, itens) => {
+    const r = await chamar("/functions/v1/loja-cliente", { method: "POST", body: { unidade_id, itens }, contexto: "compra da cafeteria" });
+    limparCacheCliente("faturas");
     return r;
   },
 

@@ -5,7 +5,7 @@
 // equipe não é cliente. Nada aqui dá baixa em fatura nem mostra documento de
 // exemplo — o cliente só vê o que existe de verdade.
 import { useState } from "react";
-import { Eye, Home, ScrollText, CalendarDays, Wallet, Mail, Building2, MessageSquare, Bell, UserCircle } from "lucide-react";
+import { Eye, Home, ScrollText, CalendarDays, Wallet, Mail, Building2, MessageSquare, Bell, UserCircle, Coffee } from "lucide-react";
 import { PageHead } from "../components/ui.jsx";
 import { C } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
@@ -18,11 +18,13 @@ import FaleConosco from "./cliente/FaleConosco.jsx";
 import Notificacoes from "./cliente/Notificacoes.jsx";
 import MinhaConta from "./cliente/MinhaConta.jsx";
 import MeuPlano from "./MeuPlano.jsx";
+import Cafeteria from "./cliente/Cafeteria.jsx";
 
 export const TELAS_AREA_CLIENTE = [
   { id: "cli_inicio", label: "Início", icon: Home, Tela: Inicio },
   { id: "cli_plano", label: "Meu plano", icon: ScrollText, Tela: MeuPlano },
   { id: "cli_reservar", label: "Reservar sala", icon: CalendarDays, Tela: Reservar },
+  { id: "cli_cafeteria", label: "Cafeteria", icon: Coffee, Tela: Cafeteria },
   { id: "cli_faturas", label: "Faturas", icon: Wallet, Tela: Faturas },
   { id: "cli_docs", label: "Correspondências", icon: Mail, Tela: Correspondencias },
   { id: "cli_fiscal", label: "Endereço fiscal", icon: Building2, Tela: EnderecoFiscal },

@@ -42,7 +42,7 @@ export default function PDV() {
   const cafeJaUsadoHoje = cafeInclusoUsadoHoje(pedidosUnidade, cliente?.id, hoje);
 
   const produtosUnidade = produtosDe(activeUnit).filter((p) => p.ativo !== false);
-  const pedidosAtivos = pedidosDe(activeUnit).filter((p) => p.status !== "entregue");
+  const pedidosAtivos = pedidosDe(activeUnit).filter((p) => !["entregue", "aguardando_pagamento"].includes(p.status));
   const novos = pedidosAtivos.filter((p) => p.status === "recebido").length;
   const cats = ["Todos", ...new Set(produtosUnidade.map((p) => p.cat))];
   const prods = cat === "Todos" ? produtosUnidade : produtosUnidade.filter((p) => p.cat === cat);

@@ -703,7 +703,7 @@ export function StoreProvider({ children }) {
   // Helpers de escopo ------------------------------------------------------
   const salasDe = (unidadeId) => salas.filter((s) => s.unidadeId === unidadeId);
   // Produtos da cafeteria = itens do catálogo do tipo "produto" (cadastrados em
-  // "Produtos e Serviços"). Mapeados para o formato que o PDV/cafeteria espera.
+  // "Produtos da cafeteria"). Mapeados para o formato que o PDV/cafeteria espera.
   const produtosDe = (unidadeId) =>
     catalogo
       .filter((it) => it.unidadeId === unidadeId && it.tipo === "produto")

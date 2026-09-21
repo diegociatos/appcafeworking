@@ -924,7 +924,7 @@ function Contratos({ store, activeUnit }) {
 
       {novo && (
         <Modal title="Novo contrato recorrente" onClose={() => setNovo(false)} maxWidth={520}>
-          <ContratoForm bankAccounts={bankAccounts} planos={store.planosDe(activeUnit)} clientes={store.clientes.filter(c => c.unidadeId === activeUnit)} catalogo={store.catalogoDe(activeUnit)} onSalvar={(cfg) => { store.addContrato(activeUnit, cfg); setNovo(false); }} />
+          <ContratoForm bankAccounts={bankAccounts} planos={store.planosDe(activeUnit)} clientes={store.clientes.filter(c => c.unidadeId === activeUnit)} onSalvar={(cfg) => { store.addContrato(activeUnit, cfg); setNovo(false); }} />
         </Modal>
       )}
       {renovar && (
@@ -936,7 +936,7 @@ function Contratos({ store, activeUnit }) {
   );
 }
 
-function ContratoForm({ bankAccounts, planos = [], clientes = [], catalogo = [], onSalvar }) {
+function ContratoForm({ bankAccounts, planos = [], clientes = [], onSalvar }) {
   const [buscaItem, setBuscaItem] = useState("");
   const [f, setF] = useState({
     clienteId: "", itens: [], cliente: "", documento: "", planoId: "", plano: "", valorMensal: "", bankAccountId: bankAccounts[0]?.id || "",
@@ -968,10 +968,10 @@ function ContratoForm({ bankAccounts, planos = [], clientes = [], catalogo = [],
       )}
       <Field label="Contrato / plano"><input value={f.plano} onChange={set("plano")} style={inp} placeholder="Ex: Sala Privativa 12" /></Field>
       <fieldset style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: 12, marginBottom: 14 }}>
-        <legend>Serviços / produtos contratados</legend>
-        <input type="search" aria-label="Buscar produto ou serviço" placeholder="Buscar produto ou serviço" value={buscaItem} onChange={e => setBuscaItem(e.target.value)} style={{ ...inp, marginBottom: 8 }} />
+        <legend>Serviços contratados</legend>
+        <input type="search" aria-label="Buscar serviço" placeholder="Buscar serviço" value={buscaItem} onChange={e => setBuscaItem(e.target.value)} style={{ ...inp, marginBottom: 8 }} />
         <div style={{ maxHeight: 180, overflowY: "auto" }}>
-        {catalogo.filter(it => it.tipo !== "plano" && (f.itens.some(x => x.catalogoId === it.id) || it.nome.toLocaleLowerCase().includes(buscaItem.toLocaleLowerCase()))).map(it => {
+        {planos.filter(it => it.id !== f.planoId && (f.itens.some(x => x.catalogoId === it.id) || it.nome.toLocaleLowerCase().includes(buscaItem.toLocaleLowerCase()))).map(it => {
           const escolhido = f.itens.find(x => x.catalogoId === it.id);
           return <div key={it.id} style={{ padding: "8px 0" }}>
             <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={!!escolhido} onChange={e => setF({ ...f, itens: e.target.checked ? [...f.itens, { catalogoId: it.id, nome: it.nome, tipo: it.tipo, quantidade: 1, valorUnitario: Number(it.preco) || 0 }] : f.itens.filter(x => x.catalogoId !== it.id) })} />{it.nome} · {fmt(it.preco || 0)}</label>
@@ -979,7 +979,7 @@ function ContratoForm({ bankAccounts, planos = [], clientes = [], catalogo = [],
           </div>;
         })}
         </div>
-        {!catalogo.some(it => it.tipo !== "plano") && <p>Cadastre os itens em Produtos e Serviços para selecioná-los aqui.</p>}
+        {!planos.length && <p>Cadastre os serviços em Planos e serviços para selecioná-los aqui.</p>}
         {!!f.itens.length && <><p>Soma dos itens: {fmt(totalItens)}. O valor mensal abaixo é o valor final do contrato, incluindo o plano.</p><Btn variant="ghost" onClick={() => setF({ ...f, valorMensal: String(totalItens) })}>Usar soma dos itens como valor mensal</Btn></>}
       </fieldset>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>

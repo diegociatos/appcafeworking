@@ -598,8 +598,8 @@ export function SalaForm({ inicial, unidade, onSave }) {
 }
 
 // --- Aba Cafeteria (produtos) ---------------------------------------------
-// Os produtos da cafeteria agora são cadastrados em "Produtos e Serviços"
-// (catálogo, tipo "produto"). Aqui é só uma prévia + atalho para gerenciar.
+// Os produtos da cafeteria são cadastrados em "Produtos da cafeteria".
+// Aqui é só uma prévia + atalho para gerenciar.
 function CafeteriaTab({ produtos, go }) {
   return (
     <Card style={{ padding: 0, overflow: "hidden" }}>
@@ -607,7 +607,7 @@ function CafeteriaTab({ produtos, go }) {
         <div>
           <div style={{ fontFamily: serif, fontSize: 17, color: C.text }}>Cardápio da cafeteria</div>
           <div style={{ fontSize: 12, color: C.text3, marginTop: 2 }}>
-            Cadastre em <b>Produtos e Serviços</b> (tipo Produto) — aparecem aqui e no PDV da recepção.
+            Cadastre em <b>Produtos da cafeteria</b> — aparecem aqui e no PDV da recepção.
           </div>
         </div>
         <Btn onClick={() => go && go("catalogo")} style={{ padding: "8px 14px", fontSize: 13 }}>
@@ -615,7 +615,7 @@ function CafeteriaTab({ produtos, go }) {
         </Btn>
       </div>
       {produtos.length === 0 ? (
-        <Empty icon={Coffee} title="Cardápio vazio" sub="Cadastre produtos em Produtos e Serviços." />
+        <Empty icon={Coffee} title="Cardápio vazio" sub="Cadastre produtos em Produtos da cafeteria." />
       ) : (
         produtos.map((p) => (
           <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 20px", borderBottom: `1px solid ${C.border2}` }}>

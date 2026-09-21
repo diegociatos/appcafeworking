@@ -38,9 +38,8 @@ export const PERFIS = {
   cliente: {
     label: "Cliente",
     cor: "#6E4E3B",
-    // Cafeteria e chat saíram do cliente: dependiam de app_state (o cliente não
-    // grava lá) e descartavam o pedido/mensagem. Contato real em cli_contato.
-    modules: ["conversas_unidade", "cli_inicio", "cli_plano", "cli_abertura", "cli_reservar", "cli_faturas", "cli_docs", "cli_fiscal", "cli_contato", "cli_notif", "cli_conta"],
+    // A loja usa uma função segura: o cliente não lê nem grava app_state direto.
+    modules: ["conversas_unidade", "cli_inicio", "cli_plano", "cli_abertura", "cli_reservar", "cli_cafeteria", "cli_faturas", "cli_docs", "cli_fiscal", "cli_contato", "cli_notif", "cli_conta"],
     landing: "cli_inicio",
   },
   // Contabilidade parceira (Ciatos Contabilidade): login próprio que só acompanha
@@ -134,8 +133,8 @@ export const seedCatalogoServicos = [
   { id: "ct7", unidadeId: "est", nome: "Sala Privativa", tipo: "plano", preco: 2490, custo: 850, recorrente: true, ativo: true },
 ];
 
-// Produtos da cafeteria — agora fazem parte do catálogo (tipo "produto").
-// Cadastrados em "Produtos e Serviços" e exibidos no PDV/cafeteria para a recepção.
+// Produtos da cafeteria — fazem parte do catálogo (tipo "produto").
+// Cadastrados em "Produtos da cafeteria" e exibidos no PDV/cafeteria para a recepção.
 export const seedCatalogoProdutos = UNIDADES.flatMap((u) =>
   PRODUTOS.map((p) => ({
     id: `cafe-${u.id}-${p.id}`, unidadeId: u.id, nome: p.nome,

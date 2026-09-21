@@ -55,6 +55,7 @@ import FaleConoscoCliente from "./pages/cliente/FaleConosco.jsx";
 import NotificacoesCliente from "./pages/cliente/Notificacoes.jsx";
 import MinhaContaCliente from "./pages/cliente/MinhaConta.jsx";
 import AberturaEmpresaCliente from "./pages/cliente/AberturaEmpresa.jsx";
+import CafeteriaCliente from "./pages/cliente/Cafeteria.jsx";
 import Aberturas from "./pages/Aberturas.jsx";
 import { aberturasApi } from "./lib/aberturasApi.js";
 
@@ -79,7 +80,7 @@ const NAV = [
   { id: "corresp", label: "Correspondências", icon: Mail, group: "operacao" },
   { id: "pdv", label: "Cafeteria · PDV", icon: Coffee, group: "operacao" },
   { id: "kds", label: "Cozinha · KDS", icon: ChefHat, group: "operacao" },
-  { id: "catalogo", label: "Produtos e Serviços", icon: Package, group: "operacao" },
+  { id: "catalogo", label: "Produtos da cafeteria", icon: Package, group: "operacao" },
   { id: "estoque", label: "Estoque", icon: Boxes, group: "operacao" },
   { id: "eventos", label: "Eventos", icon: Mic2, group: "operacao" },
   { id: "clientes", label: "Clientes", icon: Users, group: "relacionamento" },
@@ -109,6 +110,7 @@ const PAGES = {
   area: AreaCliente, equipe: Equipe, catalogo: Catalogo, planos: Planos, tabela_nacional: PlanosNacionais, parceiros: Parceiros, salas: Salas, config: Configuracoes, auditoria: Auditoria, kds: KDS,
   assinaturas: Assinaturas, aberturas: Aberturas, cli_plano: MeuPlano, cli_abertura: AberturaEmpresaCliente,
   cli_inicio: InicioCliente, cli_reservar: ReservarCliente, cli_faturas: FaturasCliente, cli_docs: CorrespondenciasCliente,
+  cli_cafeteria: CafeteriaCliente,
   cli_fiscal: EnderecoFiscalCliente, cli_contato: FaleConoscoCliente, cli_notif: NotificacoesCliente, cli_conta: MinhaContaCliente,
 };
 
@@ -217,6 +219,7 @@ export default function App() {
     { id: "cli_plano", label: "Meu plano", icon: ScrollText },
     ...(temAbertura || page === "cli_abertura" ? [{ id: "cli_abertura", label: "Abertura da empresa", icon: Briefcase }] : []),
     { id: "cli_reservar", label: "Reservar sala", icon: CalendarDays },
+    { id: "cli_cafeteria", label: "Cafeteria e conveniência", icon: Coffee },
     { id: "cli_faturas", label: "Faturas", icon: Wallet },
     { id: "cli_docs", label: "Correspondências", icon: Mail },
     ...(meusCadastros.some((c) => c.fiscal) ? [{ id: "cli_fiscal", label: "Endereço fiscal", icon: Building2 }] : []),
