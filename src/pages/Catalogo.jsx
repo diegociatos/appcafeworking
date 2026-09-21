@@ -78,6 +78,7 @@ export default function Catalogo() {
                     <Badge color={ti.cor}>{ti.label}</Badge>
                     {it.recorrente && <Badge color={C.teal}>Recorrente</Badge>}
                     {it.ativo === false && <Badge color={C.text3}>Inativo</Badge>}
+                    {it.tipo === "produto" && it.publicarNoSite === true && <Badge color={C.green}>No site</Badge>}
                   </div>
                   <div style={{ fontSize: 11.5, color: C.text3, marginTop: 3, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                     <span>Custo {fmt(it.custo || 0)} · margem {margem}%</span>
@@ -153,6 +154,7 @@ function ItemForm({ inicial, onSave }) {
     categoria: inicial.categoria || "Café",
     emoji: inicial.emoji || "☕",
     foto: inicial.foto || "",
+    publicarNoSite: inicial.id ? inicial.publicarNoSite === true : true,
     salaId: inicial.salaId || "",
     ficha: inicial.ficha || [],
   });
@@ -223,7 +225,7 @@ function ItemForm({ inicial, onSave }) {
       {ehProduto && (
         <Field label="Categoria (agrupa no PDV da cafeteria)">
           <select value={f.categoria} onChange={(e) => setF({ ...f, categoria: e.target.value })} style={inp}>
-            {["Café", "Salgados", "Doces", "Bebidas", "Outros"].map((c) => <option key={c} value={c}>{c}</option>)}
+            {["Café", "Salgados", "Doces", "Bebidas", "Papelaria", "Impressões", "Outros"].map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </Field>
       )}
@@ -283,9 +285,15 @@ function ItemForm({ inicial, onSave }) {
         Ativo (disponível para venda)
       </label>
       {ehProduto && (
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.amber, background: `${C.amber}12`, borderRadius: 8, padding: "8px 10px", marginBottom: 14 }}>
-          <Coffee size={14} /> Este produto aparece na <b>cafeteria/PDV</b> para a recepção vender.
-        </div>
+        <>
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: C.text2, marginBottom: 14, cursor: "pointer" }}>
+            <input type="checkbox" checked={f.publicarNoSite} onChange={(e) => setF({ ...f, publicarNoSite: e.target.checked })} style={{ marginTop: 2 }} />
+            <span><b>Exibir no cardápio público do site</b><br /><small style={{ color: C.text3 }}>Desmarque para papelaria, impressão e outros itens vendidos somente no coworking.</small></span>
+          </label>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.amber, background: `${C.amber}12`, borderRadius: 8, padding: "8px 10px", marginBottom: 14 }}>
+            <Coffee size={14} /> Todo produto ativo aparece no <b>PDV</b>. Somente os marcados acima aparecem no site.
+          </div>
+        </>
       )}
       <Btn style={{ width: "100%", justifyContent: "center" }} onClick={() => f.nome.trim() && onSave(f)}>
         {inicial.id ? "Salvar item" : "Adicionar ao catálogo"}

@@ -3,7 +3,7 @@ export type ProdutoPublico = { id: string; unidade_id: string; nome: string; cat
 const texto = (v: unknown, max: number) => typeof v === "string" ? v.trim().slice(0, max) : "";
 
 export function produtoPublico(doc: Record<string, unknown>, unidadeId: string): ProdutoPublico | null {
-  if (doc.tipo !== "produto" || doc.ativo === false) return null;
+  if (doc.tipo !== "produto" || doc.ativo === false || doc.publicarNoSite !== true) return null;
   const nome = texto(doc.nome, 120);
   const preco = Number(doc.preco);
   if (!nome || !Number.isFinite(preco) || preco < 0) return null;
