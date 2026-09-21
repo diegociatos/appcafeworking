@@ -15,6 +15,7 @@ export const TELAS_CLIENTE = {
   plano: "cli_plano",
   abertura: "cli_abertura",
   reservas: "cli_reservar",
+  cafeteria: "cli_cafeteria",
   faturas: "cli_faturas",
   correspondencias: "cli_docs",
   fiscal: "cli_fiscal",

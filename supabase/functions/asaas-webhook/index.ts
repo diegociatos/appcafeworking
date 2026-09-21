@@ -441,6 +441,23 @@ async function tratarAvulso(admin: SupabaseClient, pay: Linha, status: string): 
   if (!ps) {
     // cobrança emitida pelo app (asaas-cobranca): a linha já existe
     await atualizarCobrancaExistente(admin, pay, status);
+    if (status === "pago") {
+      const { data: cob } = await admin.from("cobrancas").select("id, unidade_id, origem")
+        .eq("asaas_payment_id", pay.id).maybeSingle();
+      if (cob?.origem === "cafeteria_app") {
+        const { data: pedidos, error } = await admin.from("app_state").select("item_id, doc")
+          .eq("unidade_id", cob.unidade_id).eq("entity", "pedidos");
+        if (error) throw new Error(`pedidos cafeteria: ${error.message}`);
+        const pedido = (pedidos || []).find((p) => p.doc?.cobrancaId === cob.id);
+        if (pedido && pedido.doc?.status === "aguardando_pagamento") {
+          const { error: upd } = await admin.from("app_state")
+            .update({ doc: { ...pedido.doc, status: "recebido", pagoEm: new Date().toISOString() } })
+            .eq("unidade_id", cob.unidade_id).eq("entity", "pedidos").eq("item_id", pedido.item_id);
+          if (upd) throw new Error(`liberar pedido cafeteria: ${upd.message}`);
+        }
+        return "pedido_cafeteria_liberado";
+      }
+    }
     return "cobranca_atualizada";
   }
 
