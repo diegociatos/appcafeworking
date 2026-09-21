@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { X, ImagePlus, Trash2, Repeat, Paperclip, FileText, AlertTriangle } from "lucide-react";
 import { C, sans, serif, shadow, radius } from "../lib/theme.js";
 
@@ -257,11 +257,20 @@ export const Empty = ({ icon: Icon, title, sub }) => (
 // Upload de imagem: arquivo (vira data URL) ou colar uma URL. O valor é
 // sempre uma string (data:... ou https://...). 🔌 Ao ligar storage real,
 // o arquivo passa a subir e `onChange` recebe a URL pública.
-export const ImageInput = ({ value, onChange, height = 150 }) => {
+export const ImageInput = ({ value, onChange, height = 150, uploadFile }) => {
   const fileRef = useRef(null);
-  const onFile = (e) => {
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const onFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (uploadFile) {
+      setUploading(true); setUploadError("");
+      try { onChange(await uploadFile(file)); }
+      catch (erro) { setUploadError(erro?.message || "Não foi possível enviar a foto."); }
+      finally { setUploading(false); e.target.value = ""; }
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => onChange(reader.result);
     reader.readAsDataURL(file);
@@ -316,7 +325,7 @@ export const ImageInput = ({ value, onChange, height = 150 }) => {
           }}
         >
           <ImagePlus size={26} />
-          Enviar foto
+          {uploading ? "Enviando e otimizando…" : "Enviar foto"}
         </button>
       )}
       <input
@@ -338,6 +347,7 @@ export const ImageInput = ({ value, onChange, height = 150 }) => {
         }}
       />
       <input ref={fileRef} type="file" accept="image/*" onChange={onFile} style={{ display: "none" }} />
+      {uploadError && <div role="alert" style={{ color: C.red, fontSize: 12, marginTop: 6 }}>{uploadError}</div>}
     </div>
   );
 };

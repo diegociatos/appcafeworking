@@ -3,6 +3,7 @@ import { Plus, Edit3, Trash2, Package, Repeat, Layers, Tag, Coffee, DoorOpen } f
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, ImageInput } from "../components/ui.jsx";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
+import { enviarFotoProduto } from "../lib/fotosProdutos.js";
 
 const TIPOS = [
   { id: "plano", label: "Plano", plural: "Planos", cor: C.cafe },
@@ -187,7 +188,8 @@ function ItemForm({ inicial, onSave }) {
 
       {ehProduto && (
         <Field label="Foto do produto (o cliente e a recepção veem na cafeteria)">
-          <ImageInput value={f.foto} onChange={(v) => setF({ ...f, foto: v })} height={130} />
+          <ImageInput value={f.foto} onChange={(v) => setF({ ...f, foto: v })} uploadFile={(arquivo) => enviarFotoProduto(activeUnit, arquivo)} height={130} />
+          <div style={{ fontSize: 11.5, color: C.text3, marginTop: 6 }}>Ao salvar um produto ativo, nome, foto, categoria e preço aparecem automaticamente no cardápio do site.</div>
         </Field>
       )}
 
