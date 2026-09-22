@@ -79,6 +79,7 @@ export interface EmitirNfseResult {
    *  "simulada" em ambiente de teste sem certificado (sem valor fiscal). */
   status: "autorizada" | "processando" | "simulada" | "erro";
   pdfUrl?: string;
+  pdfBase64?: string;
   /** XML assinado/autorizado (texto) — a Edge Function guarda no Storage. */
   xml?: string;
   raw?: unknown;

@@ -22,6 +22,7 @@ import { adminClient } from "../_shared/supabaseAdmin.ts";
 import { ehEquipe } from "../_shared/assinaturas.ts";
 import { getNotifProvider, NotifyError, preferenciaPermite, renderTemplate, enviarCopiasFinanceiras, type Canal, type Evento } from "../_shared/notify/index.ts";
 import { emailValido } from "../_shared/venda.ts";
+import { anexosFinanceiros } from "../_shared/notify/anexosFinanceiros.ts";
 
 /** Avisos ao cliente que a equipe pode disparar pelo app. */
 const EVENTOS_EQUIPE: Evento[] = [
@@ -91,7 +92,8 @@ Deno.serve(async (req) => {
       confirmUrl: row.tracking_token ? `${baseRastreio}?token=${row.tracking_token}&evento=confirmar` : undefined };
     const msg = renderTemplate(row.evento as Evento, dados);
     const provider = getNotifProvider(row.canal as Canal);
-    const result = await provider.enviar({ ...msg, para: row.destinatario });
+    const anexos = row.canal === "email" ? await anexosFinanceiros(row.evento as Evento, row.dados ?? {}) : [];
+    const result = await provider.enviar({ ...msg, para: row.destinatario, ...(anexos.length ? { anexos } : {}) });
 
     const patch = result.ok
       ? { status: "enviado", assunto: msg.assunto, provider_id: result.providerId, sent_at: new Date().toISOString(), erro: null }

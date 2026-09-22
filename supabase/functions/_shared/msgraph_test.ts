@@ -41,6 +41,17 @@ Deno.test("sendMail: corpo com from = envia_como, replyTo e HTML", () => {
   });
 });
 
+Deno.test("sendMail: inclui PDF como fileAttachment", () => {
+  const corpo = montarSendMail({
+    para: "cliente@example.com", assunto: "Boleto", html: "<b>Olá</b>",
+    anexos: [{ nome: "boleto.pdf", contentType: "application/pdf", contentBase64: "JVBERg==" }],
+  });
+  assertEquals(corpo.message.attachments, [{
+    "@odata.type": "#microsoft.graph.fileAttachment", name: "boleto.pdf",
+    contentType: "application/pdf", contentBytes: "JVBERg==",
+  }]);
+});
+
 Deno.test("sendMail: sem envia_como não manda from (sai pela própria conta)", () => {
   const c = montarSendMail({ para: ["a@x.com", ""], assunto: "A", html: "h" });
   assertEquals(c.message.from, undefined);

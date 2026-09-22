@@ -1,4 +1,5 @@
 import { buscarSefin } from "./transporteNacional.ts";
+import { credenciaisPemComCadeia } from "./certificado.ts";
 // ============================================================================
 // NfseNacionalProvider — emissor padrão NFS-e Nacional (Sistema Nacional
 // NFS-e). A EMISSÃO pelo contribuinte é feita no módulo SEFIN NACIONAL
@@ -67,7 +68,8 @@ export class NfseNacionalProvider implements NfseProvider {
    * negocia h2 por ALPN, então desligamos http2 no cliente.
    */
   private async mtlsFetch(url: string, init?: RequestInit): Promise<Response> {
-    return buscarSefin(url, init, this.creds.cert_pem, this.creds.key_pem);
+    const pem = credenciaisPemComCadeia(this.creds);
+    return buscarSefin(url, init, pem.cert, pem.key);
   }
 
   async emitirNfse(input: EmitirNfseInput): Promise<EmitirNfseResult> {
@@ -110,6 +112,13 @@ export class NfseNacionalProvider implements NfseProvider {
 
     const chave = body.chaveAcesso ?? body.idNfse ?? input.rpsNumero;
     const xml = body.nfseXmlGZipB64 ? await gunzipBase64(body.nfseXmlGZipB64) : (body.nfseXml ?? undefined);
+    let pdfBase64: string | undefined;
+    if (body.chaveAcesso) {
+      try {
+        const pdf = await this.mtlsFetch(`${this.base}/danfse/${body.chaveAcesso}`, { headers: { Accept: "application/pdf" } });
+        if (pdf.ok) pdfBase64 = bytesBase64(new Uint8Array(await pdf.arrayBuffer()));
+      } catch (e) { console.warn("[nfse] DANFSe indisponível para anexo:", (e as Error).message); }
+    }
     return {
       nfseId: chave,
       numero: body.numeroNfse ?? body.numero,
@@ -117,6 +126,7 @@ export class NfseNacionalProvider implements NfseProvider {
       iss,
       status: body.situacao === "processando" ? "processando" : "autorizada",
       pdfUrl: body.chaveAcesso ? `${this.base}/danfse/${body.chaveAcesso}` : undefined,
+      pdfBase64,
       xml,
       raw: body,
     };
@@ -208,6 +218,12 @@ async function gunzipBase64(b64: string): Promise<string> {
   } catch {
     return "";
   }
+}
+
+function bytesBase64(bytes: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
 }
 
 async function safeJson(res: Response): Promise<any> {
