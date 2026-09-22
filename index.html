@@ -12,6 +12,22 @@
   <body>
     <noscript>Para usar a área do cliente do CafeWorking, ative o JavaScript no navegador.</noscript>
     <div id="root"></div>
+    <script>
+      // Se o navegador tiver guardado HTML no lugar de um modulo (cache de um
+      // deploy anterior), rebusca o arquivo ignorando o cache e recarrega uma
+      // unica vez. Sem isto a tela fica em branco ate um Ctrl+Shift+R manual.
+      window.addEventListener('error', function (e) {
+        var alvo = e.target;
+        if (!alvo || alvo.tagName !== 'SCRIPT' || !alvo.src) return;
+        try {
+          if (sessionStorage.getItem('cw_recarregou_modulo')) return;
+          sessionStorage.setItem('cw_recarregou_modulo', '1');
+        } catch (_) { return; }
+        fetch(alvo.src, { cache: 'reload' })
+          .catch(function () {})
+          .then(function () { location.reload(); });
+      }, true);
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

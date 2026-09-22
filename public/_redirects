@@ -1,2 +1,7 @@
-# SPA: toda rota serve o index.html (Cloudflare Pages)
+# Asset com hash que nao existe (deploy trocando) devolve 404, nunca o index.
+# Com 200 + Cache-Control immutable, o navegador guardaria HTML no lugar do JS
+# por um ano e o app ficaria em branco ate limpar o cache.
+/assets/* /index.html 404
+
+# SPA: as demais rotas servem o index.html (Cloudflare Pages)
 /* /index.html 200
