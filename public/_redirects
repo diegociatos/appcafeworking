@@ -1,7 +1,10 @@
-# Asset com hash que nao existe (deploy trocando) devolve 404, nunca o index.
-# Com 200 + Cache-Control immutable, o navegador guardaria HTML no lugar do JS
-# por um ano e o app ficaria em branco ate limpar o cache.
-/assets/* /index.html 404
-
-# SPA: as demais rotas servem o index.html (Cloudflare Pages)
-/* /index.html 200
+# Sem desvio geral de propósito.
+#
+# O app roteia por query string (/?p=financeiro), então nenhuma rota precisa de
+# caminho próprio. A regra antiga "/* /index.html 200" mandava também
+# /assets/x.js inexistente para o index com status 200; como /assets/* leva
+# Cache-Control immutable de um ano, o navegador guardava HTML no lugar do
+# módulo durante a troca de deploy e o app abria em branco.
+#
+# Cloudflare Pages não aceita status 404 no _redirects, então a única forma de
+# um asset ausente devolver 404 é não existir desvio que o capture.
