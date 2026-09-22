@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
       }
       const ins = {
         unidade_id: body.unidade_id, cliente_nome: body.cliente ?? null, destinatario: email,
-        canal, evento: body.evento, template: body.evento, dados: body.dados ?? {}, status: "fila",
+        canal, evento: body.evento, template: body.evento, dados: body.dados ?? {}, status: "fila", tracking_token: crypto.randomUUID(),
       };
       const { data, error } = await admin.from("notificacoes").insert(ins).select().single();
       if (error) {
@@ -85,7 +85,10 @@ Deno.serve(async (req) => {
     }
 
     // Renderiza + envia
-    const dados = { ...(row.dados ?? {}), cliente: row.cliente_nome, email: row.destinatario };
+    const baseRastreio = `${Deno.env.get("SUPABASE_URL") || ""}/functions/v1/email-rastreamento`;
+    const dados = { ...(row.dados ?? {}), cliente: row.cliente_nome, email: row.destinatario,
+      openUrl: row.tracking_token ? `${baseRastreio}?token=${row.tracking_token}&evento=abrir` : undefined,
+      confirmUrl: row.tracking_token ? `${baseRastreio}?token=${row.tracking_token}&evento=confirmar` : undefined };
     const msg = renderTemplate(row.evento as Evento, dados);
     const provider = getNotifProvider(row.canal as Canal);
     const result = await provider.enviar({ ...msg, para: row.destinatario });
@@ -95,7 +98,7 @@ Deno.serve(async (req) => {
       : { status: "erro", assunto: msg.assunto, erro: result.erro };
     const { data: updated } = await admin.from("notificacoes").update(patch).eq("id", row.id).select().single();
 
-    if (result.ok && row.canal === "email") await enviarCopiasFinanceiras(admin, {
+    if (result.ok && row.canal === "email" && !body.sem_copias) await enviarCopiasFinanceiras(admin, {
       unidade_id: row.unidade_id, evento: row.evento as Evento, email: row.destinatario, cliente: row.cliente_nome, dados: row.dados ?? {},
     });
     return json({ notificacao: updated, enviado: result.ok }, result.ok ? 200 : 502, req);

@@ -48,13 +48,16 @@ export async function dispatchNotificacao(
     if (!(await preferenciaPermite(admin, opts.email, opts.evento))) {
       return { ok: false, ignorado: true, erro: "cliente optou por não receber este tipo de e-mail" };
     }
+    const trackingToken = crypto.randomUUID();
     const { data: row } = await admin.from("notificacoes").insert({
       unidade_id: opts.unidade_id, cliente_nome: opts.cliente ?? null, destinatario: opts.email,
-      canal, evento: opts.evento, template: opts.evento, dados: opts.dados ?? {}, status: "fila",
+      canal, evento: opts.evento, template: opts.evento, dados: opts.dados ?? {}, status: "fila", tracking_token: trackingToken,
     }).select("id").single();
     rowId = row?.id ?? null;
 
-    const msg = renderTemplate(opts.evento, { ...(opts.dados ?? {}), cliente: opts.cliente, email: opts.email });
+    const base = `${Deno.env.get("SUPABASE_URL") || ""}/functions/v1/email-rastreamento`;
+    const msg = renderTemplate(opts.evento, { ...(opts.dados ?? {}), cliente: opts.cliente, email: opts.email,
+      openUrl: `${base}?token=${trackingToken}&evento=abrir`, confirmUrl: `${base}?token=${trackingToken}&evento=confirmar` });
     const provider = getNotifProvider(canal);
     const result = await provider.enviar({ ...msg, para: opts.email });
 
@@ -79,12 +82,14 @@ export async function enviarCopiasFinanceiras(admin: SupabaseClient, opts: {
 }, enviar = dispatchNotificacao): Promise<void> {
   if (!opts.email || !permiteCopiasFinanceiras(opts.evento)) return;
   try {
+    const internas = normalizarCopias(opts.email, (Deno.env.get("EMAIL_EQUIPE") || "").split(","));
+    let adicionais: string[] = [];
     // Só o cadastro da mesma unidade e do mesmo titular; ambiguidade não expande destinatários.
     const email = opts.email.trim().replace(/[\\%_]/g, "\\$&");
     const { data, error } = await admin.from("clientes").select("emails_adicionais")
       .eq("unidade_id", opts.unidade_id).ilike("email", email).limit(2);
-    if (error || data?.length !== 1) return;
-    for (const destino of normalizarCopias(opts.email, data[0].emails_adicionais)) {
+    if (!error && data?.length === 1) adicionais = normalizarCopias(opts.email, data[0].emails_adicionais);
+    for (const destino of [...new Set([...adicionais, ...internas])]) {
       await enviar(admin, { ...opts, email: destino, canal: "email", copiaFinanceira: true });
     }
   } catch { /* Falha de cópia não repete cobrança nem bloqueia envio principal. */ }

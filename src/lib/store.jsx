@@ -270,7 +270,7 @@ export function StoreProvider({ children }) {
   }[evento] || "Aviso do CafeWorking");
   const _registrarAviso = (reg) => setNotificacoesEmail((ns) => [reg, ...ns.filter((n) => n.id !== reg.id)].slice(0, 60));
   /** Dispara o e-mail ao cliente. Devolve Promise<{ status: enviado|erro|ignorado|sem_email|demonstracao, erro? }>. */
-  const enfileirarEmail = (unidadeId, { cliente, clienteId, email, evento, dados = {} }) => {
+  const enfileirarEmail = (unidadeId, { cliente, clienteId, email, evento, dados = {}, semCopias = false }) => {
     if (perfilRef.current === "cliente") return Promise.resolve({ status: "ignorado" });
     const cad = (clienteId && clientes.find((c) => c.id === clienteId))
       || clientes.filter((c) => c.nome === cliente && (c.unidadeId === unidadeId || !c.unidadeId))[0];
@@ -290,7 +290,7 @@ export function StoreProvider({ children }) {
       return Promise.resolve({ status: "demonstracao" });
     }
     _registrarAviso(reg);
-    return notificacoesApi.enviar({ unidade_id: unidadeId, evento, email: destinatario, cliente: reg.cliente, dados })
+    return notificacoesApi.enviar({ unidade_id: unidadeId, evento, email: destinatario, cliente: reg.cliente, dados, sem_copias: semCopias })
       .then((r) => {
         const status = r.ignorado ? "ignorado" : r.enviado ? "enviado" : "erro";
         _registrarAviso({ ...reg, status, erro: r.erro || null });
@@ -1103,9 +1103,11 @@ export function StoreProvider({ children }) {
     codigoBarras: r.codigo_barras, pixCopiaCola: r.pix_copia_cola, status: r.status,
     pdfUrl: r.pdf_url || "", createdAt: (r.created_at || "").slice(0, 10),
   });
-  const _avisarBoletoEmail = (unidadeId, b, email) =>
-    enfileirarEmail(unidadeId, { cliente: b.sacado, email, evento: "boleto_nova",
-      dados: { valor: b.valor, vencimento: b.vencimento, linhaDigitavel: b.linhaDigitavel, pixCopiaCola: b.pixCopiaCola } });
+  const _avisarBoletoEmail = (unidadeId, b, emails) => {
+    const destinos = [...new Set((Array.isArray(emails) ? emails : [emails]).map((e) => String(e || "").trim().toLowerCase()).filter(Boolean))];
+    return Promise.all(destinos.map((email, i) => enfileirarEmail(unidadeId, { cliente: b.sacado, email, evento: "boleto_nova", semCopias: i > 0,
+      dados: { valor: b.valor, vencimento: b.vencimento, linhaDigitavel: b.linhaDigitavel, pixCopiaCola: b.pixCopiaCola, pdfUrl: b.pdfUrl } })));
+  };
 
   const emitirBoleto = (unidadeId, dados) => {
     // PRODUÇÃO: emite pela Edge Function (credenciais no Vault, nunca no front).
@@ -1119,7 +1121,7 @@ export function StoreProvider({ children }) {
       }).then(({ boleto }) => {
         const b = _mapApiBoleto(boleto, unidadeId);
         setBoletos((bs) => [...bs, b]);
-        _avisarBoletoEmail(unidadeId, b, dados.sacadoEmail);
+        _avisarBoletoEmail(unidadeId, b, dados.sacadoEmails || dados.sacadoEmail);
       }).catch((e) => {
         setBoletos((bs) => [...bs, { id: "bolerr_" + Date.now(), unidadeId, ...dados, status: "erro", erro: String(e?.message || e), createdAt: new Date().toISOString().slice(0, 10) }]);
       });
@@ -1133,7 +1135,7 @@ export function StoreProvider({ children }) {
       status: "registrado", pdfUrl: "", createdAt: new Date().toISOString().slice(0, 10),
     };
     setBoletos((bs) => [...bs, novo]);
-    _avisarBoletoEmail(unidadeId, novo, dados.sacadoEmail);
+    _avisarBoletoEmail(unidadeId, novo, dados.sacadoEmails || dados.sacadoEmail);
     return novo;
   };
 
@@ -1149,7 +1151,7 @@ export function StoreProvider({ children }) {
     if (!boleto?.id) throw new Error("O banco não confirmou o boleto. Consulte a emissão antes de tentar novamente.");
     const b = _mapApiBoleto(boleto, unidadeId);
     setBoletos(bs => [...bs.filter(x => x.id !== b.id), b]);
-    _avisarBoletoEmail(unidadeId, b, dados.sacadoEmail);
+    _avisarBoletoEmail(unidadeId, b, dados.sacadoEmails || dados.sacadoEmail);
     return b;
   };
   const cancelarBoleto = (id) => {

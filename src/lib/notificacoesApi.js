@@ -15,14 +15,14 @@ export const notificacoesApi = {
   configured: supabaseConfigured,
 
   /** → { enviado: boolean, ignorado?: boolean, erro?: string } */
-  enviar: async ({ unidade_id, evento, email, cliente, dados }) => {
+  enviar: async ({ unidade_id, evento, email, cliente, dados, sem_copias = false }) => {
     try {
       const token = await getAccessToken();
       if (!token) return { enviado: false, erro: MSG.sessao };
       const res = await fetch(`${URL_SUPA}/functions/v1/enviar-email`, {
         method: "POST",
         headers: { "content-type": "application/json", apikey: ANON, authorization: `Bearer ${token}` },
-        body: JSON.stringify({ unidade_id, evento, email, cliente, dados }),
+        body: JSON.stringify({ unidade_id, evento, email, cliente, dados, sem_copias }),
       });
       const data = await res.json().catch(() => ({}));
       if (data?.ignorado) return { enviado: false, ignorado: true };
@@ -39,7 +39,7 @@ export const notificacoesApi = {
     const token = await getAccessToken();
     if (!token) return [];
     const res = await fetch(
-      `${URL_SUPA}/rest/v1/notificacoes?select=id,cliente_nome,destinatario,evento,assunto,status,erro,created_at,sent_at&unidade_id=eq.${encodeURIComponent(unidadeId)}&order=created_at.desc&limit=${limite}`,
+      `${URL_SUPA}/rest/v1/notificacoes?select=id,cliente_nome,destinatario,evento,assunto,status,erro,created_at,sent_at,opened_at,confirmed_at&unidade_id=eq.${encodeURIComponent(unidadeId)}&order=created_at.desc&limit=${limite}`,
       { headers: { apikey: ANON, authorization: `Bearer ${token}` } },
     ).catch(() => null);
     if (!res?.ok) return [];

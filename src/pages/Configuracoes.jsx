@@ -455,7 +455,7 @@ function HistoricoEmails() {
   }, [activeUnit, locais.length]);
   const itens = [
     ...locais.filter((n) => n.status !== "enviado" && n.status !== "erro" && n.status !== "ignorado"),
-    ...doBanco.map((n) => ({ id: n.id, assunto: n.assunto || EVENTO_LABEL[n.evento] || n.evento, evento: n.evento, cliente: n.cliente_nome, destinatario: n.destinatario, status: n.status, erro: n.erro, createdAt: n.created_at })),
+    ...doBanco.map((n) => ({ id: n.id, assunto: n.assunto || EVENTO_LABEL[n.evento] || n.evento, evento: n.evento, cliente: n.cliente_nome, destinatario: n.destinatario, status: n.status, erro: n.erro, createdAt: n.created_at, openedAt: n.opened_at, confirmedAt: n.confirmed_at })),
   ];
   return (
     <Card style={{ padding: 0, overflow: "hidden" }}>
@@ -472,7 +472,7 @@ function HistoricoEmails() {
         <Empty icon={Mail} title="Nenhum e-mail ainda" sub="Os avisos enviados aos clientes desta unidade aparecem aqui." />
       ) : (
         itens.map((n, i) => {
-          const [rot, cor] = STATUS_EMAIL[n.status] || [n.status, C.text3];
+          const [rot, cor] = n.confirmedAt ? ["Recebimento confirmado", C.green] : n.openedAt ? ["Lido", C.teal] : (STATUS_EMAIL[n.status] || [n.status, C.text3]);
           return (
             <div key={n.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 20px", borderBottom: i < itens.length - 1 ? `1px solid ${C.border2}` : "none" }}>
               <div style={{ width: 34, height: 34, borderRadius: 9, background: `${cor}1a`, display: "grid", placeItems: "center", flexShrink: 0 }}>

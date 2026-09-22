@@ -19,6 +19,21 @@ export const BANCOS = {
   bradesco: { label: "Bradesco", cor: "#CC092F", pix: true },
 };
 
+const emailOk = (v) => /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(String(v || "").trim());
+
+export function EmailsBoleto({ principal, onPrincipal, adicionais = [], onAdicionais }) {
+  const alterar = (i, valor) => onAdicionais(adicionais.map((e, n) => n === i ? valor : e));
+  return <Field label="E-mails que receberão o boleto">
+    <input type="email" value={principal} onChange={(e) => onPrincipal(e.target.value)} style={inp} placeholder="financeiro@cliente.com.br" />
+    {adicionais.map((email, i) => <div key={i} style={{ display: "flex", gap: 7, marginTop: 7 }}>
+      <input type="email" aria-label={`E-mail adicional ${i + 1}`} value={email} onChange={(e) => alterar(i, e.target.value)} style={inp} placeholder="Outro destinatário" />
+      <button type="button" className="cw-btn" aria-label={`Remover e-mail adicional ${i + 1}`} onClick={() => onAdicionais(adicionais.filter((_, n) => n !== i))} style={{ color: C.red, padding: 8 }}><Trash2 size={16} /></button>
+    </div>)}
+    {adicionais.length < 9 && <Btn variant="ghost" onClick={() => onAdicionais([...adicionais, ""])} style={{ marginTop: 7, padding: "7px 10px", fontSize: 12 }}><Plus size={14} /> Adicionar outro e-mail</Btn>}
+    <div style={{ fontSize: 10.5, color: C.text4, marginTop: 4 }}>Cada endereço receberá sua própria cópia e confirmação de leitura.</div>
+  </Field>;
+}
+
 const STATUS = {
   emitido: { label: "Emitido", cor: C.amber, bg: C.amberPale },
   registrado: { label: "Registrado", cor: C.blue, bg: C.bluePale },
@@ -458,17 +473,20 @@ export function EmitirForm({ contas, contaPadrao, inicial = {}, onEmitir }) {
     vencimento: inicial.vencimento || "",
     instrucoes: inicial.instrucoes || "",
   });
+  const [emailsAdicionais, setEmailsAdicionais] = useState(() => Array.isArray(inicial.emailsAdicionais) ? inicial.emailsAdicionais : []);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const [buscando, setBuscando] = useState(false);
   const [erroBusca, setErroBusca] = useState("");
-  const valido = contas.some(c => c.id === f.bankAccountId) && f.sacado.trim() && f.sacadoDocumento.trim() && Number.isFinite(+f.valor) && +f.valor > 0 && f.vencimento;
+  const emailsValidos = emailsAdicionais.filter((e) => e.trim()).every(emailOk);
+  const valido = contas.some(c => c.id === f.bankAccountId) && f.sacado.trim() && f.sacadoDocumento.trim() && Number.isFinite(+f.valor) && +f.valor > 0 && f.vencimento && emailsValidos;
   const [emitindo, setEmitindo] = useState(false);
   const [erroEmissao, setErroEmissao] = useState("");
   const emitir = async () => {
     if (!valido || emitindo) return;
     setEmitindo(true); setErroEmissao("");
     try {
-      await onEmitir({ ...f, valor: +f.valor, sacadoEmail: f.email, sacadoCep: f.cep, sacadoLogradouro: f.logradouro, sacadoNumero: f.numero, sacadoBairro: f.bairro, sacadoCidade: f.cidade, sacadoUf: f.uf });
+      const sacadoEmails = [...new Set([f.email, ...emailsAdicionais].map((e) => e.trim().toLowerCase()).filter(emailOk))];
+      await onEmitir({ ...f, valor: +f.valor, sacadoEmail: sacadoEmails[0] || "", sacadoEmails, sacadoCep: f.cep, sacadoLogradouro: f.logradouro, sacadoNumero: f.numero, sacadoBairro: f.bairro, sacadoCidade: f.cidade, sacadoUf: f.uf });
     } catch (e) { setErroEmissao(e.message || "Não foi possível confirmar a emissão. Consulte os boletos antes de tentar novamente."); }
     finally { setEmitindo(false); }
   };
@@ -518,10 +536,7 @@ export function EmitirForm({ contas, contaPadrao, inicial = {}, onEmitir }) {
       <Field label="Sacado (pagador)">
         <input value={f.sacado} onChange={set("sacado")} style={inp} placeholder="Nome ou razão social" />
       </Field>
-      <Field label="E-mail do sacado">
-        <input type="email" value={f.email} onChange={set("email")} style={inp} placeholder="contato@empresa.com.br" />
-        <div style={{ fontSize: 11, color: C.text4, marginTop: 4 }}>O boleto é enviado para este e-mail.</div>
-      </Field>
+      <EmailsBoleto principal={f.email} onPrincipal={(email) => setF({ ...f, email })} adicionais={emailsAdicionais} onAdicionais={setEmailsAdicionais} />
       <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 0.8fr", gap: 12 }}>
         <Field label="CEP"><input value={f.cep} onChange={onCep} style={inp} placeholder="00000-000" inputMode="numeric" /></Field>
         <Field label="Endereço"><input value={f.logradouro} onChange={set("logradouro")} style={inp} placeholder="Rua / Av." /></Field>

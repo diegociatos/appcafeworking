@@ -15,7 +15,7 @@ import { gerarModeloFluxo, lerPlanilhaFluxo, validarLinhas, exportarExtratoExcel
 import { resumoOnline, cobrancasJaLancadas, competenciaDaCobranca, situacaoCobranca, hojeBRT, repassesDoAno, extratoGarantia, ROTULO_GARANTIA } from "../lib/recebimentosOnline.js";
 import { fetchGarantiasDb } from "../lib/supabaseDb.js";
 import { asaasApi } from "../lib/asaasApi.js";
-import { EmitirForm, BANCOS } from "./Boletos.jsx";
+import { EmitirForm, EmailsBoleto, BANCOS } from "./Boletos.jsx";
 
 const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 // Competência atual a partir da data real (sem datas fixas).
@@ -971,6 +971,7 @@ function FaturarContratoForm({ contrato, store, activeUnit, bankAccounts, onClos
   const [vencimento, setVencimento] = useState(() => vencimentoDaParcela(provisao, contrato));
   const [valor, setValor] = useState(provisao?.valor || contrato.valorMensal);
   const [email, setEmail] = useState(cliente.email || "");
+  const [emailsAdicionais, setEmailsAdicionais] = useState(cliente.emailsAdicionais || []);
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState("");
   const [resultado, setResultado] = useState(null);
@@ -982,7 +983,7 @@ function FaturarContratoForm({ contrato, store, activeUnit, bankAccounts, onClos
     try {
       const { cobranca } = await asaasApi.criarCobranca({
         unidade_id: activeUnit, cliente: contrato.cliente, cliente_documento: contrato.documento,
-        cliente_email: email || undefined, valor: Number(valor), vencimento, descricao, tipo: "BOLETO",
+        cliente_email: email || undefined, cliente_emails: [email, ...emailsAdicionais], valor: Number(valor), vencimento, descricao, tipo: "BOLETO",
       });
       if (provisao?.id) store.updateLancamento(provisao.id, { cobrancaId: cobranca.id, valor: Number(valor), data: `${vencimento.slice(8, 10)}/${vencimento.slice(5, 7)}/${vencimento.slice(0, 4)}` });
       setResultado({ texto: "Boleto emitido pelo Asaas.", url: cobranca.boleto_url || cobranca.invoice_url });
@@ -1014,14 +1015,14 @@ function FaturarContratoForm({ contrato, store, activeUnit, bankAccounts, onClos
         <Field label="Valor (R$)"><input type="number" min="0.01" step="0.01" value={valor} onChange={(e) => setValor(e.target.value)} style={inp} /></Field>
         <Field label="Vencimento"><input type="date" value={vencimento} onChange={(e) => setVencimento(e.target.value)} style={inp} /></Field>
       </div>
-      <Field label="E-mail para receber o boleto"><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={inp} placeholder="financeiro@cliente.com.br" /></Field>
+      <EmailsBoleto principal={email} onPrincipal={setEmail} adicionais={emailsAdicionais} onAdicionais={setEmailsAdicionais} />
       {erro && <div role="alert" style={{ color: C.red, fontSize: 12.5, marginBottom: 10 }}>{erro}</div>}
       <Btn disabled={busy || !provisao || !(Number(valor) > 0) || !vencimento || !contrato.documento} style={{ width: "100%", justifyContent: "center", opacity: busy ? 0.6 : 1 }} onClick={emitirAsaas}><Barcode size={16} /> {busy ? "Emitindo…" : "Emitir boleto pelo Asaas"}</Btn>
       {!contrato.documento && <div style={{ color: C.red, fontSize: 12, marginTop: 7 }}>Cadastre o CPF/CNPJ no contrato antes de faturar.</div>}
     </> : contasAtivas.length ? <EmitirForm
       contas={contasAtivas.map((c) => ({ ...c, apelido: `${BANCOS[c.banco]?.label || c.banco} · ${c.apelido}` }))}
       contaPadrao={contrato.bankAccountId}
-      inicial={{ sacado: contrato.cliente, sacadoDocumento: contrato.documento, email, valor, vencimento, instrucoes: descricao, cep: cliente.cep, logradouro: cliente.endereco, numero: cliente.numero, bairro: cliente.bairro, cidade: cliente.cidade, uf: cliente.uf }}
+      inicial={{ sacado: contrato.cliente, sacadoDocumento: contrato.documento, email, emailsAdicionais, valor, vencimento, instrucoes: descricao, cep: cliente.cep, logradouro: cliente.endereco, numero: cliente.numero, bairro: cliente.bairro, cidade: cliente.cidade, uf: cliente.uf }}
       onEmitir={async (dados) => {
         const boleto = await store.emitirBoletoConfirmado(activeUnit, dados);
         if (provisao?.id && boleto?.id) store.updateLancamento(provisao.id, { boletoId: boleto.id, valor: dados.valor, data: `${dados.vencimento.slice(8, 10)}/${dados.vencimento.slice(5, 7)}/${dados.vencimento.slice(0, 4)}` });
