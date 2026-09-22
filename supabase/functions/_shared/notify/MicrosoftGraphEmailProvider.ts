@@ -57,7 +57,7 @@ export class MicrosoftGraphEmailProvider implements NotificationProvider {
   async enviar(msg: OutboundMessage): Promise<SendResult> {
     try {
       const corpo = montarSendMail(
-        { para: msg.para, assunto: msg.assunto, html: msg.html, replyTo: msg.replyTo || this.replyToPadrao || undefined },
+        { para: msg.para, assunto: msg.assunto, html: msg.html, replyTo: msg.replyTo || this.replyToPadrao || undefined, anexos: msg.anexos },
         this.cfg.envia_como,
       );
       await enviarSendMail(await this.token(), corpo, this.fetchFn);

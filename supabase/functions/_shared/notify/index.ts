@@ -29,6 +29,7 @@ import { renderTemplate } from "./templates.ts";
 import type { Evento } from "./types.ts";
 import { preferenciaPermite } from "./preferencias.ts";
 import { permiteCopiasFinanceiras, normalizarCopias } from "./contatosFinanceiros.ts";
+import { anexosFinanceiros } from "./anexosFinanceiros.ts";
 export { categoriaOpcional, deveEnviar, preferenciaPermite } from "./preferencias.ts";
 
 /**
@@ -59,7 +60,8 @@ export async function dispatchNotificacao(
     const msg = renderTemplate(opts.evento, { ...(opts.dados ?? {}), cliente: opts.cliente, email: opts.email,
       openUrl: `${base}?token=${trackingToken}&evento=abrir`, confirmUrl: `${base}?token=${trackingToken}&evento=confirmar` });
     const provider = getNotifProvider(canal);
-    const result = await provider.enviar({ ...msg, para: opts.email });
+    const anexos = canal === "email" ? await anexosFinanceiros(opts.evento, opts.dados ?? {}) : [];
+    const result = await provider.enviar({ ...msg, para: opts.email, ...(anexos.length ? { anexos } : {}) });
 
     if (rowId) {
       await admin.from("notificacoes").update(

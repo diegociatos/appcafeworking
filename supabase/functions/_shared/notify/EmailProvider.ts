@@ -36,6 +36,7 @@ export class EmailProvider implements NotificationProvider {
         subject: msg.assunto,
         html: msg.html,
         ...(msg.texto ? { text: msg.texto } : {}),
+        ...(msg.anexos?.length ? { attachments: msg.anexos.map((a) => ({ filename: a.nome, content: a.contentBase64 })) } : {}),
         ...((msg.replyTo || this.replyTo) ? { reply_to: msg.replyTo || this.replyTo } : {}),
       }),
     });

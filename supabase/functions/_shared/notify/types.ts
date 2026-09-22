@@ -4,6 +4,12 @@
 
 export type Canal = "email" | "whatsapp";
 
+export interface AnexoEmail {
+  nome: string;
+  contentType: string;
+  contentBase64: string;
+}
+
 /** Mensagem já renderizada, pronta para o provedor enviar. */
 export interface OutboundMessage {
   para: string;        // e-mail (ou telefone)
@@ -12,6 +18,7 @@ export interface OutboundMessage {
   html: string;
   texto?: string;
   replyTo?: string;    // opcional; sem ele vale EMAIL_REPLY_TO
+  anexos?: AnexoEmail[];
 }
 
 export interface SendResult {

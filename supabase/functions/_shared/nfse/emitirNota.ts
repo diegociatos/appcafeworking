@@ -199,9 +199,12 @@ export async function emitirNotaFiscal(
     const url = await uploadNfseFile(admin, `${config.unidade_id}/${nota.id}.xml`, result.xml);
     if (url) { await admin.from("notas_fiscais").update({ xml_url: url }).eq("id", nota.id); nota.xml_url = url; }
   }
-  if (result.pdfUrl) {
-    await admin.from("notas_fiscais").update({ pdf_url: result.pdfUrl }).eq("id", nota.id);
-    nota.pdf_url = result.pdfUrl;
+  if (result.pdfUrl || result.pdfBase64) {
+    const pdfUrl = result.pdfBase64
+      ? await uploadNfseFile(admin, `${config.unidade_id}/${nota.id}.pdf`, result.pdfBase64, "application/pdf")
+      : null;
+    nota.pdf_url = pdfUrl || result.pdfUrl;
+    await admin.from("notas_fiscais").update({ pdf_url: nota.pdf_url }).eq("id", nota.id);
   }
   // A cobrança passa a apontar para a nota (a simulada não conta: não impede a real).
   if (cobrancaId && !simulada) {

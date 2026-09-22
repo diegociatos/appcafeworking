@@ -278,6 +278,7 @@ export interface EmailGraph {
   assunto: string;
   html: string;
   replyTo?: string;
+  anexos?: Array<{ nome: string; contentType: string; contentBase64: string }>;
 }
 
 /** Corpo do POST /me/sendMail. */
@@ -291,6 +292,12 @@ export function montarSendMail(e: EmailGraph, enviaComo?: string) {
   };
   if (e.replyTo) message.replyTo = [{ emailAddress: { address: e.replyTo } }];
   if (enviaComo) message.from = { emailAddress: { address: enviaComo } };
+  if (e.anexos?.length) message.attachments = e.anexos.map((a) => ({
+    "@odata.type": "#microsoft.graph.fileAttachment",
+    name: a.nome,
+    contentType: a.contentType,
+    contentBytes: a.contentBase64,
+  }));
   return { message, saveToSentItems: true };
 }
 
