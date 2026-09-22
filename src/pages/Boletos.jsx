@@ -462,7 +462,7 @@ function IntegracaoBanco({ conta, onConectar, onDesconectar, onToggle }) {
 }
 
 // ===========================================================================
-export function EmitirForm({ contas, contaPadrao, inicial = {}, onEmitir }) {
+export function EmitirForm({ contas, contaPadrao, inicial = {}, onEmitir, extraAntesEmitir = null }) {
   const [f, setF] = useState({
     bankAccountId: contaPadrao || inicial.bankAccountId || contas[0]?.id || "",
     sacado: inicial.sacado || "",
@@ -558,6 +558,7 @@ export function EmitirForm({ contas, contaPadrao, inicial = {}, onEmitir }) {
       <Field label="Instruções (opcional)">
         <input value={f.instrucoes} onChange={set("instrucoes")} style={inp} placeholder="Ex: Mensalidade sala privativa - Junho" />
       </Field>
+      {extraAntesEmitir}
       {erroEmissao && <p role="alert" style={{ color: C.red, marginBottom: 12 }}>{erroEmissao}</p>}
       <Btn disabled={!valido || emitindo} style={{ width: "100%", justifyContent: "center", marginTop: 4 }} onClick={emitir}>
         <Barcode size={16} /> {emitindo ? "Confirmando emissão no banco…" : "Emitir boleto no banco selecionado"}

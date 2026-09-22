@@ -972,10 +972,39 @@ function FaturarContratoForm({ contrato, store, activeUnit, bankAccounts, onClos
   const [valor, setValor] = useState(provisao?.valor || contrato.valorMensal);
   const [email, setEmail] = useState(cliente.email || "");
   const [emailsAdicionais, setEmailsAdicionais] = useState(cliente.emailsAdicionais || []);
+  const [emitirNota, setEmitirNota] = useState(false);
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState("");
   const [resultado, setResultado] = useState(null);
   const descricao = provisao?.descricao || `${contrato.plano} · ${contrato.cliente}`;
+  const configFiscal = store.configFiscalDe(activeUnit);
+
+  const emitirNotaDoFaturamento = async ({ boletoId, cobrancaId, valorFinal, dadosTomador = {} }) => {
+    if (!emitirNota) return {};
+    const fiscal = await store.emitirNFSe(activeUnit, {
+      tomador: dadosTomador.nome || contrato.cliente,
+      tomadorDoc: dadosTomador.documento || contrato.documento,
+      tomadorEmail: dadosTomador.email || email,
+      valor: Number(valorFinal), descricao,
+      tomadorCep: dadosTomador.cep || cliente.cep,
+      tomadorLogradouro: dadosTomador.logradouro || cliente.endereco,
+      tomadorNumero: dadosTomador.numero || cliente.numero,
+      tomadorBairro: dadosTomador.bairro || cliente.bairro,
+      tomadorCidade: dadosTomador.cidade || cliente.cidade,
+      tomadorUf: dadosTomador.uf || cliente.uf,
+      boletoId, cobrancaId,
+    });
+    return fiscal?.nota
+      ? { nota: fiscal.nota }
+      : { erroNota: fiscal?.erro || "Não foi possível emitir a nota fiscal." };
+  };
+
+  const opcaoNota = <label style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: 13, marginBottom: 12, border: `1px solid ${C.border}`, borderRadius: 11, background: C.white, cursor: "pointer" }}>
+    <input type="checkbox" checked={emitirNota} onChange={(e) => setEmitirNota(e.target.checked)} style={{ marginTop: 3 }} />
+    <span style={{ fontSize: 13 }}><b>Emitir nota fiscal junto com o boleto</b><br /><span style={{ color: C.text2 }}>A NFS-e será emitida após a confirmação do boleto e ficará vinculada a esta cobrança.</span>
+      {configFiscal?.emissaoAtiva === false && <span style={{ display: "block", color: C.amber, marginTop: 4 }}>A emissão fiscal desta unidade está desativada nas configurações.</span>}
+    </span>
+  </label>;
 
   const emitirAsaas = async () => {
     if (!asaasApi.configured) return setErro("Configure o Asaas em Cobranças antes de emitir por ele.");
@@ -986,13 +1015,16 @@ function FaturarContratoForm({ contrato, store, activeUnit, bankAccounts, onClos
         cliente_email: email || undefined, cliente_emails: [email, ...emailsAdicionais], valor: Number(valor), vencimento, descricao, tipo: "BOLETO",
       });
       if (provisao?.id) store.updateLancamento(provisao.id, { cobrancaId: cobranca.id, valor: Number(valor), data: `${vencimento.slice(8, 10)}/${vencimento.slice(5, 7)}/${vencimento.slice(0, 4)}` });
-      setResultado({ texto: "Boleto emitido pelo Asaas.", url: cobranca.boleto_url || cobranca.invoice_url });
+      const fiscal = await emitirNotaDoFaturamento({ cobrancaId: cobranca.id, valorFinal: valor });
+      setResultado({ texto: "Boleto emitido pelo Asaas.", url: cobranca.boleto_url || cobranca.invoice_url, ...fiscal });
     } catch (e) { setErro(e.message || "Não foi possível emitir o boleto."); }
     finally { setBusy(false); }
   };
 
   if (resultado) return <div role="status">
     <div style={{ display: "flex", gap: 9, alignItems: "center", background: C.greenPale, color: C.green, borderRadius: 12, padding: 14, marginBottom: 14 }}><CheckCircle2 size={18} /> {resultado.texto}</div>
+    {resultado.nota && <div style={{ display: "flex", gap: 9, alignItems: "center", background: C.greenPale, color: C.green, borderRadius: 12, padding: 14, marginBottom: 14 }}><FileText size={18} /> Nota fiscal {resultado.nota.numero ? `nº ${resultado.nota.numero} ` : ""}emitida com sucesso.</div>}
+    {resultado.erroNota && <div role="alert" style={{ display: "flex", gap: 9, alignItems: "flex-start", background: C.redPale, color: C.red, borderRadius: 12, padding: 14, marginBottom: 14 }}><AlertTriangle size={18} style={{ flexShrink: 0 }} /><span><b>O boleto foi emitido, mas a nota fiscal não.</b><br />{resultado.erroNota}</span></div>}
     <div style={{ display: "flex", gap: 8 }}>
       {resultado.url && <a href={resultado.url} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}><Btn><ExternalLink size={15} /> Abrir boleto</Btn></a>}
       <Btn variant="ghost" onClick={onClose}>Concluir</Btn>
@@ -1016,17 +1048,27 @@ function FaturarContratoForm({ contrato, store, activeUnit, bankAccounts, onClos
         <Field label="Vencimento"><input type="date" value={vencimento} onChange={(e) => setVencimento(e.target.value)} style={inp} /></Field>
       </div>
       <EmailsBoleto principal={email} onPrincipal={setEmail} adicionais={emailsAdicionais} onAdicionais={setEmailsAdicionais} />
+      {opcaoNota}
       {erro && <div role="alert" style={{ color: C.red, fontSize: 12.5, marginBottom: 10 }}>{erro}</div>}
       <Btn disabled={busy || !provisao || !(Number(valor) > 0) || !vencimento || !contrato.documento} style={{ width: "100%", justifyContent: "center", opacity: busy ? 0.6 : 1 }} onClick={emitirAsaas}><Barcode size={16} /> {busy ? "Emitindo…" : "Emitir boleto pelo Asaas"}</Btn>
       {!contrato.documento && <div style={{ color: C.red, fontSize: 12, marginTop: 7 }}>Cadastre o CPF/CNPJ no contrato antes de faturar.</div>}
     </> : contasAtivas.length ? <EmitirForm
       contas={contasAtivas.map((c) => ({ ...c, apelido: `${BANCOS[c.banco]?.label || c.banco} · ${c.apelido}` }))}
       contaPadrao={contrato.bankAccountId}
+      extraAntesEmitir={opcaoNota}
       inicial={{ sacado: contrato.cliente, sacadoDocumento: contrato.documento, email, emailsAdicionais, valor, vencimento, instrucoes: descricao, cep: cliente.cep, logradouro: cliente.endereco, numero: cliente.numero, bairro: cliente.bairro, cidade: cliente.cidade, uf: cliente.uf }}
       onEmitir={async (dados) => {
         const boleto = await store.emitirBoletoConfirmado(activeUnit, dados);
         if (provisao?.id && boleto?.id) store.updateLancamento(provisao.id, { boletoId: boleto.id, valor: dados.valor, data: `${dados.vencimento.slice(8, 10)}/${dados.vencimento.slice(5, 7)}/${dados.vencimento.slice(0, 4)}` });
-        setResultado({ texto: boleto?.id?.startsWith("bol_") ? "Boleto de demonstração criado." : "Boleto emitido pelo banco selecionado.", url: boleto?.pdfUrl });
+        const fiscal = await emitirNotaDoFaturamento({
+          boletoId: boleto?.id, valorFinal: dados.valor,
+          dadosTomador: {
+            nome: dados.sacado, documento: dados.sacadoDocumento, email: dados.sacadoEmail,
+            cep: dados.sacadoCep, logradouro: dados.sacadoLogradouro, numero: dados.sacadoNumero,
+            bairro: dados.sacadoBairro, cidade: dados.sacadoCidade, uf: dados.sacadoUf,
+          },
+        });
+        setResultado({ texto: boleto?.id?.startsWith("bol_") ? "Boleto de demonstração criado." : "Boleto emitido pelo banco selecionado.", url: boleto?.pdfUrl, ...fiscal });
       }}
     /> : <div role="status" style={{ color: C.text2, fontSize: 13 }}>Cadastre e configure uma conta bancária na área de Boletos antes de faturar por banco.</div>}
   </>;
