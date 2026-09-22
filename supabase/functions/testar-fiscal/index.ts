@@ -3,9 +3,8 @@
 //
 // POST /functions/v1/testar-fiscal   body: { unidade_id }
 //
-// Consulta GET /parametros_municipais/{codMun}/convenio em VÁRIOS hosts
-// candidatos (ADN/contribuintes e SEFIN Nacional) para:
-//   1. descobrir qual endpoint responde (lockar o host de emissão);
+// Consulta GET /parametros_municipais/{codMun}/convenio no SEFIN Nacional para:
+//   1. testar o mesmo host e transporte HTTP/1.1 usados na emissão;
 //   2. confirmar se o município está conveniado ao Sistema Nacional NFS-e;
 //   3. validar o certificado A1 na conexão (mTLS), quando disponível em PEM.
 // Não emite nota — é só leitura/diagnóstico.
@@ -15,18 +14,12 @@ import { handleOptions, json } from "../_shared/cors.ts";
 import { userClient, adminClient } from "../_shared/supabaseAdmin.ts";
 import { podeMexerNoDinheiro, recusaSemFinanceiro } from "../_shared/permissoes.ts";
 import { getFiscalCredentials } from "../_shared/fiscalVault.ts";
+import { credenciaisPemComCadeia } from "../_shared/nfse/certificado.ts";
+import { buscarSefin } from "../_shared/nfse/transporteNacional.ts";
 
-const CANDIDATOS: Record<string, string[]> = {
-  homologacao: [
-    "https://adn.producaorestrita.nfse.gov.br/contribuintes",
-    "https://sefin.producaorestrita.nfse.gov.br/sefinnacional",
-    "https://sefin.producaorestrita.nfse.gov.br/SefinNacional",
-  ],
-  producao: [
-    "https://adn.nfse.gov.br/contribuintes",
-    "https://sefin.nfse.gov.br/sefinnacional",
-    "https://sefin.nfse.gov.br/SefinNacional",
-  ],
+const SEFIN: Record<string, string> = {
+  homologacao: "https://sefin.producaorestrita.nfse.gov.br/API/SefinNacional",
+  producao: "https://sefin.nfse.gov.br/SefinNacional",
 };
 
 const MAPA_IBGE: Record<string, string> = {
@@ -63,41 +56,34 @@ Deno.serve(async (req) => {
     }
     if (codMun.length !== 7) return json({ error: "Código IBGE do município ausente na config fiscal (cLocEmi)." }, 400);
 
-    // certificado (mTLS) — só dá pra usar se houver PEM (cert_pem + key_pem)
-    let httpClient: unknown = undefined;
-    let temCert = false, certMtls = false;
+    let temCert = false;
+    let cert: string | undefined, key: string | undefined;
     try {
       const creds = await getFiscalCredentials(admin, cfg.certificado_ref || "");
       temCert = Boolean(creds.cert_pfx_base64 || (creds.cert_pem && creds.key_pem));
-      const anyDeno = (globalThis as any).Deno;
-      if (creds.cert_pem && creds.key_pem && anyDeno?.createHttpClient) {
-        // Deno atual espera { cert, key }; os nomes antigos { certChain, privateKey }
-        // são IGNORADOS em silêncio (client SEM cert → gov recusa o mTLS → "sem
-        // resposta"). Passa os dois pares por compatibilidade.
-        httpClient = anyDeno.createHttpClient({ cert: creds.cert_pem, key: creds.key_pem, certChain: creds.cert_pem, privateKey: creds.key_pem });
-        certMtls = true;
-      }
+      ({ cert, key } = credenciaisPemComCadeia(creds));
     } catch (_) { /* segue sem cert */ }
 
     const resultados = [];
-    for (const base of CANDIDATOS[ambiente]) {
+    const base = SEFIN[ambiente];
+    {
       const url = `${base}/parametros_municipais/${codMun}/convenio`;
       const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 8000);
+      const t = setTimeout(() => ctrl.abort(), 12000);
       try {
-        const init: RequestInit = { method: "GET", headers: { Accept: "application/json" }, signal: ctrl.signal };
-        if (httpClient) (init as any).client = httpClient;
-        const res = await fetch(url, init);
-        const txt = (await res.text().catch(() => "")).slice(0, 400);
-        resultados.push({ base, url, status: res.status, ok: res.ok, corpo: txt });
+        const res = await buscarSefin(url, { method: "GET", headers: { Accept: "application/json" }, signal: ctrl.signal }, cert, key);
+        resultados.push({ base, url, status: res.status, ok: res.ok });
       } catch (e) {
-        resultados.push({ base, url, status: 0, ok: false, erro: String((e as Error).message || e) });
+        const erro = e instanceof DOMException && e.name === "AbortError"
+          ? "Tempo de resposta esgotado. Tente novamente mais tarde."
+          : String((e as Error).message || e);
+        resultados.push({ base, url, status: 0, ok: false, erro });
       } finally {
         clearTimeout(t);
       }
     }
 
-    return json({ unidade_id: body.unidade_id, codMun, ambiente, temCertificado: temCert, certificadoMtls: certMtls, resultados }, 200);
+    return json({ unidade_id: body.unidade_id, codMun, ambiente, temCertificado: temCert, certificadoMtls: Boolean(cert && key), resultados }, 200);
   } catch (e) {
     console.error(e);
     return json({ error: (e as Error).message ?? "Erro interno" }, 500);

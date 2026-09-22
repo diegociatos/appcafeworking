@@ -333,7 +333,7 @@ function ConfigFiscal({ cfg, unidadeNome, unidadeId, onSalvar }) {
         <Btn variant="ghost" onClick={() => !testando && testar()} style={{ opacity: testando ? 0.6 : 1 }}>
           <ShieldCheck size={15} /> {testando ? "Testando…" : "Testar conexão / convênio"}
         </Btn>
-        <span style={{ fontSize: 11.5, color: C.text4 }}>Consulta o convênio do município e descobre o endpoint nacional — não emite nota.</span>
+        <span style={{ fontSize: 11.5, color: C.text4 }}>Consulta o convênio no mesmo serviço nacional usado para emitir notas. Não emite nota.</span>
       </div>
       {teste && (
         <div style={{ background: C.cream2, borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 12 }}>
@@ -342,17 +342,17 @@ function ConfigFiscal({ cfg, unidadeNome, unidadeId, onSalvar }) {
           ) : (
             <>
               <div style={{ marginBottom: 6, color: C.text3 }}>
-                Município <b>{teste.codMun}</b> · ambiente <b>{teste.ambiente}</b> · certificado {teste.temCertificado ? (teste.certificadoMtls ? "ativo (mTLS)" : "presente (PFX)") : "ausente"}
+                Município <b>{teste.codMun}</b> · ambiente <b>{teste.ambiente}</b> · certificado {teste.temCertificado ? (teste.certificadoMtls ? "configurado para mTLS" : "presente, sem chave pronta para a conexão") : "ausente"}
               </div>
               {(teste.resultados || []).map((r, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderTop: i ? `1px solid ${C.border2}` : "none" }}>
                   <span style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, background: r.status && r.status !== 0 ? (r.ok ? C.green : C.amber) : C.red }} />
                   <code style={{ fontSize: 10.5, color: C.text2, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.base}</code>
-                  <b style={{ color: r.ok ? C.green : C.text3 }}>{r.status || "sem resposta"}</b>
+                  <b style={{ color: r.ok ? C.green : C.text3 }}>{r.status || r.erro || "sem resposta"}</b>
                 </div>
               ))}
               <div style={{ marginTop: 6, color: C.text4, fontSize: 11 }}>
-                Verde/âmbar = o host respondeu (endpoint certo). Vermelho = não respondeu. Me mande este resultado que eu travo o host de emissão.
+                Verde = consulta concluída. Âmbar = o serviço respondeu com erro; confira a configuração. Vermelho = a conexão não foi concluída. Certificado configurado não confirma que o serviço o aceitou.
               </div>
             </>
           )}
