@@ -25,8 +25,13 @@ Deno.serve(async (req) => {
     const clienteIds = clientes.map((c) => String(c.id));
     const { data: assinaturas } = await admin.from("assinaturas").select("cliente_id, unidade_id, recorrencia, status")
       .in("cliente_id", clienteIds).eq("status", "ativa");
-    const { data: consumosMes } = await admin.from("consumos_cafeteria").select("unidade_id, valor")
-      .eq("cliente_email", usuario.email).eq("competencia", hojeBRT().slice(0, 7)).eq("status", "aberto");
+    const competencia = hojeBRT().slice(0, 7);
+    const { data: consumosMes, error: consumosErr } = await admin.from("consumos_cafeteria")
+      .select("id, unidade_id, cliente_id, valor, itens, created_at")
+      .in("cliente_id", clienteIds).ilike("cliente_email", usuario.email)
+      .eq("competencia", competencia).eq("status", "aberto")
+      .order("created_at", { ascending: false });
+    if (consumosErr) throw new Error(`consumos_cafeteria: ${consumosErr.message}`);
     const mensalPor = new Set((assinaturas || []).filter((a) => a.recorrencia === "mensal").map((a) => `${a.unidade_id}|${a.cliente_id}`));
     for (const c of clientes) {
       const contrato = (linhas || []).find((l) => l.entity === "contratos" && l.unidade_id === c.unidade_id && l.doc?.clienteId === c.id && l.doc?.status === "ativo");
@@ -38,6 +43,12 @@ Deno.serve(async (req) => {
       produtos: produtosDaAreaCliente((linhas || []).filter((l) => l.entity === "catalogo" && l.unidade_id === id)),
       cliente_mensal: clientes.some((c) => c.unidade_id === id && mensalPor.has(`${id}|${c.id}`)),
       consumo_mes: Math.round((consumosMes || []).filter((c) => c.unidade_id === id).reduce((s, c) => s + Number(c.valor), 0) * 100) / 100,
+      consumos: (consumosMes || []).filter((c) => c.unidade_id === id).map((c) => ({
+        id: c.id, data: c.created_at, valor: Number(c.valor),
+        itens: Array.isArray(c.itens) ? c.itens.map((i: { nome?: unknown; q?: unknown; preco?: unknown }) => ({
+          nome: String(i.nome || "Produto"), quantidade: Number(i.q) || 1, preco: Number(i.preco) || 0,
+        })) : [],
+      })),
     })).filter((u) => u.produtos.length);
     if (req.method === "GET") return json({ unidades }, 200, req);
 
