@@ -447,16 +447,16 @@ function IntegracaoBanco({ conta, onConectar, onDesconectar, onToggle }) {
 }
 
 // ===========================================================================
-export function EmitirForm({ contas, contaPadrao, onEmitir }) {
+export function EmitirForm({ contas, contaPadrao, inicial = {}, onEmitir }) {
   const [f, setF] = useState({
-    bankAccountId: contaPadrao || contas[0]?.id || "",
-    sacado: "",
-    sacadoDocumento: "",
-    email: "",
-    cep: "", logradouro: "", numero: "", bairro: "", cidade: "", uf: "",
-    valor: "",
-    vencimento: "",
-    instrucoes: "",
+    bankAccountId: contaPadrao || inicial.bankAccountId || contas[0]?.id || "",
+    sacado: inicial.sacado || "",
+    sacadoDocumento: inicial.sacadoDocumento || "",
+    email: inicial.email || inicial.sacadoEmail || "",
+    cep: inicial.cep || "", logradouro: inicial.logradouro || "", numero: inicial.numero || "", bairro: inicial.bairro || "", cidade: inicial.cidade || "", uf: inicial.uf || "",
+    valor: inicial.valor != null ? String(inicial.valor) : "",
+    vencimento: inicial.vencimento || "",
+    instrucoes: inicial.instrucoes || "",
   });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const [buscando, setBuscando] = useState(false);
