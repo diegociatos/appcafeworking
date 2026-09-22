@@ -3,7 +3,7 @@ import SelecionarCliente from "../components/SelecionarCliente.jsx";
 import {
   Wallet, TrendingUp, Landmark, BarChart3, FileText, Tags,
   Plus, Edit3, Trash2, Check, X, ArrowUpRight, ArrowDownRight, Receipt, Paperclip, Download, Barcode, Copy, QrCode,
-  FileSignature, RefreshCw, AlertTriangle, Upload, CheckCircle2, AlertCircle, MessageSquare, Phone, CreditCard, PiggyBank,
+  FileSignature, RefreshCw, AlertTriangle, Upload, CheckCircle2, AlertCircle, MessageSquare, Phone, CreditCard, PiggyBank, ExternalLink,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, FileInput } from "../components/ui.jsx";
 import { C, serif, sans, fmt, fmtShort, inp } from "../lib/theme.js";
@@ -14,6 +14,8 @@ import {
 import { gerarModeloFluxo, lerPlanilhaFluxo, validarLinhas, exportarExtratoExcel, exportarProvisaoExcel } from "../lib/fluxoImport.js";
 import { resumoOnline, cobrancasJaLancadas, competenciaDaCobranca, situacaoCobranca, hojeBRT, repassesDoAno, extratoGarantia, ROTULO_GARANTIA } from "../lib/recebimentosOnline.js";
 import { fetchGarantiasDb } from "../lib/supabaseDb.js";
+import { asaasApi } from "../lib/asaasApi.js";
+import { EmitirForm, BANCOS } from "./Boletos.jsx";
 
 const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 // Competência atual a partir da data real (sem datas fixas).
@@ -841,6 +843,8 @@ function Contratos({ store, activeUnit }) {
   const bankAccounts = store.bankAccountsDe(activeUnit);
   const vencendo = store.contratosVencendoDe(activeUnit);
   const [novo, setNovo] = useState(false);
+  const [editar, setEditar] = useState(null);
+  const [faturar, setFaturar] = useState(null);
   const [renovar, setRenovar] = useState(null);
   const venceuIds = new Set(vencendo.map((c) => c.id));
 
@@ -908,14 +912,16 @@ function Contratos({ store, activeUnit }) {
                   </div>
                 </div>
 
-                {(venceu || encerrado) && (
-                  <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+                  {!encerrado && <Btn onClick={() => setFaturar(c)}><Barcode size={15} /> Faturar boleto</Btn>}
+                  <Btn variant="ghost" onClick={() => setEditar(c)}><Edit3 size={15} /> Editar contrato</Btn>
+                  {(venceu || encerrado) && <>
                     <Btn onClick={() => setRenovar(c)} style={{ background: C.amber }}><RefreshCw size={15} /> Renovar / atualizar valores</Btn>
                     {!encerrado && (
                       <Btn variant="ghost" onClick={() => store.encerrarContrato(c.id)}>Encerrar</Btn>
                     )}
-                  </div>
-                )}
+                  </>}
+                </div>
               </Card>
             );
           })}
@@ -927,6 +933,16 @@ function Contratos({ store, activeUnit }) {
           <ContratoForm bankAccounts={bankAccounts} planos={store.planosDe(activeUnit)} clientes={store.clientes.filter(c => c.unidadeId === activeUnit)} onSalvar={(cfg) => { store.addContrato(activeUnit, cfg); setNovo(false); }} />
         </Modal>
       )}
+      {editar && (
+        <Modal title="Editar contrato recorrente" onClose={() => setEditar(null)} maxWidth={520}>
+          <ContratoForm inicial={editar} bankAccounts={bankAccounts} planos={store.planosDe(activeUnit)} clientes={store.clientes.filter(c => c.unidadeId === activeUnit)} onSalvar={(cfg) => { store.updateContrato(editar.id, cfg); setEditar(null); }} />
+        </Modal>
+      )}
+      {faturar && (
+        <Modal title="Faturar boleto do contrato" onClose={() => setFaturar(null)} maxWidth={520}>
+          <FaturarContratoForm contrato={faturar} store={store} activeUnit={activeUnit} bankAccounts={bankAccounts} onClose={() => setFaturar(null)} />
+        </Modal>
+      )}
       {renovar && (
         <Modal title="Renovar contrato" onClose={() => setRenovar(null)} maxWidth={460}>
           <RenovarForm contrato={renovar} onSalvar={(patch) => { store.renovarContrato(renovar.id, patch); setRenovar(null); }} />
@@ -936,9 +952,93 @@ function Contratos({ store, activeUnit }) {
   );
 }
 
-function ContratoForm({ bankAccounts, planos = [], clientes = [], onSalvar }) {
+function vencimentoDaParcela(lancamento, contrato) {
+  const ano = anoDoLancamento(lancamento) || ANO_ATUAL;
+  const mes = (lancamento?.mes ?? MES_ATUAL) + 1;
+  const ultimoDia = new Date(ano, mes, 0).getDate();
+  const dia = Math.min(Math.max(1, Number(contrato.diaVencimento) || 10), ultimoDia);
+  return `${ano}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
+}
+
+function FaturarContratoForm({ contrato, store, activeUnit, bankAccounts, onClose }) {
+  const cliente = store.clientes.find((c) => c.id === contrato.clienteId) || {};
+  const provisao = store.lancamentos
+    .filter((l) => l.contratoId === contrato.id && l.status === "previsto" && !l.cobrancaId && !l.boletoId &&
+      (anoDoLancamento(l) > ANO_ATUAL || (anoDoLancamento(l) === ANO_ATUAL && l.mes >= MES_ATUAL)))
+    .sort((a, b) => chaveDoLancamento(a) - chaveDoLancamento(b))[0];
+  const contasAtivas = bankAccounts.filter((c) => c.ativo !== false);
+  const [emissor, setEmissor] = useState(asaasApi.configured ? "asaas" : "banco");
+  const [vencimento, setVencimento] = useState(() => vencimentoDaParcela(provisao, contrato));
+  const [valor, setValor] = useState(provisao?.valor || contrato.valorMensal);
+  const [email, setEmail] = useState(cliente.email || "");
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState("");
+  const [resultado, setResultado] = useState(null);
+  const descricao = provisao?.descricao || `${contrato.plano} · ${contrato.cliente}`;
+
+  const emitirAsaas = async () => {
+    if (!asaasApi.configured) return setErro("Configure o Asaas em Cobranças antes de emitir por ele.");
+    setBusy(true); setErro("");
+    try {
+      const { cobranca } = await asaasApi.criarCobranca({
+        unidade_id: activeUnit, cliente: contrato.cliente, cliente_documento: contrato.documento,
+        cliente_email: email || undefined, valor: Number(valor), vencimento, descricao, tipo: "BOLETO",
+      });
+      if (provisao?.id) store.updateLancamento(provisao.id, { cobrancaId: cobranca.id, valor: Number(valor), data: `${vencimento.slice(8, 10)}/${vencimento.slice(5, 7)}/${vencimento.slice(0, 4)}` });
+      setResultado({ texto: "Boleto emitido pelo Asaas.", url: cobranca.boleto_url || cobranca.invoice_url });
+    } catch (e) { setErro(e.message || "Não foi possível emitir o boleto."); }
+    finally { setBusy(false); }
+  };
+
+  if (resultado) return <div role="status">
+    <div style={{ display: "flex", gap: 9, alignItems: "center", background: C.greenPale, color: C.green, borderRadius: 12, padding: 14, marginBottom: 14 }}><CheckCircle2 size={18} /> {resultado.texto}</div>
+    <div style={{ display: "flex", gap: 8 }}>
+      {resultado.url && <a href={resultado.url} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}><Btn><ExternalLink size={15} /> Abrir boleto</Btn></a>}
+      <Btn variant="ghost" onClick={onClose}>Concluir</Btn>
+    </div>
+  </div>;
+
+  return <>
+    <div style={{ background: C.cafePale, borderRadius: 11, padding: "11px 13px", marginBottom: 14, fontSize: 13 }}>
+      <b>{contrato.cliente}</b><br />{descricao} · {fmt(valor)}
+      {!provisao && <div style={{ color: C.amber, marginTop: 5 }}>Não há parcela futura livre. Confirme se esta cobrança não foi emitida antes.</div>}
+    </div>
+    <Field label="Onde emitir">
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        <button type="button" onClick={() => setEmissor("asaas")} style={{ ...inp, cursor: "pointer", borderColor: emissor === "asaas" ? C.cafe : C.border, background: emissor === "asaas" ? C.cafePale : C.white, fontWeight: 600 }}><CreditCard size={15} style={{ verticalAlign: "middle", marginRight: 6 }} />Asaas</button>
+        <button type="button" onClick={() => setEmissor("banco")} style={{ ...inp, cursor: "pointer", borderColor: emissor === "banco" ? C.cafe : C.border, background: emissor === "banco" ? C.cafePale : C.white, fontWeight: 600 }}><Landmark size={15} style={{ verticalAlign: "middle", marginRight: 6 }} />Banco Inter / banco</button>
+      </div>
+    </Field>
+    {emissor === "asaas" ? <>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <Field label="Valor (R$)"><input type="number" min="0.01" step="0.01" value={valor} onChange={(e) => setValor(e.target.value)} style={inp} /></Field>
+        <Field label="Vencimento"><input type="date" value={vencimento} onChange={(e) => setVencimento(e.target.value)} style={inp} /></Field>
+      </div>
+      <Field label="E-mail para receber o boleto"><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={inp} placeholder="financeiro@cliente.com.br" /></Field>
+      {erro && <div role="alert" style={{ color: C.red, fontSize: 12.5, marginBottom: 10 }}>{erro}</div>}
+      <Btn disabled={busy || !provisao || !(Number(valor) > 0) || !vencimento || !contrato.documento} style={{ width: "100%", justifyContent: "center", opacity: busy ? 0.6 : 1 }} onClick={emitirAsaas}><Barcode size={16} /> {busy ? "Emitindo…" : "Emitir boleto pelo Asaas"}</Btn>
+      {!contrato.documento && <div style={{ color: C.red, fontSize: 12, marginTop: 7 }}>Cadastre o CPF/CNPJ no contrato antes de faturar.</div>}
+    </> : contasAtivas.length ? <EmitirForm
+      contas={contasAtivas.map((c) => ({ ...c, apelido: `${BANCOS[c.banco]?.label || c.banco} · ${c.apelido}` }))}
+      contaPadrao={contrato.bankAccountId}
+      inicial={{ sacado: contrato.cliente, sacadoDocumento: contrato.documento, email, valor, vencimento, instrucoes: descricao, cep: cliente.cep, logradouro: cliente.endereco, numero: cliente.numero, bairro: cliente.bairro, cidade: cliente.cidade, uf: cliente.uf }}
+      onEmitir={async (dados) => {
+        const boleto = await store.emitirBoletoConfirmado(activeUnit, dados);
+        if (provisao?.id && boleto?.id) store.updateLancamento(provisao.id, { boletoId: boleto.id, valor: dados.valor, data: `${dados.vencimento.slice(8, 10)}/${dados.vencimento.slice(5, 7)}/${dados.vencimento.slice(0, 4)}` });
+        setResultado({ texto: boleto?.id?.startsWith("bol_") ? "Boleto de demonstração criado." : "Boleto emitido pelo banco selecionado.", url: boleto?.pdfUrl });
+      }}
+    /> : <div role="status" style={{ color: C.text2, fontSize: 13 }}>Cadastre e configure uma conta bancária na área de Boletos antes de faturar por banco.</div>}
+  </>;
+}
+
+function ContratoForm({ bankAccounts, planos = [], clientes = [], inicial = null, onSalvar }) {
   const [buscaItem, setBuscaItem] = useState("");
-  const [f, setF] = useState({
+  const [f, setF] = useState(() => inicial ? {
+    clienteId: inicial.clienteId || "", itens: inicial.itens || [], cliente: inicial.cliente || "", documento: inicial.documento || "",
+    planoId: inicial.planoId || "", plano: inicial.plano || "", valorMensal: String(inicial.valorMensal ?? ""),
+    bankAccountId: inicial.bankAccountId || bankAccounts[0]?.id || "", diaVencimento: inicial.diaVencimento || "10",
+    mesInicial: Number(inicial.mesInicial ?? MES_ATUAL), meses: Number(inicial.meses ?? 12),
+  } : {
     clienteId: "", itens: [], cliente: "", documento: "", planoId: "", plano: "", valorMensal: "", bankAccountId: bankAccounts[0]?.id || "",
     diaVencimento: "10", mesInicial: MES_ATUAL, meses: 12,
   });
@@ -1004,10 +1104,10 @@ function ContratoForm({ bankAccounts, planos = [], clientes = [], onSalvar }) {
         </Field>
       </div>
       <div style={{ fontSize: 12, color: C.text3, background: C.cafePale, borderRadius: 9, padding: "9px 12px", marginBottom: 14, display: "flex", alignItems: "center", gap: 7 }}>
-        <Barcode size={14} color={C.cafe} /> {MODO_REAL ? "Provisiona" : "Emite"} {Math.min(f.meses, MESES.length - f.mesInicial)} {MODO_REAL ? "parcelas" : "boletos"} ({MESES[f.mesInicial]}–{MESES[ate]}), 1 por mês.
+        <Barcode size={14} color={C.cafe} /> {inicial ? "As parcelas pagas e os meses anteriores serão preservados. As previsões futuras serão recalculadas." : <>{MODO_REAL ? "Provisiona" : "Emite"} {Math.min(f.meses, MESES.length - f.mesInicial)} {MODO_REAL ? "parcelas" : "boletos"} ({MESES[f.mesInicial]}–{MESES[ate]}), 1 por mês.</>}
       </div>
       <Btn disabled={!valido} style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.5 }} onClick={() => valido && onSalvar({ ...f, valorMensal: +f.valorMensal, meses: +f.meses })}>
-        <FileSignature size={16} /> {MODO_REAL ? "Criar contrato" : "Criar contrato e emitir boletos"}
+        {inicial ? <Edit3 size={16} /> : <FileSignature size={16} />} {inicial ? "Salvar alterações" : MODO_REAL ? "Criar contrato" : "Criar contrato e emitir boletos"}
       </Btn>
     </>
   );
