@@ -24,6 +24,10 @@ const esc = (s: unknown) =>
 /** Link para uma tela da área do cliente (abre depois do login, se preciso). */
 export const linkApp = (tela?: string) => (tela ? `${APP_URL}/?p=${encodeURIComponent(tela)}` : `${APP_URL}/`);
 
+const rastreio = (d: { confirmUrl?: string; openUrl?: string }) => `
+  ${d.confirmUrl ? `<div style="margin-top:20px"><a href="${esc(d.confirmUrl)}" style="color:${MARCA};font-weight:bold">Confirmar recebimento deste e-mail</a></div>` : ""}
+  ${d.openUrl ? `<img src="${esc(d.openUrl)}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0">` : ""}`;
+
 const RODAPE_CLIENTE = `Você recebe este e-mail porque é cliente do CafeWorking.
           <a href="${esc(linkApp("notificacoes"))}" style="color:#7A726B">Escolher quais e-mails receber</a>`;
 const RODAPE_PARCEIRO = `Você recebe este e-mail porque é parceiro credenciado da rede CafeWorking.
@@ -60,7 +64,7 @@ const TEMPLATES: Record<Evento, (d: any) => Render> = {
       "Sua cobrança está disponível",
       `Olá <b>${esc(d.cliente)}</b>,<br><br>Geramos sua cobrança no valor de <b>${brl(d.valor)}</b>, com vencimento em <b>${dataBR(d.vencimento)}</b>.
        ${d.linhaDigitavel ? `<br><br><b>Linha digitável:</b><br><span style="font-family:monospace;font-size:13px">${esc(d.linhaDigitavel)}</span>` : ""}
-       ${d.pixCopiaCola ? `<br><br><b>PIX copia e cola:</b><br><span style="font-family:monospace;font-size:12px;word-break:break-all">${esc(d.pixCopiaCola)}</span>` : ""}`,
+       ${d.pixCopiaCola ? `<br><br><b>PIX copia e cola:</b><br><span style="font-family:monospace;font-size:12px;word-break:break-all">${esc(d.pixCopiaCola)}</span>` : ""}${rastreio(d)}`,
       d.pdfUrl ? { label: "Ver boleto (PDF)", url: d.pdfUrl } : { label: "Ver minhas faturas", url: linkApp("faturas") },
     ),
   }),
@@ -89,7 +93,7 @@ const TEMPLATES: Record<Evento, (d: any) => Render> = {
       "Sua cobrança está disponível",
       `Olá <b>${esc(d.cliente)}</b>,<br><br>${d.descricao ? `${esc(d.descricao)}<br><br>` : ""}Valor: <b>${brl(d.valor)}</b>${d.vencimento ? ` · vence em <b>${dataBR(d.vencimento)}</b>` : ""}.<br><br>
        Você pode pagar por <b>cartão de crédito, PIX ou boleto</b> no botão abaixo.
-       ${d.pixCopiaCola ? `<br><br><b>PIX copia e cola:</b><br><span style="font-family:monospace;font-size:12px;word-break:break-all">${esc(d.pixCopiaCola)}</span>` : ""}`,
+       ${d.pixCopiaCola ? `<br><br><b>PIX copia e cola:</b><br><span style="font-family:monospace;font-size:12px;word-break:break-all">${esc(d.pixCopiaCola)}</span>` : ""}${rastreio(d)}`,
       d.invoiceUrl ? { label: "Pagar agora", url: d.invoiceUrl }
         : d.pdfUrl ? { label: "Ver boleto (PDF)", url: d.pdfUrl }
         : { label: "Ver minhas faturas", url: linkApp("faturas") },

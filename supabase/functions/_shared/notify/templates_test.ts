@@ -1,6 +1,17 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import { renderTemplate } from "./templates.ts";
 
+Deno.test("boleto inclui confirmação e pixel de leitura quando há rastreio", () => {
+  const m = renderTemplate("boleto_nova", {
+    cliente: "Cliente", valor: 120, vencimento: "2026-09-30",
+    confirmUrl: "https://api.exemplo/email-rastreamento?evento=confirmar",
+    openUrl: "https://api.exemplo/email-rastreamento?evento=abrir",
+  });
+  assertStringIncludes(m.html, "Confirmar recebimento deste e-mail");
+  assertStringIncludes(m.html, "evento=confirmar");
+  assertStringIncludes(m.html, "evento=abrir");
+});
+
 Deno.test("assinatura_ativa com link manda criar a senha", () => {
   const m = renderTemplate("assinatura_ativa", {
     cliente: "Mariana", email: "m@exemplo.com", plano: "Fiscal Pro", unidade: "Luxemburgo",

@@ -23,7 +23,7 @@ import { dispatchNotificacao } from "../_shared/notify/index.ts";
 import { asaas, credenciaisAsaas } from "../_shared/asaas.ts";
 import { regraDaUnidade } from "../_shared/parceirosDb.ts";
 import { camposDaDivisao } from "../_shared/parceiros.ts";
-import { comSplit } from "../_shared/venda.ts";
+import { comSplit, emailValido } from "../_shared/venda.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -112,9 +112,13 @@ Deno.serve(async (req) => {
     if (insErr) return json({ error: `Cobrança criada no Asaas, mas falhou ao gravar: ${insErr.message}` }, 500);
 
     // Avisa o cliente por e-mail (Resend) com o link de pagamento — best-effort.
-    if (body.cliente_email) {
+    const emails = [...new Set([body.cliente_email, ...(Array.isArray(body.cliente_emails) ? body.cliente_emails : [])]
+      .map((e) => String(e || "").trim().toLowerCase()).filter(emailValido))].slice(0, 10);
+    for (let i = 0; i < emails.length; i++) {
+      const email = emails[i];
       await dispatchNotificacao(admin, {
-        unidade_id: body.unidade_id, evento: "cobranca_nova", email: body.cliente_email, cliente: body.cliente,
+        unidade_id: body.unidade_id, evento: "cobranca_nova", email, cliente: body.cliente,
+        copiaFinanceira: i > 0,
         dados: { valor, vencimento: venc, descricao: cob.descricao, invoiceUrl: cob.invoice_url, pdfUrl: cob.boleto_url, pixCopiaCola: cob.pix_payload, linhaDigitavel: cob.linha_digitavel },
       });
     }
