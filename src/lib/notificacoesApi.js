@@ -34,15 +34,17 @@ export const notificacoesApi = {
     }
   },
 
-  listar: async (unidadeId, limite = 50) => {
-    if (!supabaseConfigured || !unidadeId) return [];
+  listarDetalhado: async (unidadeId, limite = 50, eventos = []) => {
+    if (!supabaseConfigured || !unidadeId) return { itens: [], erro: "Conecte o Supabase para consultar os envios." };
     const token = await getAccessToken();
-    if (!token) return [];
+    if (!token) return { itens: [], erro: MSG.sessao };
+    const filtroEventos = eventos.length ? `&evento=in.(${eventos.filter((e) => /^[a-z_]+$/.test(e)).join(",")})` : "";
     const res = await fetch(
-      `${URL_SUPA}/rest/v1/notificacoes?select=id,cliente_nome,destinatario,evento,assunto,status,erro,created_at,sent_at,opened_at,confirmed_at&unidade_id=eq.${encodeURIComponent(unidadeId)}&order=created_at.desc&limit=${limite}`,
+      `${URL_SUPA}/rest/v1/notificacoes?select=id,cliente_nome,destinatario,evento,assunto,status,erro,created_at,sent_at,opened_at,confirmed_at&unidade_id=eq.${encodeURIComponent(unidadeId)}${filtroEventos}&order=created_at.desc&limit=${limite}`,
       { headers: { apikey: ANON, authorization: `Bearer ${token}` } },
     ).catch(() => null);
-    if (!res?.ok) return [];
-    return (await res.json().catch(() => [])) || [];
+    if (!res?.ok) return { itens: [], erro: res ? "Não foi possível consultar os envios agora." : MSG.semConexao };
+    return { itens: (await res.json().catch(() => [])) || [], erro: "" };
   },
+  listar: async (unidadeId, limite = 50) => (await notificacoesApi.listarDetalhado(unidadeId, limite)).itens,
 };

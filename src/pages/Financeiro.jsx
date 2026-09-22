@@ -3,7 +3,7 @@ import SelecionarCliente from "../components/SelecionarCliente.jsx";
 import {
   Wallet, TrendingUp, Landmark, BarChart3, FileText, Tags,
   Plus, Edit3, Trash2, Check, X, ArrowUpRight, ArrowDownRight, Receipt, Paperclip, Download, Barcode, Copy, QrCode,
-  FileSignature, RefreshCw, AlertTriangle, Upload, CheckCircle2, AlertCircle, MessageSquare, Phone, CreditCard, PiggyBank, ExternalLink,
+  FileSignature, RefreshCw, AlertTriangle, Upload, CheckCircle2, AlertCircle, MessageSquare, Phone, CreditCard, PiggyBank, ExternalLink, Mail,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, FileInput } from "../components/ui.jsx";
 import { C, serif, sans, fmt, fmtShort, inp } from "../lib/theme.js";
@@ -16,6 +16,7 @@ import { resumoOnline, cobrancasJaLancadas, competenciaDaCobranca, situacaoCobra
 import { fetchGarantiasDb } from "../lib/supabaseDb.js";
 import { asaasApi } from "../lib/asaasApi.js";
 import { EmitirForm, EmailsBoleto, BANCOS } from "./Boletos.jsx";
+import ConfirmacoesEmail from "./ConfirmacoesEmail.jsx";
 
 const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 // Competência atual a partir da data real (sem datas fixas).
@@ -59,6 +60,7 @@ export const FIN_GRUPOS = [
     { id: "pagar", label: "Contas a Pagar", icon: ArrowDownRight },
     { id: "inadimplencia", label: "Inadimplência", icon: AlertTriangle },
     { id: "contratos", label: "Contratos", icon: FileSignature },
+    { id: "confirmacoes", label: "Confirmações de e-mail", icon: Mail },
   ] },
   { titulo: "Relatórios", itens: [
     { id: "dre", label: "DRE", icon: FileText },
@@ -154,6 +156,7 @@ export default function Financeiro({ finTab }) {
           />
         )}
         {tab === "contratos" && <Contratos store={store} activeUnit={activeUnit} />}
+        {tab === "confirmacoes" && <ConfirmacoesEmail unidadeId={activeUnit} />}
         {tab === "extrato" && <Extrato contas={contas} lancamentos={lancamentos} onAbrir={setDetalheLanc} onRemoverImportados={(contaId) => store.removerImportados(activeUnit, contaId)} />}
         {tab === "dre" && <DRE lancamentos={lancamentos} categorias={categorias} />}
         {tab === "online" && <RecebimentosOnline cobrancas={store.cobrancasDe(activeUnit)} lancamentos={lancamentos} />}
