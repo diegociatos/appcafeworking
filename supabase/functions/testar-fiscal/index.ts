@@ -64,24 +64,38 @@ Deno.serve(async (req) => {
       ({ cert, key } = credenciaisPemComCadeia(creds));
     } catch (_) { /* segue sem cert */ }
 
-    const resultados = [];
+    type Sondagem = { base: string; url: string; rotulo: string; status: number; ok: boolean; erro?: string; detalhe?: string };
+    const resultados: Sondagem[] = [];
     const base = SEFIN[ambiente];
-    {
-      const url = `${base}/parametros_municipais/${codMun}/convenio`;
+    const url = `${base}/parametros_municipais/${codMun}/convenio`;
+
+    // Duas sondagens para separar as duas causas possíveis de falha:
+    //   1. com certificado = o caminho real da emissão;
+    //   2. sem certificado = só alcança o host. Se esta responde (403 é o
+    //      esperado, por falta de certificado) e a primeira não, o problema é o
+    //      certificado. Se nenhuma responde, o host não é alcançável daqui.
+    const sondar = async (rotulo: string, comCertificado: boolean) => {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 12000);
+      const init: RequestInit = { method: "GET", headers: { Accept: "application/json" }, signal: ctrl.signal };
       try {
-        const res = await buscarSefin(url, { method: "GET", headers: { Accept: "application/json" }, signal: ctrl.signal }, cert, key);
-        resultados.push({ base, url, status: res.status, ok: res.ok });
+        const res = comCertificado
+          ? await buscarSefin(url, init, cert, key)
+          : await fetch(url, init);
+        resultados.push({ base, url, rotulo, status: res.status, ok: res.ok });
       } catch (e) {
         const erro = e instanceof DOMException && e.name === "AbortError"
           ? "Tempo de resposta esgotado. Tente novamente mais tarde."
           : String((e as Error).message || e);
-        resultados.push({ base, url, status: 0, ok: false, erro });
+        const detalhe = String((e as Error)?.cause || "").slice(0, 200) || undefined;
+        resultados.push({ base, url, rotulo, status: 0, ok: false, erro, detalhe });
       } finally {
         clearTimeout(t);
       }
-    }
+    };
+
+    if (cert && key) await sondar("Com certificado (caminho da emissão)", true);
+    await sondar("Só alcance do host (sem certificado)", false);
 
     return json({ unidade_id: body.unidade_id, codMun, ambiente, temCertificado: temCert, certificadoMtls: Boolean(cert && key), resultados }, 200);
   } catch (e) {

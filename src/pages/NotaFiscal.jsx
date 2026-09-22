@@ -347,12 +347,16 @@ function ConfigFiscal({ cfg, unidadeNome, unidadeId, onSalvar }) {
               {(teste.resultados || []).map((r, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderTop: i ? `1px solid ${C.border2}` : "none" }}>
                   <span style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, background: r.status && r.status !== 0 ? (r.ok ? C.green : C.amber) : C.red }} />
-                  <code style={{ fontSize: 10.5, color: C.text2, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.base}</code>
-                  <b style={{ color: r.ok ? C.green : C.text3 }}>{r.status || r.erro || "sem resposta"}</b>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11, color: C.text2 }}>{r.rotulo || r.base}</div>
+                    {!r.ok && r.erro && <div style={{ fontSize: 10.5, color: C.text3 }}>{r.erro}</div>}
+                    {r.detalhe && <code style={{ fontSize: 10, color: C.text4, wordBreak: "break-word" }}>{r.detalhe}</code>}
+                  </div>
+                  <b style={{ color: r.ok ? C.green : C.text3 }}>{r.status || "sem resposta"}</b>
                 </div>
               ))}
               <div style={{ marginTop: 6, color: C.text4, fontSize: 11 }}>
-                Verde = consulta concluída. Âmbar = o serviço respondeu com erro; confira a configuração. Vermelho = a conexão não foi concluída. Certificado configurado não confirma que o serviço o aceitou.
+                Verde = consulta concluída. Âmbar = o serviço respondeu com erro; confira a configuração. Vermelho = a conexão não foi concluída. Se a linha sem certificado responde e a com certificado não, o problema é o certificado; se nenhuma responde, o servidor não alcança o SEFIN.
               </div>
             </>
           )}
