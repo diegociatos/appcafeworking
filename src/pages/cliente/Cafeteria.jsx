@@ -35,7 +35,7 @@ export default function CafeteriaCliente({ go }) {
     setEnviando(true); setErro("");
     try {
       const r = await clienteApi.comprar(unidadeId, itens.map((i) => ({ id: i.id, quantidade: i.quantidade })), formaPagamento);
-      if (r.faturado_no_mes) setDados((d) => ({ ...d, unidades: d.unidades.map((u) => u.id === unidadeId ? { ...u, consumo_mes: Number(u.consumo_mes || 0) + total } : u) }));
+      if (r.faturado_no_mes) carregar(true);
       setPagamento(r.faturado_no_mes ? { mensal: true, competencia: r.competencia } : r.cobranca); setCarrinho({});
     } catch (e) { setErro(e.message); }
     finally { setEnviando(false); }
@@ -51,8 +51,25 @@ export default function CafeteriaCliente({ go }) {
         {dados.unidades.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
       </select>}
       {unidade?.cliente_mensal && <Card style={{ marginBottom: 16, padding: 14, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-        <div><b>Consumo na fatura deste mês</b><div style={{ color: C.text3, fontSize: 12 }}>Compras já lançadas e ainda não faturadas.</div></div>
+        <div><b>Consumo previsto deste mês</b><div style={{ color: C.text3, fontSize: 12 }}>Compras lançadas e ainda não faturadas. Confira o extrato abaixo.</div></div>
         <strong style={{ fontFamily: serif, fontSize: 22, color: C.cafe }}>{fmt(unidade.consumo_mes || 0)}</strong>
+      </Card>}
+      {unidade?.cliente_mensal && <Card style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+          <h2 style={{ fontFamily: serif, fontSize: 20, margin: 0 }}>Extrato do mês</h2>
+          <span style={{ color: C.text3, fontSize: 12 }}>Somente compras ainda não faturadas</span>
+        </div>
+        {!unidade.consumos?.length ? <p style={{ color: C.text3, fontSize: 13, marginBottom: 0 }}>Nenhuma compra lançada na fatura deste mês.</p> :
+          <ul style={{ listStyle: "none", padding: 0, margin: "12px 0 0" }}>
+            {unidade.consumos.map((compra) => <li key={compra.id} style={{ borderTop: `1px solid ${C.border2}`, padding: "12px 0" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                <b style={{ fontSize: 13 }}>{new Date(compra.data).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric" })}</b>
+                <b style={{ color: C.cafe }}>{fmt(compra.valor)}</b>
+              </div>
+              <div style={{ color: C.text3, fontSize: 12, marginTop: 4 }}>{compra.itens.map((item) => `${item.quantidade}× ${item.nome}`).join(" · ")}</div>
+            </li>)}
+          </ul>}
+        <p style={{ fontSize: 11.5, color: C.text3, margin: "8px 0 0" }}>Após o fechamento, consulte a cobrança em Faturas.</p>
       </Card>}
       <div className="cw-grid-stack" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 330px", gap: 18, alignItems: "start" }}>
         <div style={{ display: "grid", gap: 22 }}>
