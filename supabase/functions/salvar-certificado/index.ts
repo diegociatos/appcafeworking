@@ -57,9 +57,20 @@ Deno.serve(async (req) => {
       keyPem = forge.pki.privateKeyToPem(keyBag.key);
 
       const certBags = p12.getBags({ bagType: forge.pki.oids.certBag });
-      const cert = certBags[forge.pki.oids.certBag]?.[0]?.cert;
+      type CertificadoForge = ReturnType<typeof forge.pki.certificateFromPem>;
+      const certificados = ((certBags[forge.pki.oids.certBag] ?? []) as Array<{ cert?: CertificadoForge }>)
+        .map((b) => b.cert).filter((c): c is CertificadoForge => Boolean(c));
+      const cert = certificados.find((c) => c.publicKey?.n?.compareTo?.(keyBag.key.n) === 0 && c.publicKey?.e?.compareTo?.(keyBag.key.e) === 0)
+        ?? certificados[0];
       if (!cert) throw new Error("certificado não encontrado no arquivo");
-      certPem = forge.pki.certificateToPem(cert);
+      const restantes = certificados.filter((c) => c !== cert);
+      const cadeia = [cert];
+      while (restantes.length) {
+        const atual = cadeia[cadeia.length - 1];
+        const i = restantes.findIndex((c) => atual.issuer?.hash && c.subject?.hash === atual.issuer.hash);
+        cadeia.push(...restantes.splice(i >= 0 ? i : 0, 1));
+      }
+      certPem = cadeia.map((c) => forge.pki.certificateToPem(c)).join("");
       titular = cert.subject.getField("CN")?.value ?? "";
       validade = cert.validity?.notAfter ? new Date(cert.validity.notAfter).toISOString().slice(0, 10) : null;
     } catch (e) {

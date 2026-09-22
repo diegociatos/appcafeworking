@@ -20,3 +20,13 @@ Deno.test("certificado ausente ou runtime incompatível não faz requisição se
   await assertRejects(() => buscarSefin("https://fiscal.invalid", {}, "cert", "key", runtime), Error, "HTTP/1.1");
   assertEquals(tentativas, 1);
 });
+Deno.test("SEFIN não expõe IP nem erro técnico quando encerra a conexão", async () => {
+  const runtime = { createHttpClient() { return { close() {} }; } };
+  await assertRejects(
+    () => buscarSefin("https://fiscal.invalid", { method: "POST" }, "cert", "key", runtime, () => {
+      throw new Error("error sending request from 10.0.0.1:1234: connection reset by peer (os error 104)");
+    }),
+    Error,
+    "O SEFIN Nacional encerrou a conexão segura",
+  );
+});

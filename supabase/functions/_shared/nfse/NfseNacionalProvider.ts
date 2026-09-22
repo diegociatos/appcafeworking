@@ -1,4 +1,5 @@
 import { buscarSefin } from "./transporteNacional.ts";
+import { credenciaisPemComCadeia } from "./certificado.ts";
 // ============================================================================
 // NfseNacionalProvider — emissor padrão NFS-e Nacional (Sistema Nacional
 // NFS-e). A EMISSÃO pelo contribuinte é feita no módulo SEFIN NACIONAL
@@ -67,7 +68,8 @@ export class NfseNacionalProvider implements NfseProvider {
    * negocia h2 por ALPN, então desligamos http2 no cliente.
    */
   private async mtlsFetch(url: string, init?: RequestInit): Promise<Response> {
-    return buscarSefin(url, init, this.creds.cert_pem, this.creds.key_pem);
+    const pem = credenciaisPemComCadeia(this.creds);
+    return buscarSefin(url, init, pem.cert, pem.key);
   }
 
   async emitirNfse(input: EmitirNfseInput): Promise<EmitirNfseResult> {

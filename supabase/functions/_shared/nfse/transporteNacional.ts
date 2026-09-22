@@ -20,8 +20,12 @@ export async function buscarSefin(
     const bytes = await resposta.arrayBuffer();
     return new Response([204, 205, 304].includes(resposta.status) ? null : bytes, { status: resposta.status, statusText: resposta.statusText, headers: resposta.headers });
   } catch (e) {
-    if (/HTTP\/1\.1|http2|HTTP\/2/i.test(String((e as Error).message))) {
+    const mensagem = String((e as Error).message || e);
+    if (/HTTP\/1\.1|http2|HTTP\/2/i.test(mensagem)) {
       throw new Error("A conexão com a NFS-e Nacional recusou o protocolo. Confira se a função publicada usa HTTP/1.1. Consulte a situação da nota antes de tentar emitir novamente.");
+    }
+    if (/connection reset|reset by peer|SendRequest|sending request|os error 104/i.test(mensagem)) {
+      throw new Error("O SEFIN Nacional encerrou a conexão segura antes de confirmar a emissão. O boleto continua válido. Consulte a situação da nota antes de tentar novamente.");
     }
     throw e;
   } finally { client.close(); }
