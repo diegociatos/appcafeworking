@@ -1455,10 +1455,21 @@ export function StoreProvider({ children }) {
       // seed órfão (ex.: "lux"), que teria os padrões e apagaria as customizações.
       if (!docsGlobaisHidratadosRef.current) {
         const seedUnitIds = new Set(UNIDADES.map((u) => u.id));
+        // A gravação é por unidade (activeUnit), então a leitura tem que preferir
+        // a unidade aberta. Sem isto, o doc lido era o da primeira unidade em
+        // ordem alfabética: quem cadastrava uma origem no CRM da Luxemburgo via
+        // a lista do Estoril e achava que não tinha salvado.
         const pickDocGlobal = (entity) => {
           const rows = appState.filter((r) => r.entity === entity);
           if (!rows.length) return null;
-          return (rows.find((r) => !seedUnitIds.has(r.unidade_id)) || rows[0]).doc;
+          // Só prefere a unidade aberta se ela já for a real: na primeira carga
+          // activeUnit ainda pode ser o id seed, cujo doc tem só os padrões.
+          const daUnidadeAberta = seedUnitIds.has(activeUnit)
+            ? null
+            : rows.find((r) => r.unidade_id === activeUnit);
+          return (daUnidadeAberta
+            || rows.find((r) => !seedUnitIds.has(r.unidade_id))
+            || rows[0]).doc;
         };
         // Plano de contas: usa o doc salvo EXATAMENTE (respeita exclusões do
         // usuário). NÃO mescla defaults — senão categorias deletadas voltavam.

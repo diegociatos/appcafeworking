@@ -130,7 +130,7 @@ export const ETAPAS_CRM = [
 ];
 
 // Origens de leads (editável na tela do CRM)
-export const ORIGENS_INIT = ["Instagram", "Site", "WhatsApp", "Google Ads", "Indicação"];
+export const ORIGENS_INIT = ["Instagram", "Site", "WhatsApp", "Google Ads", "Indicação", "Visita Espontanea"];
 
 // === NOVO: Correspondências (operação diária do endereço fiscal) ===
 export const CORRESP_INIT = [
