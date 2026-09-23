@@ -82,7 +82,7 @@ Deno.serve(async (req) => {
       try {
         let res: Response;
         if (modo === "certificado") {
-          res = await buscarSefin(url, init, cert, key);
+          res = await buscarSefin(url, init, cert, key, Deno, fetch as never, String(body.unidade_id));
         } else if (modo === "http1") {
           // Mesmo transporte da emissão, sem certificado: separa problema de
           // transporte HTTP/1.1 de recusa do certificado pelo SEFIN.

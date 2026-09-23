@@ -2,11 +2,66 @@ type ClienteHttp = { close(): void };
 type Runtime = { createHttpClient(opcoes: Record<string, unknown>): ClienteHttp };
 type Buscar = (url: string, init: RequestInit & { client: ClienteHttp }) => Promise<Response>;
 
+/**
+ * Transmissor fiscal (serviço Node) — ver docs/NFSE-TRANSMISSOR.md.
+ * O SEFIN Nacional recusa o handshake TLS do Deno, então quando o transmissor
+ * está configurado a requisição sai por ele. O certificado mora lá: daqui vai
+ * só a requisição, nunca a chave.
+ */
+async function viaTransmissor(url: string, init: RequestInit | undefined, unidadeId?: string): Promise<Response> {
+  const base = Deno.env.get("NFSE_TRANSMISSOR_URL") || "";
+  const token = Deno.env.get("NFSE_TRANSMISSOR_TOKEN") || "";
+  const corpo = init?.body;
+  const bytes = typeof corpo === "string"
+    ? new TextEncoder().encode(corpo)
+    : corpo instanceof Uint8Array ? corpo : null;
+  const resp = await fetch(base, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-cw-token": token },
+    body: JSON.stringify({
+      url,
+      metodo: init?.method || "GET",
+      unidade_id: unidadeId,
+      cabecalhos: init?.headers,
+      corpo: bytes ? encodeBase64(bytes) : undefined,
+    }),
+    signal: init?.signal ?? null,
+  });
+  const dados = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(dados?.erro || "O transmissor fiscal não concluiu o envio.");
+  const conteudo = decodeBase64(String(dados.corpo || ""));
+  return new Response(conteudo.buffer as ArrayBuffer, {
+    status: Number(dados.status) || 502,
+    headers: dados.headers && typeof dados.headers === "object"
+      ? Object.fromEntries(Object.entries(dados.headers).filter(([, v]) => typeof v === "string") as [string, string][])
+      : undefined,
+  });
+}
+
+function encodeBase64(bytes: Uint8Array): string {
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+function decodeBase64(txt: string): Uint8Array {
+  const bin = atob(txt);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+export function transmissorConfigurado(): boolean {
+  return Boolean(Deno.env.get("NFSE_TRANSMISSOR_URL") && (Deno.env.get("NFSE_TRANSMISSOR_TOKEN") || "").length >= 32);
+}
+
 // Não repete POST fiscal nem remove a exigência de HTTP/1.1 em caso de erro.
 export async function buscarSefin(
   url: string, init: RequestInit | undefined, cert: string | undefined, key: string | undefined,
-  runtime: Runtime = Deno, buscar: Buscar = fetch as Buscar,
+  runtime: Runtime = Deno, buscar: Buscar = fetch as Buscar, unidadeId?: string,
 ): Promise<Response> {
+  // Caminho normal em produção: o transmissor Node. O caminho direto abaixo fica
+  // para ambiente local e para o dia em que o SEFIN aceitar o TLS do Deno.
+  if (transmissorConfigurado()) return await viaTransmissor(url, init, unidadeId);
   if (!cert || !key) throw new Error("Certificado A1 indisponível. Confira a configuração fiscal da unidade.");
   let client: ClienteHttp;
   try {

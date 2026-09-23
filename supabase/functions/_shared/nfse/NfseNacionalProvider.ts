@@ -69,7 +69,7 @@ export class NfseNacionalProvider implements NfseProvider {
    */
   private async mtlsFetch(url: string, init?: RequestInit): Promise<Response> {
     const pem = credenciaisPemComCadeia(this.creds);
-    return buscarSefin(url, init, pem.cert, pem.key);
+    return buscarSefin(url, init, pem.cert, pem.key, Deno, fetch as never, this.config.unidade_id);
   }
 
   async emitirNfse(input: EmitirNfseInput): Promise<EmitirNfseResult> {
