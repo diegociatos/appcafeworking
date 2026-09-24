@@ -23,54 +23,54 @@ transmissor pode ser aposentado.
 ## Como funciona
 
 ```
-app (Supabase Edge / Deno)          transmissor (Netlify / Node)        SEFIN
-  monta e assina a DPS  ──POST──▶  transmite com o certificado A1  ──▶  emite
-                        ◀──────    devolve a resposta crua        ◀──
+cadastro do certificado
+  navegador ──(passe de 5 min)──▶ transmissor (guarda por unidade)
+
+emissão
+  app (Deno)  monta a DPS  ──sem assinar──▶  transmissor  ──assina e envia──▶  SEFIN
+                           ◀── resposta do governo ──────
 ```
 
 - Repositório do transmissor: `C:\dev\cafeworking-nfse` (site Netlify
-  `cafeworking-nfse`, separado de tudo; **nada compartilhado com o ContaOne**).
-- O app manda só a requisição: URL, método e corpo. **Certificado e senha nunca
-  trafegam pela rede.**
+  `cafeworking-nfse`). **Nada compartilhado com o ContaOne.**
+- **A chave privada existe num lugar só: o transmissor.** Ela vai do navegador
+  de quem cadastra direto para lá e não trafega entre serviços.
+- Quem assina é quem guarda a chave. Por isso a assinatura XMLDSIG foi para o
+  Node (`netlify/functions/lib/assinar.mjs`), portada de
+  `supabase/functions/_shared/nfse/xmlsign.ts`. **Os dois arquivos devem bater**:
+  se mexer num, confira o outro.
 - O transmissor só aceita `sefin.nfse.gov.br` e `sefin.producaorestrita.nfse.gov.br`.
-- Autenticação por `x-cw-token`, comparado em tempo constante.
+
+## Cadastrar o certificado (qualquer unidade, qualquer computador)
+
+Pela tela do sistema: **Notas Fiscais → Configuração fiscal → Anexar certificado
+A1**, com o arquivo `.pfx` e a senha. Só admin da plataforma ou master/financeiro
+da unidade consegue — a mesma régua de antes.
+
+Nos bastidores: o app confere a permissão e emite um passe de 5 minutos
+(`ticket-certificado`); o navegador manda o arquivo para o transmissor, que
+confere se abre com a senha, guarda e devolve titular e validade para a tela.
+
+Franquia nova não exige nenhuma configuração de servidor: ela cadastra o próprio
+certificado pela mesma tela.
 
 ## Segredos
 
 | Onde | Nome | Para quê |
 |---|---|---|
 | Supabase | `NFSE_TRANSMISSOR_URL` | endereço da função do transmissor |
-| Supabase | `NFSE_TRANSMISSOR_TOKEN` | segredo compartilhado |
+| Supabase | `NFSE_TRANSMISSOR_TOKEN` | segredo compartilhado; também assina o passe |
 | Netlify | `TRANSMISSOR_TOKEN` | o mesmo valor do de cima |
-| Netlify | `NFSE_PFX_BASE64` | certificado A1 em base64 |
-| Netlify | `NFSE_PFX_SENHA` | senha do certificado |
 
-Com mais de uma unidade emitindo, use `NFSE_PFX_<UNIDADE_ID>` e
-`NFSE_SENHA_<UNIDADE_ID>` (id em maiúsculas, tudo que não for letra ou número
-vira `_`). O par sem sufixo continua valendo como padrão.
+Não há mais certificado em variável de ambiente: ele fica no armazenamento do
+próprio transmissor, por unidade.
 
-## Trocar o certificado A1
+## Renovar o certificado
 
-O certificado fica em **dois lugares** e os dois precisam ser atualizados:
-
-1. no app, em Notas Fiscais → Configuração fiscal (é o que assina a DPS);
-2. no transmissor, nas variáveis do Netlify (é o que fecha a conexão).
-
-Para gerar o valor da variável a partir do `.pfx`, no PowerShell:
-
-```powershell
-[Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\caminho\certificado.pfx")) | Set-Clipboard
-```
-
-Depois cole em **Netlify → cafeworking-nfse → Site configuration → Environment
-variables**, em `NFSE_PFX_BASE64`, e ponha a senha em `NFSE_PFX_SENHA`. Publique
-o site de novo para as variáveis valerem.
-
-Se esquecer de atualizar aqui, a emissão volta a falhar mesmo com o certificado
-novo no app.
+Basta subir o novo pela tela. Não existe mais "trocar em dois lugares".
 
 ## Se precisar desligar
 
-Apague `NFSE_TRANSMISSOR_URL` dos segredos do Supabase. O app volta a tentar a
-conexão direta — que hoje não funciona, mas é o caminho certo no dia em que o
-governo aceitar o TLS do Deno.
+Apague `NFSE_TRANSMISSOR_URL` dos segredos do Supabase. O app volta ao caminho
+antigo — certificado no Vault e assinatura no Deno — que hoje não emite, mas é o
+caminho certo no dia em que o governo aceitar o TLS do Deno.
