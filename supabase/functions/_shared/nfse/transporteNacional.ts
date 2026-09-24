@@ -50,6 +50,26 @@ function decodeBase64(txt: string): Uint8Array {
   return out;
 }
 
+/**
+ * Emissão e cancelamento: o app manda a DPS **sem assinar**; quem assina é o
+ * transmissor, com a chave que a unidade subiu lá e que nunca sai de lá.
+ */
+export async function assinarETransmitir(
+  url: string, xml: string, refId: string, unidadeId: string | undefined, campo = "dpsXmlGZipB64",
+): Promise<Response> {
+  const base = Deno.env.get("NFSE_TRANSMISSOR_URL") || "";
+  const token = Deno.env.get("NFSE_TRANSMISSOR_TOKEN") || "";
+  const resp = await fetch(base, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-cw-token": token },
+    body: JSON.stringify({ url, metodo: "POST", unidade_id: unidadeId, assinar: { xml, refId, campo } }),
+  });
+  const dados = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(dados?.erro || "O transmissor fiscal não concluiu o envio.");
+  const conteudo = decodeBase64(String(dados.corpo || ""));
+  return new Response(conteudo.buffer as ArrayBuffer, { status: Number(dados.status) || 502 });
+}
+
 export function transmissorConfigurado(): boolean {
   return Boolean(Deno.env.get("NFSE_TRANSMISSOR_URL") && (Deno.env.get("NFSE_TRANSMISSOR_TOKEN") || "").length >= 32);
 }

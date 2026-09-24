@@ -912,13 +912,33 @@ export function StoreProvider({ children }) {
       updateConfigFiscal(unidadeId, { certificadoEnviadoEm: new Date().toISOString().slice(0, 10), certificadoTitular: "Certificado (demo)" });
       return Promise.resolve({ ok: true, demo: true });
     }
-    return nfseApi.salvarCertificado({ unidade_id: unidadeId, pfx_base64: pfxBase64, senha }).then((r) => {
-      updateConfigFiscal(unidadeId, {
-        certificadoRef: r.certificado_ref, certificadoTitular: r.titular,
-        certificadoValidade: r.validade, certificadoEnviadoEm: new Date().toISOString().slice(0, 10),
+    // Caminho normal: o certificado vai do navegador direto para o transmissor
+    // fiscal, que é quem assina e transmite. Assim cada unidade (inclusive
+    // franquia) cadastra o próprio, de qualquer computador, e a chave privada
+    // não trafega entre serviços. Sem transmissor, cai no caminho antigo (Vault).
+    const hoje = new Date().toISOString().slice(0, 10);
+    return nfseApi.ticketCertificado(unidadeId)
+      .then((passe) => nfseApi.enviarCertificadoAoTransmissor(passe, {
+        unidade_id: unidadeId, pfx_base64: pfxBase64, senha,
+      }))
+      .then((r) => {
+        updateConfigFiscal(unidadeId, {
+          certificadoTitular: r.certificado?.titular,
+          certificadoValidade: (r.certificado?.validoAte || "").slice(0, 10),
+          certificadoEnviadoEm: hoje,
+        });
+        return r;
+      })
+      .catch((e) => {
+        if (!/não configurado|not configured/i.test(e?.message || "")) throw e;
+        return nfseApi.salvarCertificado({ unidade_id: unidadeId, pfx_base64: pfxBase64, senha }).then((r) => {
+          updateConfigFiscal(unidadeId, {
+            certificadoRef: r.certificado_ref, certificadoTitular: r.titular,
+            certificadoValidade: r.validade, certificadoEnviadoEm: hoje,
+          });
+          return r;
+        });
       });
-      return r;
-    });
   };
 
   // Rede de parceiros: conta dona da unidade (tabela contas) e se é parceira.

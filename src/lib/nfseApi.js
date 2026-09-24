@@ -40,6 +40,19 @@ export const nfseApi = {
   // pfxBase64 pode vir como data URL — o backend remove o prefixo.
   salvarCertificado: ({ unidade_id, pfx_base64, senha }) =>
     callFn("salvar-certificado", { unidade_id, pfx_base64, senha }),
+  // Passe curto que autoriza subir o certificado direto no transmissor fiscal.
+  ticketCertificado: (unidade_id) => callFn("ticket-certificado", { unidade_id }),
+  /** O arquivo vai do navegador para o transmissor: não passa pelo Supabase. */
+  enviarCertificadoAoTransmissor: async ({ url, ticket }, { unidade_id, pfx_base64, senha }) => {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ticket, unidade_id, pfx_base64, senha }),
+    });
+    const dados = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(dados?.erro || "Não foi possível guardar o certificado.");
+    return dados;
+  },
   emitir: (dados) => callFn("emitir-nfse", dados),
   cancelar: (nota_id, motivo) => callFn("cancelar-nfse", { nota_id, motivo }),
   // Diagnóstico: testa o endpoint nacional + convênio do município (não emite).

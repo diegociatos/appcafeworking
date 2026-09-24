@@ -1,4 +1,4 @@
-import { buscarSefin } from "./transporteNacional.ts";
+import { buscarSefin, assinarETransmitir, transmissorConfigurado } from "./transporteNacional.ts";
 import { credenciaisPemComCadeia } from "./certificado.ts";
 // ============================================================================
 // NfseNacionalProvider — emissor padrão NFS-e Nacional (Sistema Nacional
@@ -76,8 +76,12 @@ export class NfseNacionalProvider implements NfseProvider {
     const aliquota = input.aliquotaISS ?? this.config.aliquota_iss ?? 0;
     const iss = Math.round(input.valor * aliquota) / 100;
 
-    // Sem certificado: simula só em homologação; em produção recusa.
-    const modo = modoEmissao(this.config.ambiente, this.creds);
+    // Sem certificado: simula só em homologação; em produção recusa. Com o
+    // transmissor ligado, quem guarda o certificado é ele: se faltar, a recusa
+    // vem de lá, já dizendo onde cadastrar.
+    const modo = transmissorConfigurado()
+      ? ({ tipo: "real" } as const)
+      : modoEmissao(this.config.ambiente, this.creds);
     if (modo.tipo === "recusada") throw new FiscalError(modo.motivo, this.emissor, 412);
     if (modo.tipo === "simulada") {
       return {
@@ -91,14 +95,13 @@ export class NfseNacionalProvider implements NfseProvider {
     }
 
     const dpsXml = this.montarDps(input);
-    const dpsAssinada = await this.assinarDps(dpsXml);
-    const payload = await gzipBase64(dpsAssinada);
-
-    const res = await this.mtlsFetch(`${this.base}/nfse`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ dpsXmlGZipB64: payload }),
-    });
+    const res = transmissorConfigurado()
+      ? await assinarETransmitir(`${this.base}/nfse`, dpsXml, refDaDps(dpsXml), this.config.unidade_id)
+      : await this.mtlsFetch(`${this.base}/nfse`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ dpsXmlGZipB64: await gzipBase64(await this.assinarDps(dpsXml)) }),
+      });
 
     const body = await safeJson(res);
     if (!res.ok) {
@@ -160,12 +163,14 @@ export class NfseNacionalProvider implements NfseProvider {
     if (nfseId.startsWith("SIM-")) {
       return { nfseId, status: "cancelada", raw: { simulado: true } };
     }
-    const pedido = await this.assinarDps(this.montarCancelamento(nfseId, motivo));
-    const res = await this.mtlsFetch(`${this.base}/nfse/${nfseId}/eventos`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pedidoRegistroEventoXmlGZipB64: await gzipBase64(pedido) }),
-    });
+    const evento = this.montarCancelamento(nfseId, motivo);
+    const res = transmissorConfigurado()
+      ? await assinarETransmitir(`${this.base}/nfse/${nfseId}/eventos`, evento, refDaDps(evento), this.config.unidade_id, "pedidoRegistroEventoXmlGZipB64")
+      : await this.mtlsFetch(`${this.base}/nfse/${nfseId}/eventos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pedidoRegistroEventoXmlGZipB64: await gzipBase64(await this.assinarDps(evento)) }),
+      });
     const body = await safeJson(res);
     if (!res.ok) {
       throw new FiscalError(`NFS-e Nacional: cancelamento falhou (${res.status})`, this.emissor, res.status, body);
@@ -199,6 +204,11 @@ export class NfseNacionalProvider implements NfseProvider {
 // ----------------------------------------------------------------------------
 // Helpers
 // ----------------------------------------------------------------------------
+/** Id do elemento assinado (infDPS ou infPedReg), lido do próprio XML. */
+function refDaDps(xml: string): string {
+  return xml.match(/Id="([^"]+)"/)?.[1] ?? "";
+}
+
 async function gzipBase64(text: string): Promise<string> {
   const enc = new TextEncoder().encode(text);
   const stream = new Response(enc).body!.pipeThrough(new CompressionStream("gzip"));
