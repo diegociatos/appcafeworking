@@ -881,8 +881,8 @@ export function StoreProvider({ children }) {
         setNotasFiscais((ns) => [n, ...ns]);
         return { nota: n };
       }).catch((e) => {
-        console.warn("emitir NFS-e:", e.message);
-        return { erro: e.message || "Não foi possível emitir a nota." };
+        console.warn("emitir NFS-e:", e.message, e.detalhe);
+        return { erro: e.message || "Não foi possível emitir a nota.", detalhe: e.detalhe };
       });
     }
     const cfg = configFiscal.find((c) => c.unidadeId === unidadeId);

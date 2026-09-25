@@ -1,4 +1,5 @@
 import { useState } from "react";
+import SelecionarCliente from "../components/SelecionarCliente.jsx";
 import {
   FileText, Receipt, Plus, Download, XCircle, SlidersHorizontal, CheckCircle2,
   Building2, Percent, ShieldCheck, Coins, KeyRound, UploadCloud, AlertTriangle,
@@ -128,7 +129,7 @@ export default function NotaFiscal() {
 
       {emitir && (
         <Modal title="Emitir NFS-e" onClose={() => setEmitir(false)} maxWidth={480}>
-          <EmitirNotaForm cfg={cfg} onEmitir={(d) => store.emitirNFSe(activeUnit, d)} onFeito={() => setEmitir(false)} />
+          <EmitirNotaForm cfg={cfg} clientes={store.clientesDe(activeUnit)} onEmitir={(d) => store.emitirNFSe(activeUnit, d)} onFeito={() => setEmitir(false)} />
         </Modal>
       )}
     </div>
@@ -166,26 +167,52 @@ function Kpi({ label, valor, icon: Icon, cor }) {
   );
 }
 
-function EmitirNotaForm({ cfg, onEmitir, onFeito }) {
-  const [f, setF] = useState({ tomador: "", tomadorDoc: "", tomadorEmail: "", descricao: cfg?.descricaoServico || "", valor: "" });
+function EmitirNotaForm({ cfg, clientes = [], onEmitir, onFeito }) {
+  const [f, setF] = useState({
+    tomador: "", tomadorDoc: "", tomadorEmail: "", descricao: cfg?.descricaoServico || "", valor: "",
+    tomadorCep: "", tomadorLogradouro: "", tomadorNumero: "", tomadorBairro: "", tomadorCidade: "", tomadorUf: "",
+  });
+  const [clienteId, setClienteId] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState("");
+  const [detalhe, setDetalhe] = useState(null);
+  /** Puxa o cadastro do cliente: o padrão nacional pede endereço do tomador. */
+  const escolherCliente = (c) => {
+    setClienteId(c?.id || "");
+    if (!c) return;
+    setF((s) => ({
+      ...s, tomador: c.nome || "", tomadorDoc: c.cnpj || "", tomadorEmail: c.email || "",
+      tomadorCep: c.cep || "", tomadorLogradouro: c.endereco || "", tomadorNumero: c.numero || "",
+      tomadorBairro: c.bairro || "", tomadorCidade: c.cidade || "", tomadorUf: c.uf || "",
+    }));
+  };
   const emitir = async () => {
     if (!valido || enviando) return;
-    setEnviando(true); setErro("");
+    setEnviando(true); setErro(""); setDetalhe(null);
     const r = await onEmitir({ ...f, valor: +f.valor });
     setEnviando(false);
-    if (r?.erro) setErro(r.erro); else onFeito();
+    if (r?.erro) { setErro(r.erro); setDetalhe(r.detalhe ?? null); } else onFeito();
   };
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const iss = (+f.valor || 0) * (cfg?.aliquotaISS || 0) / 100;
   const valido = f.tomador.trim() && +f.valor > 0;
   return (
     <>
+      {clientes.length > 0 && <SelecionarCliente clientes={clientes} value={clienteId} onChange={escolherCliente} />}
       <Field label="Tomador (cliente)"><input value={f.tomador} onChange={set("tomador")} style={inp} placeholder="Nome / razão social" /></Field>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Field label="CPF / CNPJ do tomador"><input value={f.tomadorDoc} onChange={set("tomadorDoc")} style={inp} placeholder="00.000.000/0001-00" /></Field>
         <Field label="E-mail (recebe a nota)"><input type="email" value={f.tomadorEmail} onChange={set("tomadorEmail")} style={inp} placeholder="cliente@email.com" /></Field>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 0.8fr", gap: 12 }}>
+        <Field label="CEP do tomador"><input value={f.tomadorCep} onChange={set("tomadorCep")} style={inp} placeholder="00000-000" inputMode="numeric" /></Field>
+        <Field label="Logradouro"><input value={f.tomadorLogradouro} onChange={set("tomadorLogradouro")} style={inp} placeholder="Rua / Av." /></Field>
+        <Field label="Número"><input value={f.tomadorNumero} onChange={set("tomadorNumero")} style={inp} placeholder="100" /></Field>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 0.5fr", gap: 12 }}>
+        <Field label="Bairro"><input value={f.tomadorBairro} onChange={set("tomadorBairro")} style={inp} /></Field>
+        <Field label="Cidade"><input value={f.tomadorCidade} onChange={set("tomadorCidade")} style={inp} /></Field>
+        <Field label="UF"><input value={f.tomadorUf} onChange={set("tomadorUf")} style={inp} maxLength={2} placeholder="MG" /></Field>
       </div>
       <Field label="Descrição do serviço"><input value={f.descricao} onChange={set("descricao")} style={inp} placeholder="Ex: Locação de sala / mensalidade coworking" /></Field>
       <Field label="Valor do serviço (R$)"><input type="number" min="0" step="0.01" value={f.valor} onChange={set("valor")} style={inp} placeholder="0,00" /></Field>
@@ -193,8 +220,17 @@ function EmitirNotaForm({ cfg, onEmitir, onFeito }) {
         <span>ISS ({cfg?.aliquotaISS || 0}%)</span><b style={{ color: C.cafe }}>{fmt(iss)}</b>
       </div>
       {erro && (
-        <div role="alert" style={{ display: "flex", alignItems: "flex-start", gap: 7, color: C.red, fontSize: 13, marginBottom: 10 }}>
-          <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 1 }} /> {erro}
+        <div role="alert" style={{ marginBottom: 10 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 7, color: C.red, fontSize: 13 }}>
+            <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 1 }} /> {erro}
+          </div>
+          {/* O que o governo respondeu, na íntegra: sem isto ninguém descobre
+              qual campo da nota ele recusou. */}
+          {detalhe != null && (
+            <pre style={{ marginTop: 8, padding: 10, background: C.cream2, borderRadius: 9, fontSize: 11.5, color: C.text2, whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 220, overflowY: "auto" }}>
+              {typeof detalhe === "string" ? detalhe : JSON.stringify(detalhe, null, 2)}
+            </pre>
+          )}
         </div>
       )}
       <Btn style={{ width: "100%", justifyContent: "center", opacity: valido && !enviando ? 1 : 0.5 }} onClick={emitir}>

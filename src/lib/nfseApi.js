@@ -31,7 +31,13 @@ async function callFn(name, body) {
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error || `Falha em ${name} (${res.status})`);
+  if (!res.ok) {
+    // O detalhe é a resposta do governo (lista de erros da DPS). Sem ele, a tela
+    // só sabe dizer "falha (400)" e ninguém descobre qual campo está errado.
+    const e = new Error(data?.error || `Falha em ${name} (${res.status})`);
+    e.detalhe = data?.detail;
+    throw e;
+  }
   return data;
 }
 
