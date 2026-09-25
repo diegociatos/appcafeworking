@@ -1,4 +1,4 @@
-import { assert, assertEquals, assertFalse, assertMatch, assertThrows } from "jsr:@std/assert@1";
+import { assert, assertEquals, assertFalse, assertMatch, assertStringIncludes, assertThrows } from "jsr:@std/assert@1";
 import {
   ambienteDeTeste, dataBrasilia, dhEmiBrasilia, modoEmissao, montarDpsXml, MSG_SEM_CERTIFICADO, nDpsDe, regEspTribDe,
   REGIMES_ESPECIAIS, serieDps, tpRetISSQNDe,
@@ -119,4 +119,54 @@ Deno.test("montagem da DPS: regEspTrib, tpRetISSQN, dhEmi, série e nDPS no XML"
 Deno.test("montagem da DPS: número zerado ou regime desconhecido não geram XML", () => {
   assertThrows(() => montarDpsXml(config(), { ...entrada, rpsNumero: "0" }), FiscalError);
   assertThrows(() => montarDpsXml(config({ regime_especial: "Lucro Real" }), entrada), FiscalError);
+});
+
+// --- Regras do Simples Nacional -------------------------------------------
+// Copiadas do emissor que já emite para empresas em Belo Horizonte. Errar aqui
+// devolve 400 do SEFIN sem dizer o motivo, então cada uma tem teste próprio.
+const CFG_LUX = {
+  municipio: "Belo Horizonte", codigo_municipio: "3106200", uf: "MG",
+  cnpj: "20351761000103", inscricao_municipal: "123456",
+  regime: "Simples Nacional", aliquota_iss: 2, aliquota_simples: 6,
+  codigo_servico: " 170201", codigo_tributacao_nacional: "17.02.01/001",
+  nbs: "1.1806.40.00", regime_especial: "nenhum", iss_retido: false,
+  ambiente: "producao", descricao_servico: "Serviços de datilografia",
+};
+const TOMADOR = { nome: "Ciatos Soluções", documento: "14777996000156" };
+const dpsLux = (extra = {}) =>
+  montarDpsXml({ ...CFG_LUX, ...extra } as never, { valor: 1, descricao: "Teste", rpsNumero: "1", tomador: TOMADOR } as never);
+
+Deno.test("Simples sem retenção não manda pAliq: o Portal usa a parametrização do município", () => {
+  const xml = dpsLux();
+  assertEquals(/<pAliq>/.test(xml), false);
+  assertStringIncludes(xml, "<tribISSQN>1</tribISSQN><tpRetISSQN>1</tpRetISSQN>");
+});
+
+Deno.test("Simples declara a alíquota efetiva em pTotTribSN, não indTotTrib", () => {
+  const xml = dpsLux();
+  assertStringIncludes(xml, "<totTrib><pTotTribSN>6.00</pTotTribSN></totTrib>");
+  assertEquals(/indTotTrib/.test(xml), false);
+});
+
+Deno.test("fora do Simples volta a indTotTrib e informa a alíquota", () => {
+  const xml = dpsLux({ regime: "Lucro Presumido" });
+  assertStringIncludes(xml, "<pAliq>2.00</pAliq>");
+  assertStringIncludes(xml, "<totTrib><indTotTrib>0</indTotTrib></totTrib>");
+});
+
+Deno.test("com ISS retido a alíquota volta a ser informada, mesmo no Simples", () => {
+  const xml = dpsLux({ iss_retido: true });
+  assertStringIncludes(xml, "<pAliq>2.00</pAliq>");
+  assertStringIncludes(xml, "<tpRetISSQN>2</tpRetISSQN>");
+});
+
+Deno.test("cTribMun sai do desdobro depois da barra e cNBS vai só com dígitos", () => {
+  const xml = dpsLux();
+  assertStringIncludes(xml, "<cTribNac>170201</cTribNac><cTribMun>001</cTribMun>");
+  assertStringIncludes(xml, "<cNBS>118064000</cNBS>");
+});
+
+Deno.test("sem barra no código nacional, cTribMun fica de fora", () => {
+  const xml = dpsLux({ codigo_tributacao_nacional: "170201" });
+  assertEquals(/cTribMun/.test(xml), false);
 });

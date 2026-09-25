@@ -174,6 +174,9 @@ export function montarDpsXml(config: ConfigFiscal, input: EmitirNfseInput, agora
   const cTribNac = cTribNacDe(c);
   const aliq = (input.aliquotaISS ?? c.aliquota_iss ?? 0);
   const tpRet = tpRetISSQNDe(c.iss_retido);
+  const cTribMun = cTribMunDe(c);
+  const cNBS = String((c.nbs as string) || "").replace(/\D/g, "");
+  const informarAliquota = Number(aliq) > 0 && !simplesSemRetencao(c);
   const descServ = (input.descricao || c.descricao_servico || "Serviço").slice(0, 2000);
 
   return `<?xml version="1.0" encoding="UTF-8"?>` +
@@ -195,13 +198,13 @@ export function montarDpsXml(config: ConfigFiscal, input: EmitirNfseInput, agora
 `<toma><${tagToma}>${docToma}</${tagToma}><xNome>${escXml(t.nome)}</xNome>${montarEndToma(t)}</toma>` +
 `<serv>` +
 `<locPrest><cLocPrestacao>${cLocEmi}</cLocPrestacao></locPrest>` +
-`<cServ><cTribNac>${cTribNac}</cTribNac><xDescServ>${escXml(descServ)}</xDescServ></cServ>` +
+`<cServ><cTribNac>${cTribNac}</cTribNac>${cTribMun ? `<cTribMun>${cTribMun}</cTribMun>` : ``}<xDescServ>${escXml(descServ)}</xDescServ>${cNBS ? `<cNBS>${cNBS}</cNBS>` : ``}</cServ>` +
 `</serv>` +
 `<valores>` +
 `<vServPrest><vServ>${input.valor.toFixed(2)}</vServ></vServPrest>` +
 `<trib>` +
-`<tribMun><tribISSQN>1</tribISSQN><tpRetISSQN>${tpRet}</tpRetISSQN><pAliq>${Number(aliq).toFixed(2)}</pAliq></tribMun>` +
-`<totTrib><indTotTrib>0</indTotTrib></totTrib>` +
+`<tribMun><tribISSQN>1</tribISSQN><tpRetISSQN>${tpRet}</tpRetISSQN>${informarAliquota ? `<pAliq>${Number(aliq).toFixed(2)}</pAliq>` : ``}</tribMun>` +
+totTribXml(c) +
 `</trib>` +
 `</valores>` +
 `</infDPS>` +
@@ -229,6 +232,37 @@ function cTribNacDe(c: Record<string, unknown>): string {
   if (nac.length === 6) return nac;
   const item = String(c.codigo_servico || "").replace(/\D/g, ""); // "08.01" -> "0801"
   return (item + "000000").slice(0, 6).padStart(6, "0");
+}
+
+/** Optante do Simples, sem retenção e sem benefício municipal. */
+function simplesSemRetencao(c: Record<string, unknown>): boolean {
+  return ehSimplesNacional(c) && !c.iss_retido && !c.beneficio_municipal;
+}
+
+function ehSimplesNacional(c: Record<string, unknown>): boolean {
+  const reg = String(c.regime || "").toLowerCase();
+  return reg.includes("simples") || reg.includes("mei");
+}
+
+/**
+ * totTrib: optante do Simples declara a alíquota efetiva (pTotTribSN); os demais
+ * usam indTotTrib. Regra copiada do emissor que já emite para empresas em BH.
+ */
+function totTribXml(c: Record<string, unknown>): string {
+  if (!ehSimplesNacional(c)) return `<totTrib><indTotTrib>0</indTotTrib></totTrib>`;
+  const pct = Number((c.aliquota_simples as number) || 0).toFixed(2);
+  return `<totTrib><pTotTribSN>${pct}</pTotTribSN></totTrib>`;
+}
+
+/**
+ * cTribMun: o desdobro municipal, que vem depois da barra no código nacional
+ * ("17.02.01/001" → "001"). Sem barra, fica de fora.
+ */
+function cTribMunDe(c: Record<string, unknown>): string {
+  const explicito = String((c.codigo_complementar_municipal as string) || "").replace(/\D/g, "");
+  if (explicito) return explicito;
+  const nac = String((c.codigo_tributacao_nacional as string) || "");
+  return nac.match(/\/\s*(\d{1,3})\s*$/)?.[1]?.padStart(3, "0") || "";
 }
 
 /** opSimpNac: 1 Não optante, 2 MEI, 3 ME/EPP — a partir do regime configurado. */
