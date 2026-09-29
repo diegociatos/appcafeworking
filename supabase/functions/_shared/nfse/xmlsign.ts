@@ -15,6 +15,7 @@
 import forge from "https://esm.sh/node-forge@1.3.1";
 
 const NS_DSIG = "http://www.w3.org/2000/09/xmldsig#";
+const NS_NFSE = "http://www.sped.fazenda.gov.br/nfse";
 const C14N = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315";
 const ENVELOPED = "http://www.w3.org/2000/09/xmldsig#enveloped-signature";
 const SIG_SHA256 = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256";
@@ -45,15 +46,26 @@ function extrairElemento(xml: string, tag: string): string {
  */
 export function assinarDpsXmlDsig(xml: string, certPem: string, keyPem: string, refId: string): string {
   const infDps = extrairElemento(xml, "infDPS");
-  const digestValue = sha256B64(infDps);
+  // C14N do infDPS: a canonicalização inclusiva renderiza no elemento-ápice os
+  // namespaces EM ESCOPO herdados dos ancestrais. O `infDPS` herda o namespace
+  // default do `<DPS xmlns=".../nfse">`, então o digest tem que ser calculado
+  // sobre o infDPS COM esse xmlns declarado nele (namespace vem antes de Id na
+  // ordem canônica). Sem isso, o SEFIN recalcula com o namespace → E0714.
+  const infDpsC14n = infDps.replace(/^<infDPS\b/, `<infDPS xmlns="${NS_NFSE}"`);
+  const digestValue = sha256B64(infDpsC14n);
 
+  // SignedInfo em forma CANÔNICA: a c14n expande elementos vazios auto-fechados
+  // (`<X .../>` → `<X ...></X>`). Como assinamos exatamente esta string e ela é
+  // reinserida no documento, ela precisa já estar canônica (senão a verificação
+  // recanoniza e a assinatura não bate). SignedInfo declara o próprio xmlns e os
+  // filhos herdam (sem redeclarar) — igual ao que a c14n inclusiva produz.
   const signedInfo =
     `<SignedInfo xmlns="${NS_DSIG}">` +
-    `<CanonicalizationMethod Algorithm="${C14N}"/>` +
-    `<SignatureMethod Algorithm="${SIG_SHA256}"/>` +
+    `<CanonicalizationMethod Algorithm="${C14N}"></CanonicalizationMethod>` +
+    `<SignatureMethod Algorithm="${SIG_SHA256}"></SignatureMethod>` +
     `<Reference URI="#${refId}">` +
-    `<Transforms><Transform Algorithm="${ENVELOPED}"/><Transform Algorithm="${C14N}"/></Transforms>` +
-    `<DigestMethod Algorithm="${DIG_SHA256}"/>` +
+    `<Transforms><Transform Algorithm="${ENVELOPED}"></Transform><Transform Algorithm="${C14N}"></Transform></Transforms>` +
+    `<DigestMethod Algorithm="${DIG_SHA256}"></DigestMethod>` +
     `<DigestValue>${digestValue}</DigestValue>` +
     `</Reference></SignedInfo>`;
 
