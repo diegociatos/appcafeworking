@@ -18,6 +18,7 @@ import { userClient, adminClient } from "../_shared/supabaseAdmin.ts";
 import { podeMexerNoDinheiro, recusaSemFinanceiro } from "../_shared/permissoes.ts";
 import { getBankCredentials } from "../_shared/vault.ts";
 import { uploadBoletoPdf } from "../_shared/storage.ts";
+import { dispatchNotificacao } from "../_shared/notify/index.ts";
 import { getProvider, BankError, type BankAccount, type EmitirBoletoInput } from "../_shared/banks/index.ts";
 
 Deno.serve(async (req) => {
@@ -116,6 +117,26 @@ Deno.serve(async (req) => {
       if (url) {
         await admin.from("boletos").update({ pdf_url: url }).eq("id", boleto.id);
         boleto.pdf_url = url;
+      }
+    }
+
+    // E-mail ao sacado com o boleto (PDF anexo via anexosFinanceiros) — best-effort:
+    // não bloqueia nem derruba a emissão se o envio falhar. Só quando há e-mail e
+    // o boleto foi registrado (não "erro").
+    if (input.pagador.email && boleto.status !== "erro") {
+      try {
+        await dispatchNotificacao(admin, {
+          unidade_id: account.unidade_id, evento: "boleto_nova",
+          email: input.pagador.email, cliente: input.pagador.nome,
+          dados: {
+            valor: input.valor, vencimento: input.vencimento, descricao: input.instrucoes ?? "",
+            pdfUrl: boleto.pdf_url ?? null,
+            linhaDigitavel: result.linhaDigitavel ?? null,
+            pixCopiaCola: result.pixCopiaCola ?? null,
+          },
+        });
+      } catch (e) {
+        console.error("[boleto] enviar e-mail ao sacado:", (e as Error).message);
       }
     }
 
