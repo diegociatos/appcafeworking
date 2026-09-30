@@ -286,7 +286,12 @@ function chaveDps(cLocEmi: string, cnpj: string, serie: string, nDPS: string): s
 // Helpers de XML
 // ----------------------------------------------------------------------------
 export function escXml(s: string): string {
-  return (s ?? "").replace(/[<>&'"]/g, (ch) =>
+  // Normaliza o espaço em branco ANTES de escapar: os datatypes de texto do
+  // SEFIN (ex.: TSBairro) exigem começar e terminar com caractere não-branco e
+  // não aceitam espaços em excesso. Um bairro "Gutierrez " (espaço no fim, comum
+  // vindo da busca de CNPJ) derruba a nota com E1235. Colapsa runs de espaço e
+  // apara as pontas — inofensivo para campos que já vêm limpos.
+  return (s ?? "").replace(/\s+/g, " ").trim().replace(/[<>&'"]/g, (ch) =>
     ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" }[ch] as string));
 }
 
