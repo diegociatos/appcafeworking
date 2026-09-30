@@ -47,4 +47,6 @@ export const boletosApi = {
   testar: (bank_account_id) => callFn("testar-banco", { bank_account_id }),
   // Remove a conta e apaga a credencial do Vault. 409 se a conta já emitiu boleto.
   removerConta: (bank_account_id) => callFn("remover-conta-bancaria", { bank_account_id }),
+  // Reenvia o e-mail (com PDF) de um boleto já emitido, sem registrar de novo.
+  reenviarEmail: (boleto_id, email) => callFn("reenviar-boleto-email", { boleto_id, email }),
 };

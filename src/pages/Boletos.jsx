@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   Barcode, Plus, Landmark, Copy, Check, Download, XCircle, CircleDollarSign,
-  QrCode, Building2, ShieldCheck, Trash2, Info, RefreshCw, Plug, CheckCircle2, ExternalLink,
+  QrCode, Building2, ShieldCheck, Trash2, Info, RefreshCw, Plug, CheckCircle2, ExternalLink, Mail,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, ConfirmDialog } from "../components/ui.jsx";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
@@ -231,6 +231,7 @@ function ListaBoletos({ boletos, contas, conectado, onCancelar, onBaixar, onSinc
             {/* Ações */}
             <div style={{ display: "flex", gap: 8, padding: "12px 18px", borderTop: `1px solid ${C.border2}`, background: C.cream, flexWrap: "wrap" }}>
               <BotaoBaixar boleto={b} />
+              {b.status !== "cancelado" && boletosApi.configured && <BotaoReenviarEmail boleto={b} />}
               {b.status !== "pago" && b.status !== "cancelado" && (
                 <>
                   {conectado ? (
@@ -255,6 +256,30 @@ function ListaBoletos({ boletos, contas, conectado, onCancelar, onBaixar, onSinc
         );
       })}
     </div>
+  );
+}
+
+function BotaoReenviarEmail({ boleto }) {
+  const [estado, setEstado] = useState(""); // "" | enviando | ok
+  const enviar = async (emailOverride) => {
+    setEstado("enviando");
+    try {
+      const r = await boletosApi.reenviarEmail(boleto.id, emailOverride);
+      if (r?.ok) { setEstado("ok"); return; }
+      if (r?.detalhe && /e-mail/i.test(r.detalhe)) {
+        const e = window.prompt("Este boleto não tem e-mail do sacado. Digite o e-mail para enviar o boleto:", "");
+        setEstado("");
+        if (e && e.trim()) return enviar(e.trim());
+        return;
+      }
+      setEstado(""); window.alert(r?.detalhe || "Não foi possível reenviar o e-mail.");
+    } catch (err) { setEstado(""); window.alert(err.message || "Falha ao reenviar."); }
+  };
+  return (
+    <button onClick={() => enviar()} disabled={estado === "enviando"} className="cw-btn" title="Reenviar o boleto (PDF) por e-mail ao sacado, sem registrar de novo"
+      style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 9, fontSize: 13, fontWeight: 600, color: estado === "ok" ? C.green : C.cafe, border: `1px solid ${C.border}`, opacity: estado === "enviando" ? 0.6 : 1 }}>
+      {estado === "ok" ? <Check size={15} /> : <Mail size={15} />} {estado === "enviando" ? "Enviando…" : estado === "ok" ? "E-mail enviado" : "Reenviar e-mail"}
+    </button>
   );
 }
 
