@@ -189,13 +189,21 @@ export class InterProvider implements BankProvider {
     // 2) busca os dados completos (linha digitável, PIX, etc.)
     const det = await this.detalhar(id);
 
-    // 3) busca o PDF (base64) — a Edge Function sobe pro Storage
+    // 3) busca o PDF (base64) — a Edge Function sobe pro Storage.
+    //    O Inter gera o PDF alguns segundos DEPOIS do registro; uma única
+    //    tentativa quase sempre volta vazia e o e-mail sai sem anexo. Então
+    //    tentamos algumas vezes com espera curta até o PDF materializar.
+    //    Nunca falha a emissão: se não vier, segue sem anexo (o botão
+    //    "Reenviar e-mail" busca o PDF depois).
     let pdfBase64: string | undefined;
-    try {
-      const pdf = await this.api<{ pdf: string }>("GET", `/cobranca/v3/cobrancas/${id}/pdf`);
-      pdfBase64 = pdf?.pdf;
-    } catch (_) {
-      // PDF pode levar alguns segundos após o registro; não falha a emissão.
+    for (let tentativa = 0; tentativa < 5; tentativa++) {
+      if (tentativa > 0) await new Promise((r) => setTimeout(r, 1500));
+      try {
+        const pdf = await this.api<{ pdf: string }>("GET", `/cobranca/v3/cobrancas/${id}/pdf`);
+        if (pdf?.pdf) { pdfBase64 = pdf.pdf; break; }
+      } catch (_) {
+        // ainda não disponível — tenta de novo
+      }
     }
 
     return { ...det, pdfBase64, raw: criada };

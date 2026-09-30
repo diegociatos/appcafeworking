@@ -1138,6 +1138,7 @@ export function StoreProvider({ children }) {
         sacado_cep: dados.sacadoCep, sacado_logradouro: dados.sacadoLogradouro, sacado_numero: dados.sacadoNumero,
         sacado_bairro: dados.sacadoBairro, sacado_cidade: dados.sacadoCidade, sacado_uf: dados.sacadoUf,
         valor: dados.valor, vencimento: dados.vencimento, instrucoes: dados.instrucoes,
+        multaPercent: dados.multaPercent, moraPercent: dados.moraPercent,
       }).then(({ boleto }) => {
         const b = _mapApiBoleto(boleto, unidadeId);
         setBoletos((bs) => [...bs, b]);
@@ -1167,6 +1168,7 @@ export function StoreProvider({ children }) {
       sacado_cep: dados.sacadoCep, sacado_logradouro: dados.sacadoLogradouro, sacado_numero: dados.sacadoNumero,
       sacado_bairro: dados.sacadoBairro, sacado_cidade: dados.sacadoCidade, sacado_uf: dados.sacadoUf,
       valor: dados.valor, vencimento: dados.vencimento, instrucoes: dados.instrucoes,
+      multaPercent: dados.multaPercent, moraPercent: dados.moraPercent,
     });
     if (!boleto?.id) throw new Error("O banco não confirmou o boleto. Consulte a emissão antes de tentar novamente.");
     const b = _mapApiBoleto(boleto, unidadeId);

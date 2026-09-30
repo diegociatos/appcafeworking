@@ -18,7 +18,6 @@ import { userClient, adminClient } from "../_shared/supabaseAdmin.ts";
 import { podeMexerNoDinheiro, recusaSemFinanceiro } from "../_shared/permissoes.ts";
 import { getBankCredentials } from "../_shared/vault.ts";
 import { uploadBoletoPdf } from "../_shared/storage.ts";
-import { dispatchNotificacao } from "../_shared/notify/index.ts";
 import { getProvider, BankError, type BankAccount, type EmitirBoletoInput } from "../_shared/banks/index.ts";
 
 Deno.serve(async (req) => {
@@ -120,26 +119,11 @@ Deno.serve(async (req) => {
       }
     }
 
-    // E-mail ao sacado com o boleto (PDF anexo via anexosFinanceiros) — best-effort:
-    // não bloqueia nem derruba a emissão se o envio falhar. Só quando há e-mail e
-    // o boleto foi registrado (não "erro").
-    if (input.pagador.email && boleto.status !== "erro") {
-      try {
-        await dispatchNotificacao(admin, {
-          unidade_id: account.unidade_id, evento: "boleto_nova",
-          email: input.pagador.email, cliente: input.pagador.nome,
-          dados: {
-            valor: input.valor, vencimento: input.vencimento, descricao: input.instrucoes ?? "",
-            pdfUrl: boleto.pdf_url ?? null,
-            linhaDigitavel: result.linhaDigitavel ?? null,
-            pixCopiaCola: result.pixCopiaCola ?? null,
-          },
-        });
-      } catch (e) {
-        console.error("[boleto] enviar e-mail ao sacado:", (e as Error).message);
-      }
-    }
-
+    // O e-mail ao sacado (com o PDF em anexo) é disparado pelo frontend
+    // (_avisarBoletoEmail → notificacoesApi.enviar), que também registra o aviso
+    // na tela de notificações e trata múltiplos destinatários. Aqui NÃO enviamos
+    // para não duplicar o e-mail. Como agora o PDF é buscado com retry acima, o
+    // boleto já volta com pdf_url e o anexo vai junto.
     return json({ boleto }, 201);
   } catch (e) {
     if (e instanceof BankError) {

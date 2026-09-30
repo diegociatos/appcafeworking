@@ -497,6 +497,8 @@ export function EmitirForm({ contas, contaPadrao, inicial = {}, onEmitir, extraA
     valor: inicial.valor != null ? String(inicial.valor) : "",
     vencimento: inicial.vencimento || "",
     instrucoes: inicial.instrucoes || "",
+    multa: inicial.multa != null ? String(inicial.multa) : "2",
+    juros: inicial.juros != null ? String(inicial.juros) : "1",
   });
   const [emailsAdicionais, setEmailsAdicionais] = useState(() => Array.isArray(inicial.emailsAdicionais) ? inicial.emailsAdicionais : []);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
@@ -511,7 +513,9 @@ export function EmitirForm({ contas, contaPadrao, inicial = {}, onEmitir, extraA
     setEmitindo(true); setErroEmissao("");
     try {
       const sacadoEmails = [...new Set([f.email, ...emailsAdicionais].map((e) => e.trim().toLowerCase()).filter(emailOk))];
-      await onEmitir({ ...f, valor: +f.valor, sacadoEmail: sacadoEmails[0] || "", sacadoEmails, sacadoCep: f.cep, sacadoLogradouro: f.logradouro, sacadoNumero: f.numero, sacadoBairro: f.bairro, sacadoCidade: f.cidade, sacadoUf: f.uf });
+      const multaPercent = Number(String(f.multa).replace(",", ".")) || 0;
+      const moraPercent = Number(String(f.juros).replace(",", ".")) || 0;
+      await onEmitir({ ...f, valor: +f.valor, sacadoEmail: sacadoEmails[0] || "", sacadoEmails, sacadoCep: f.cep, sacadoLogradouro: f.logradouro, sacadoNumero: f.numero, sacadoBairro: f.bairro, sacadoCidade: f.cidade, sacadoUf: f.uf, multaPercent: multaPercent > 0 ? multaPercent : undefined, moraPercent: moraPercent > 0 ? moraPercent : undefined });
     } catch (e) { setErroEmissao(e.message || "Não foi possível confirmar a emissão. Consulte os boletos antes de tentar novamente."); }
     finally { setEmitindo(false); }
   };
@@ -583,6 +587,17 @@ export function EmitirForm({ contas, contaPadrao, inicial = {}, onEmitir, extraA
       <Field label="Instruções (opcional)">
         <input value={f.instrucoes} onChange={set("instrucoes")} style={inp} placeholder="Ex: Mensalidade sala privativa - Junho" />
       </Field>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <Field label="Multa por atraso (%)">
+          <input type="number" min="0" step="0.5" value={f.multa} onChange={set("multa")} style={inp} placeholder="2" inputMode="decimal" />
+        </Field>
+        <Field label="Juros de mora (% ao mês)">
+          <input type="number" min="0" step="0.5" value={f.juros} onChange={set("juros")} style={inp} placeholder="1" inputMode="decimal" />
+        </Field>
+      </div>
+      <div style={{ fontSize: 11.5, color: C.text3, marginTop: -6, marginBottom: 10 }}>
+        Aplicados após o vencimento. Deixe 0 para não cobrar. (Multa incide uma vez; juros por mês de atraso.)
+      </div>
       {extraAntesEmitir}
       {erroEmissao && <p role="alert" style={{ color: C.red, marginBottom: 12 }}>{erroEmissao}</p>}
       <Btn disabled={!valido || emitindo} style={{ width: "100%", justifyContent: "center", marginTop: 4 }} onClick={emitir}>
