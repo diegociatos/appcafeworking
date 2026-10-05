@@ -132,6 +132,15 @@ export default function CRM({ go }) {
   const [modal, setModal] = useState(null);
   const [etapaModal, setEtapaModal] = useState(null); // {} = nova | objeto = editar
   const [drag, setDrag] = useState(null);
+  const [leadExcluir, setLeadExcluir] = useState(null); // lead aguardando confirmação de exclusão
+
+  // Remove o lead do funil. Leads persistem via useSync("leads"), então o filtro
+  // já grava — serve pra limpar um lead cadastrado errado (ex.: sem o valor do
+  // consumo). Não mexe em cliente já criado: converter é outra ação.
+  const removerLead = (l) => {
+    setLeads((ls) => ls.filter((x) => x.id !== l.id));
+    setLeadExcluir(null);
+  };
 
   const totalPipeline = leads
     .filter((l) => l.etapa !== "fechado")
@@ -329,19 +338,31 @@ export default function CRM({ go }) {
                             <div style={{ fontSize: 11, color: C.text4 }}>{l.empresa}</div>
                           )}
                         </div>
-                        <div
-                          title={l.origem}
-                          style={{
-                            width: 22,
-                            height: 22,
-                            borderRadius: 6,
-                            background: `${oc}1a`,
-                            display: "grid",
-                            placeItems: "center",
-                            flexShrink: 0,
-                          }}
-                        >
-                          <OI size={12} color={oc} />
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                          <div
+                            title={l.origem}
+                            style={{
+                              width: 22,
+                              height: 22,
+                              borderRadius: 6,
+                              background: `${oc}1a`,
+                              display: "grid",
+                              placeItems: "center",
+                            }}
+                          >
+                            <OI size={12} color={oc} />
+                          </div>
+                          <button
+                            type="button"
+                            onMouseDown={(ev) => ev.stopPropagation()}
+                            onClick={() => setLeadExcluir(l)}
+                            title="Excluir lead"
+                            aria-label={`Excluir lead ${l.nome}`}
+                            className="cw-btn"
+                            style={{ color: C.text4, display: "grid", placeItems: "center", padding: 2 }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         </div>
                       </div>
                       <div style={{ fontSize: 12, color: C.text3, marginBottom: 8 }}>{l.interesse}</div>
@@ -466,6 +487,22 @@ export default function CRM({ go }) {
             onSave={saveEtapa}
             onDelete={() => removeEtapa(etapaModal.id)}
           />
+        </Modal>
+      )}
+
+      {leadExcluir && (
+        <Modal title="Excluir lead" onClose={() => setLeadExcluir(null)} maxWidth={380}>
+          <div style={{ padding: "4px 0" }}>
+            <div style={{ fontSize: 14, color: C.text2, lineHeight: 1.5, marginBottom: 16 }}>
+              Excluir o lead <b>{leadExcluir.nome}</b>{leadExcluir.empresa ? ` (${leadExcluir.empresa})` : ""} do funil? Essa ação não pode ser desfeita.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn variant="ghost" style={{ flex: 1, justifyContent: "center" }} onClick={() => setLeadExcluir(null)}>Cancelar</Btn>
+              <Btn style={{ flex: 1, justifyContent: "center", background: C.red, borderColor: C.red }} onClick={() => removerLead(leadExcluir)}>
+                <Trash2 size={16} /> Excluir
+              </Btn>
+            </div>
+          </div>
         </Modal>
       )}
 
