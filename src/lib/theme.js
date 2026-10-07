@@ -64,7 +64,9 @@ export const shadow = {
 export const radius = { sm: 10, md: 14, lg: 18, xl: 22, pill: 999 };
 
 export const fmt = (n) =>
-  "R$ " + n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // Tolerante: valor nulo/indefinido/NaN vira 0 em vez de derrubar a tela
+  // (um único lançamento sem valor não pode quebrar o Financeiro inteiro).
+  "R$ " + (Number(n) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export const fmtShort = (n) => {
   if (n >= 1000) return "R$ " + (n / 1000).toFixed(1).replace(".", ",") + "k";
