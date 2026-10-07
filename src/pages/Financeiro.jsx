@@ -941,12 +941,12 @@ function Contratos({ store, activeUnit }) {
 
       {novo && (
         <Modal title="Novo contrato recorrente" onClose={() => setNovo(false)} maxWidth={520}>
-          <ContratoForm bankAccounts={bankAccounts} planos={store.planosDe(activeUnit)} clientes={store.clientes.filter(c => c.unidadeId === activeUnit)} onSalvar={(cfg) => { store.addContrato(activeUnit, cfg); setNovo(false); }} />
+          <ContratoForm bankAccounts={bankAccounts} planos={store.planosDe(activeUnit)} clientes={clientesUnidade} onSalvar={(cfg) => { store.addContrato(activeUnit, cfg); setNovo(false); }} />
         </Modal>
       )}
       {editar && (
         <Modal title="Editar contrato recorrente" onClose={() => setEditar(null)} maxWidth={520}>
-          <ContratoForm inicial={editar} bankAccounts={bankAccounts} planos={store.planosDe(activeUnit)} clientes={store.clientes.filter(c => c.unidadeId === activeUnit)} onSalvar={(cfg) => { store.updateContrato(editar.id, cfg); setEditar(null); }} />
+          <ContratoForm inicial={editar} bankAccounts={bankAccounts} planos={store.planosDe(activeUnit)} clientes={clientesUnidade} onSalvar={(cfg) => { store.updateContrato(editar.id, cfg); setEditar(null); }} />
         </Modal>
       )}
       {faturar && (
