@@ -1817,6 +1817,7 @@ function RecebimentosCliente({ clientes = [], lancamentos = [], updateLancamento
   const [mesRef, setMesRef] = useState(MES_ATUAL);
   const [anoRef, setAnoRef] = useState(ANO_ATUAL);
   const [previa, setPrevia] = useState(null); // { vinculaveis:[{l,cliente}], ambiguos, semMatch }
+  const [verLista, setVerLista] = useState(false); // mostrar os recebimentos sem cliente antes de vincular
   const normTxt = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   const naoVinculados = lancamentos.filter((l) => l.tipo === "entrada" && l.status === "pago" && !l.clienteId);
   const calcularVinculos = () => {
@@ -1893,7 +1894,32 @@ function RecebimentosCliente({ clientes = [], lancamentos = [], updateLancamento
       {semVinculo > 0 && !previa && (
         <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", background: `${C.amber}14`, color: C.amber, borderRadius: 10, padding: "9px 12px", fontSize: 12.5, marginBottom: 12 }}>
           <span style={{ display: "flex", gap: 8, alignItems: "center" }}><AlertCircle size={15} /> {semVinculo} recebimento(s) pago(s) sem cliente vinculado.</span>
-          <button onClick={calcularVinculos} className="cw-btn" style={{ fontWeight: 600, fontSize: 12.5, color: "#fff", background: C.cafe, borderRadius: 9, padding: "7px 12px" }}>Vincular automaticamente</button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={() => setVerLista((v) => !v)} className="cw-btn" style={{ fontWeight: 600, fontSize: 12.5, color: C.cafe, background: "#fff", border: `1px solid ${C.cafeLine}`, borderRadius: 9, padding: "7px 12px" }}>{verLista ? "Ocultar recebimentos" : "Ver recebimentos"}</button>
+            <button onClick={calcularVinculos} className="cw-btn" style={{ fontWeight: 600, fontSize: 12.5, color: "#fff", background: C.cafe, borderRadius: 9, padding: "7px 12px" }}>Vincular automaticamente</button>
+          </div>
+        </div>
+      )}
+      {verLista && naoVinculados.length > 0 && (
+        <div style={{ background: C.white, border: `1px solid ${C.border2}`, borderRadius: 12, padding: 14, marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 10, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 13.5, fontWeight: 700 }}>Recebimentos pagos sem cliente vinculado ({naoVinculados.length})</div>
+            <div style={{ fontSize: 12, color: C.text3 }}>Total {fmt(naoVinculados.reduce((s, l) => s + (l.valor || 0), 0))}</div>
+          </div>
+          <div style={{ fontSize: 12, color: C.text3, marginBottom: 10 }}>Confira antes de vincular. Dá para vincular manualmente aqui — útil para os que o automático não identifica.</div>
+          <div style={{ maxHeight: 300, overflowY: "auto" }}>
+            {naoVinculados.map((l) => (
+              <div key={l.id} style={{ display: "grid", gridTemplateColumns: "88px 1fr 110px 200px", gap: 10, alignItems: "center", padding: "7px 0", borderTop: `1px solid ${C.border2}` }}>
+                <span style={{ fontSize: 11.5, color: C.text3, fontVariantNumeric: "tabular-nums" }}>{l.dataPagamento || l.data || "—"}</span>
+                <span style={{ fontSize: 12.5, color: C.text2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={l.descricao}>{l.descricao || "—"}</span>
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: C.green, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmt(l.valor)}</span>
+                <select defaultValue="" aria-label={`Vincular ${l.descricao} a um cliente`} onChange={(e) => { const c = clientes.find((x) => x.id === e.target.value); if (c && updateLancamento) updateLancamento(l.id, { clienteId: c.id, clienteNome: c.nome }); }} style={{ ...inp, padding: "6px 8px", fontSize: 12 }}>
+                  <option value="">Vincular a…</option>
+                  {clientesOrd.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
         </div>
       )}
       {previa && (
