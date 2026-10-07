@@ -160,20 +160,17 @@ Deno.test("com ISS retido a alíquota volta a ser informada, mesmo no Simples", 
   assertStringIncludes(xml, "<tpRetISSQN>2</tpRetISSQN>");
 });
 
-Deno.test("cTribMun sai do desdobro depois da barra e cNBS vai só com dígitos", () => {
+Deno.test("cTribMun sai do desdobro depois da barra; cServ termina em xDescServ", () => {
   const xml = dpsLux();
-  assertStringIncludes(xml, "<cTribNac>170201</cTribNac><cTribMun>001</cTribMun>");
-  assertStringIncludes(xml, "<cNBS>118064000</cNBS>");
+  assertStringIncludes(xml, "<cTribNac>170201</cTribNac><cTribMun>001</cTribMun><xDescServ>");
+  assertStringIncludes(xml, "</xDescServ></cServ>");
 });
 
-Deno.test("cServ: xDescServ é o último filho; cNBS vem antes dele (ordem do XSD v1.01)", () => {
-  // No layout DPS 1.01, xDescServ encerra o cServ. Mandar cNBS depois quebra o
-  // esquema (E1235). Espelha a ordem do emissor que já emite (cTribNac, cTribMun,
-  // cNBS, xDescServ).
-  const xml = dpsLux();
-  assertStringIncludes(xml, "<cNBS>118064000</cNBS><xDescServ>");
-  assertStringIncludes(xml, "</xDescServ></cServ>");
-  assertEquals(/<xDescServ>[^<]*<\/xDescServ><cNBS>/.test(xml), false);
+Deno.test("cNBS NÃO é enviado no cServ (SEFIN recusa antes do xDescServ; golden não envia)", () => {
+  // O SEFIN respondeu E1235: cServ tem filho inválido cNBS, esperava xDescServ.
+  // O emissor que funciona (ContaOne) não manda cNBS, e não é exigido no Simples
+  // até 2027. Então cServ = cTribNac, [cTribMun], xDescServ — sem cNBS.
+  assertEquals(/cNBS/.test(dpsLux()), false);
 });
 
 Deno.test("Simples Nacional informa regApTribSN=1 dentro de regTrib (ordem do golden)", () => {

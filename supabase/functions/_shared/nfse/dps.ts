@@ -175,7 +175,9 @@ export function montarDpsXml(config: ConfigFiscal, input: EmitirNfseInput, agora
   const aliq = (input.aliquotaISS ?? c.aliquota_iss ?? 0);
   const tpRet = tpRetISSQNDe(c.iss_retido);
   const cTribMun = cTribMunDe(c);
-  const cNBS = String((c.nbs as string) || "").replace(/\D/g, "");
+  // cNBS fica DE FORA do cServ: o SEFIN recusa cNBS antes do xDescServ (E1235) e
+  // o emissor que já funciona (ContaOne) não envia cNBS. Não é exigido para o
+  // Simples até 2027. Se um dia for incluir, confirmar a posição no XSD v1.01.
   const informarAliquota = Number(aliq) > 0 && !simplesSemRetencao(c);
   const descServ = (input.descricao || c.descricao_servico || "Serviço").slice(0, 2000);
 
@@ -198,7 +200,7 @@ export function montarDpsXml(config: ConfigFiscal, input: EmitirNfseInput, agora
 `<toma><${tagToma}>${docToma}</${tagToma}><xNome>${escXml(t.nome)}</xNome>${montarEndToma(t)}</toma>` +
 `<serv>` +
 `<locPrest><cLocPrestacao>${cLocEmi}</cLocPrestacao></locPrest>` +
-`<cServ><cTribNac>${cTribNac}</cTribNac>${cTribMun ? `<cTribMun>${cTribMun}</cTribMun>` : ``}${cNBS ? `<cNBS>${cNBS}</cNBS>` : ``}<xDescServ>${escXml(descServ)}</xDescServ></cServ>` +
+`<cServ><cTribNac>${cTribNac}</cTribNac>${cTribMun ? `<cTribMun>${cTribMun}</cTribMun>` : ``}<xDescServ>${escXml(descServ)}</xDescServ></cServ>` +
 `</serv>` +
 `<valores>` +
 `<vServPrest><vServ>${input.valor.toFixed(2)}</vServ></vServPrest>` +
