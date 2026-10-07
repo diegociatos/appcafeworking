@@ -1231,7 +1231,9 @@ export function StoreProvider({ children }) {
   };
 
   // Contratos recorrentes ---------------------------------------------------
-  const mesFimContrato = (c) => Math.min(c.mesInicial + c.meses - 1, 11);
+  // Contrato anual tem 1 parcela, mas vale o ano todo: mantém "ativo" até
+  // dezembro para não pedir renovação no mesmo mês da cobrança.
+  const mesFimContrato = (c) => c.periodicidade === "anual" ? 11 : Math.min(c.mesInicial + c.meses - 1, 11);
   const contratosDe = (unidadeId) => contratos.filter((c) => c.unidadeId === unidadeId);
   // "Vencendo" = ativo cujo prazo já chegou ao fim → financeiro precisa renovar.
   const contratosVencendoDe = (unidadeId) =>
@@ -1260,6 +1262,7 @@ export function StoreProvider({ children }) {
     const contrato = {
       id, unidadeId, cliente: cfg.cliente, clienteId: cfg.clienteId || null, itens: cfg.itens || [], documento: cfg.documento, plano: cfg.plano, planoId: cfg.planoId || null,
       valorMensal: cfg.valorMensal, bankAccountId: cfg.bankAccountId, diaVencimento: cfg.diaVencimento || "10",
+      periodicidade: cfg.periodicidade === "anual" ? "anual" : "mensal",
       mesInicial: cfg.mesInicial, meses: cfg.meses, status: "ativo", criadoEm: new Date().toISOString().slice(0, 7),
     };
     setContratos((cs) => [...cs, contrato]);

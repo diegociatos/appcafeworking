@@ -877,6 +877,7 @@ function Contratos({ store, activeUnit }) {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {contratos.map((c) => {
+            const anualC = c.periodicidade === "anual";
             const fim = store.mesFimContrato(c);
             const decorridos = Math.max(0, Math.min(c.meses, MES_ATUAL - c.mesInicial + 1));
             const pct = Math.round((decorridos / c.meses) * 100);
@@ -892,6 +893,7 @@ function Contratos({ store, activeUnit }) {
                       <Badge color={venceu ? C.amber : encerrado ? C.text3 : C.green} bg={venceu ? C.amberPale : encerrado ? C.cream2 : C.greenPale}>
                         {venceu ? "Renovar" : encerrado ? "Encerrado" : "Ativo"}
                       </Badge>
+                      <Badge color={C.cafe} bg={C.cafePale}>{anualC ? "Anual" : "Mensal"}</Badge>
                     </div>
                     <div style={{ fontSize: 12.5, color: C.text3, marginTop: 2 }}>
                       {c.plano} · {conta?.apelido || "—"} · venc. dia {c.diaVencimento}
@@ -900,20 +902,26 @@ function Contratos({ store, activeUnit }) {
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <div style={{ fontFamily: serif, fontSize: 20, color: C.cafe }}>{fmt(c.valorMensal)}</div>
-                    <div style={{ fontSize: 10.5, color: C.text4 }}>por mês</div>
+                    <div style={{ fontSize: 10.5, color: C.text4 }}>{anualC ? "por ano" : "por mês"}</div>
                   </div>
                 </div>
 
                 {/* progresso do contrato */}
-                <div style={{ marginTop: 12 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: C.text3, marginBottom: 4 }}>
-                    <span>Mês {Math.min(decorridos, c.meses)} de {c.meses}{!venceu && !encerrado ? ` · ${MODO_REAL ? "próxima parcela" : "próximo boleto"} em ${MESES[Math.min(MES_ATUAL + 1, fim)]}` : ""}</span>
-                    <span>{MESES[c.mesInicial]}–{MESES[fim]}</span>
+                {anualC ? (
+                  <div style={{ marginTop: 12, fontSize: 11.5, color: C.text3 }}>
+                    {MODO_REAL ? "Parcela anual" : "Boleto anual"} · competência {MESES[c.mesInicial]}
                   </div>
-                  <div style={{ height: 7, borderRadius: 6, background: C.cream2, overflow: "hidden" }}>
-                    <div style={{ width: `${pct}%`, height: "100%", background: venceu ? C.amber : C.green, borderRadius: 6 }} />
+                ) : (
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: C.text3, marginBottom: 4 }}>
+                      <span>Mês {Math.min(decorridos, c.meses)} de {c.meses}{!venceu && !encerrado ? ` · ${MODO_REAL ? "próxima parcela" : "próximo boleto"} em ${MESES[Math.min(MES_ATUAL + 1, fim)]}` : ""}</span>
+                      <span>{MESES[c.mesInicial]}–{MESES[fim]}</span>
+                    </div>
+                    <div style={{ height: 7, borderRadius: 6, background: C.cream2, overflow: "hidden" }}>
+                      <div style={{ width: `${pct}%`, height: "100%", background: venceu ? C.amber : C.green, borderRadius: 6 }} />
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
                   {!encerrado && <Btn onClick={() => setFaturar(c)}><Barcode size={15} /> Faturar boleto</Btn>}
@@ -1083,11 +1091,13 @@ function ContratoForm({ bankAccounts, planos = [], clientes = [], inicial = null
     clienteId: inicial.clienteId || "", itens: inicial.itens || [], cliente: inicial.cliente || "", documento: inicial.documento || "",
     planoId: inicial.planoId || "", plano: inicial.plano || "", valorMensal: String(inicial.valorMensal ?? ""),
     bankAccountId: inicial.bankAccountId || bankAccounts[0]?.id || "", diaVencimento: inicial.diaVencimento || "10",
+    periodicidade: inicial.periodicidade === "anual" ? "anual" : "mensal",
     mesInicial: Number(inicial.mesInicial ?? MES_ATUAL), meses: Number(inicial.meses ?? 12),
   } : {
     clienteId: "", itens: [], cliente: "", documento: "", planoId: "", plano: "", valorMensal: "", bankAccountId: bankAccounts[0]?.id || "",
-    diaVencimento: "10", mesInicial: MES_ATUAL, meses: 12,
+    diaVencimento: "10", periodicidade: "mensal", mesInicial: MES_ATUAL, meses: 12,
   });
+  const anual = f.periodicidade === "anual";
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const escolherPlano = (id) => {
     const p = planos.find((x) => x.id === id);
@@ -1128,8 +1138,18 @@ function ContratoForm({ bankAccounts, planos = [], clientes = [], inicial = null
         {!planos.length && <p>Cadastre os serviços em Planos e serviços para selecioná-los aqui.</p>}
         {!!f.itens.length && <><p>Soma dos itens: {fmt(totalItens)}. O valor mensal abaixo é o valor final do contrato, incluindo o plano.</p><Btn variant="ghost" onClick={() => setF({ ...f, valorMensal: String(totalItens) })}>Usar soma dos itens como valor mensal</Btn></>}
       </fieldset>
+      <Field label="Cobrança">
+        <select
+          value={f.periodicidade}
+          onChange={(e) => setF((s) => ({ ...s, periodicidade: e.target.value, meses: e.target.value === "anual" ? 1 : (s.meses > 1 ? s.meses : 12) }))}
+          style={inp}
+        >
+          <option value="mensal">Mensal · 1 parcela por mês</option>
+          <option value="anual">Anual · 1 parcela por ano</option>
+        </select>
+      </Field>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <Field label="Valor mensal (R$)"><input type="number" min="0" step="0.01" value={f.valorMensal} onChange={set("valorMensal")} style={inp} placeholder="0,00" /></Field>
+        <Field label={anual ? "Valor anual (R$)" : "Valor mensal (R$)"}><input type="number" min="0" step="0.01" value={f.valorMensal} onChange={set("valorMensal")} style={inp} placeholder="0,00" /></Field>
         <Field label="Dia de vencimento"><input value={f.diaVencimento} onChange={set("diaVencimento")} style={inp} placeholder="10" /></Field>
       </div>
       {!MODO_REAL && (
@@ -1139,20 +1159,26 @@ function ContratoForm({ bankAccounts, planos = [], clientes = [], inicial = null
           </select>
         </Field>
       )}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <Field label="Início (competência)">
+      <div style={{ display: "grid", gridTemplateColumns: anual ? "1fr" : "1fr 1fr", gap: 12 }}>
+        <Field label={anual ? "Competência (mês da cobrança)" : "Início (competência)"}>
           <select value={f.mesInicial} onChange={(e) => setF({ ...f, mesInicial: +e.target.value })} style={inp}>
             {MESES.map((m, i) => <option key={i} value={i}>{m}</option>)}
           </select>
         </Field>
-        <Field label="Prazo (meses)">
-          <input type="number" min="1" max="12" value={f.meses} onChange={(e) => setF({ ...f, meses: Math.max(1, Math.min(12, +e.target.value)) })} style={inp} />
-        </Field>
+        {!anual && (
+          <Field label="Prazo (meses)">
+            <input type="number" min="1" max="12" value={f.meses} onChange={(e) => setF({ ...f, meses: Math.max(1, Math.min(12, +e.target.value)) })} style={inp} />
+          </Field>
+        )}
       </div>
       <div style={{ fontSize: 12, color: C.text3, background: C.cafePale, borderRadius: 9, padding: "9px 12px", marginBottom: 14, display: "flex", alignItems: "center", gap: 7 }}>
-        <Barcode size={14} color={C.cafe} /> {inicial ? "As parcelas pagas e os meses anteriores serão preservados. As previsões futuras serão recalculadas." : <>{MODO_REAL ? "Provisiona" : "Emite"} {Math.min(f.meses, MESES.length - f.mesInicial)} {MODO_REAL ? "parcelas" : "boletos"} ({MESES[f.mesInicial]}–{MESES[ate]}), 1 por mês.</>}
+        <Barcode size={14} color={C.cafe} /> {inicial
+          ? "As parcelas pagas e os meses anteriores serão preservados. As previsões futuras serão recalculadas."
+          : anual
+            ? <>{MODO_REAL ? "Provisiona" : "Emite"} {MODO_REAL ? "1 parcela anual" : "1 boleto anual"} na competência de {MESES[f.mesInicial]}.</>
+            : <>{MODO_REAL ? "Provisiona" : "Emite"} {Math.min(f.meses, MESES.length - f.mesInicial)} {MODO_REAL ? "parcelas" : "boletos"} ({MESES[f.mesInicial]}–{MESES[ate]}), 1 por mês.</>}
       </div>
-      <Btn disabled={!valido} style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.5 }} onClick={() => valido && onSalvar({ ...f, valorMensal: +f.valorMensal, meses: +f.meses })}>
+      <Btn disabled={!valido} style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.5 }} onClick={() => valido && onSalvar({ ...f, valorMensal: +f.valorMensal, meses: anual ? 1 : +f.meses })}>
         {inicial ? <Edit3 size={16} /> : <FileSignature size={16} />} {inicial ? "Salvar alterações" : MODO_REAL ? "Criar contrato" : "Criar contrato e emitir boletos"}
       </Btn>
     </>
