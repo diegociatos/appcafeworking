@@ -193,12 +193,12 @@ export function montarDpsXml(config: ConfigFiscal, input: EmitirNfseInput, agora
 `<prest>` +
 `<CNPJ>${cnpjPrest}</CNPJ>` +
 (c.inscricao_municipal ? `<IM>${escXml(String(c.inscricao_municipal))}</IM>` : ``) +
-`<regTrib><opSimpNac>${opSimpNac}</opSimpNac><regEspTrib>${regEspTrib}</regEspTrib></regTrib>` +
+`<regTrib><opSimpNac>${opSimpNac}</opSimpNac>${opSimpNac !== "1" ? `<regApTribSN>1</regApTribSN>` : ``}<regEspTrib>${regEspTrib}</regEspTrib></regTrib>` +
 `</prest>` +
 `<toma><${tagToma}>${docToma}</${tagToma}><xNome>${escXml(t.nome)}</xNome>${montarEndToma(t)}</toma>` +
 `<serv>` +
 `<locPrest><cLocPrestacao>${cLocEmi}</cLocPrestacao></locPrest>` +
-`<cServ><cTribNac>${cTribNac}</cTribNac>${cTribMun ? `<cTribMun>${cTribMun}</cTribMun>` : ``}<xDescServ>${escXml(descServ)}</xDescServ>${cNBS ? `<cNBS>${cNBS}</cNBS>` : ``}</cServ>` +
+`<cServ><cTribNac>${cTribNac}</cTribNac>${cTribMun ? `<cTribMun>${cTribMun}</cTribMun>` : ``}${cNBS ? `<cNBS>${cNBS}</cNBS>` : ``}<xDescServ>${escXml(descServ)}</xDescServ></cServ>` +
 `</serv>` +
 `<valores>` +
 `<vServPrest><vServ>${input.valor.toFixed(2)}</vServ></vServPrest>` +
@@ -291,8 +291,13 @@ export function escXml(s: string): string {
   // não aceitam espaços em excesso. Um bairro "Gutierrez " (espaço no fim, comum
   // vindo da busca de CNPJ) derruba a nota com E1235. Colapsa runs de espaço e
   // apara as pontas — inofensivo para campos que já vêm limpos.
-  return (s ?? "").replace(/\s+/g, " ").trim().replace(/[<>&'"]/g, (ch) =>
-    ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" }[ch] as string));
+  // Escapa só & < > — é o que a C14N faz no CONTEÚDO de texto. Apóstrofo e aspas
+  // NÃO se escapam em texto na canonicalização; se escaparmos (&apos;/&quot;), o
+  // digest é calculado sobre um texto diferente do que o SEFIN recanoniza
+  // (ele desfaz o &apos; antes de assinar) → assinatura não bate (E0714). Como
+  // escXml só é usado em conteúdo de elemento (nunca em atributo), isto é seguro.
+  return (s ?? "").replace(/\s+/g, " ").trim().replace(/[<>&]/g, (ch) =>
+    ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[ch] as string));
 }
 
 // Endereço do tomador (<end>) no layout nacional. Só é incluído quando dá para

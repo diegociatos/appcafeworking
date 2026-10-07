@@ -166,6 +166,35 @@ Deno.test("cTribMun sai do desdobro depois da barra e cNBS vai só com dígitos"
   assertStringIncludes(xml, "<cNBS>118064000</cNBS>");
 });
 
+Deno.test("cServ: xDescServ é o último filho; cNBS vem antes dele (ordem do XSD v1.01)", () => {
+  // No layout DPS 1.01, xDescServ encerra o cServ. Mandar cNBS depois quebra o
+  // esquema (E1235). Espelha a ordem do emissor que já emite (cTribNac, cTribMun,
+  // cNBS, xDescServ).
+  const xml = dpsLux();
+  assertStringIncludes(xml, "<cNBS>118064000</cNBS><xDescServ>");
+  assertStringIncludes(xml, "</xDescServ></cServ>");
+  assertEquals(/<xDescServ>[^<]*<\/xDescServ><cNBS>/.test(xml), false);
+});
+
+Deno.test("Simples Nacional informa regApTribSN=1 dentro de regTrib (ordem do golden)", () => {
+  // O emissor que funciona manda <opSimpNac>3</opSimpNac><regApTribSN>1</regApTribSN><regEspTrib>0</regEspTrib>.
+  // A ausência do regApTribSN derruba toda emissão do Simples (E1235).
+  assertStringIncludes(dpsLux(), "<regTrib><opSimpNac>3</opSimpNac><regApTribSN>1</regApTribSN><regEspTrib>0</regEspTrib></regTrib>");
+  // Fora do Simples (opSimpNac=1) não há regApTribSN.
+  assertEquals(/regApTribSN/.test(dpsLux({ regime: "Lucro Presumido" })), false);
+});
+
+Deno.test("escXml não escapa apóstrofo/aspas no texto (C14N não escapa; evita E0714)", () => {
+  const xml = montarDpsXml(
+    { ...CFG_LUX } as never,
+    { valor: 1, descricao: `Sala "A" do O'Brien`, rpsNumero: "1", tomador: TOMADOR } as never,
+  );
+  assertStringIncludes(xml, `<xDescServ>Sala "A" do O'Brien</xDescServ>`);
+  assertEquals(/&apos;|&quot;/.test(xml), false);
+  // & continua escapado (C14N escapa & < > no texto).
+  assertStringIncludes(montarDpsXml({ ...CFG_LUX } as never, { valor: 1, descricao: "A & B", rpsNumero: "1", tomador: TOMADOR } as never), "<xDescServ>A &amp; B</xDescServ>");
+});
+
 Deno.test("sem barra no código nacional, cTribMun fica de fora", () => {
   const xml = dpsLux({ codigo_tributacao_nacional: "170201" });
   assertEquals(/cTribMun/.test(xml), false);
