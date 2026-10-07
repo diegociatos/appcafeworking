@@ -332,6 +332,19 @@ function ConfigFiscal({ cfg, unidadeNome, unidadeId, onSalvar }) {
   const [cep, setCep] = useState("");
   const [buscandoCnpj, setBuscandoCnpj] = useState(false);
   const [buscandoCep, setBuscandoCep] = useState(false);
+  const [ultimoDps, setUltimoDps] = useState("");
+  const [numSalvando, setNumSalvando] = useState(false);
+  const [numMsg, setNumMsg] = useState(null); // { ok, texto }
+  const salvarNumeracao = async () => {
+    const n = Math.floor(Number(ultimoDps));
+    if (!Number.isFinite(n) || n < 1) { setNumMsg({ ok: false, texto: "Informe um número inteiro ≥ 1." }); return; }
+    setNumSalvando(true); setNumMsg(null);
+    try {
+      const r = await nfseApi.definirNumeracao(unidadeId, n);
+      setNumMsg({ ok: true, texto: `Numeração salva: última DPS ${r.ultimo_numero} (série ${r.serie}). A próxima nota será a ${r.proximo}.` });
+    } catch (e) { setNumMsg({ ok: false, texto: e.message || "Não foi possível salvar a numeração." }); }
+    finally { setNumSalvando(false); }
+  };
   const set = (k) => (e) => { setF({ ...f, [k]: e.target.value }); setSalvo(false); };
   const onCnpj = (e) => {
     const v = e.target.value; setF((p) => ({ ...p, cnpj: v })); setSalvo(false);
@@ -499,6 +512,17 @@ function ConfigFiscal({ cfg, unidadeNome, unidadeId, onSalvar }) {
           Só funciona com <b>certificado digital enviado</b>, <b>emissão ativa</b> e ambiente em <b>Produção</b>: a nota sai de verdade, com valor fiscal, no valor pago e com o CPF/CNPJ da cobrança. Uma nota por pagamento. Se não der para emitir, o pagamento é confirmado normalmente e a equipe recebe um e-mail com o motivo.
           {f.emitirAoReceber && (!f.emissaoAtiva || f.ambiente !== "producao" || !cfg?.certificadoEnviadoEm) && <b style={{ color: C.red }}> Hoje não vai emitir: {[!cfg?.certificadoEnviadoEm && "falta o certificado", !f.emissaoAtiva && "a emissão está inativa", f.ambiente !== "producao" && "o ambiente não é Produção"].filter(Boolean).join(", ")}.</b>}
         </span>
+      </div>
+      <div style={{ background: C.cream2, borderRadius: 12, padding: 12, marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>Numeração da DPS</div>
+        <div style={{ fontSize: 11.5, color: C.text3, marginBottom: 10 }}>
+          Se esta empresa já emitiu NFS-e pelo portal nacional (por outro sistema), informe o <b>número da última DPS emitida</b> para a próxima continuar daí e não colidir (erro E0014). A numeração nunca retrocede.
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <input type="number" min="1" step="1" value={ultimoDps} onChange={(e) => setUltimoDps(e.target.value)} style={{ ...inp, maxWidth: 180 }} placeholder="Ex: 507" inputMode="numeric" aria-label="Número da última DPS emitida" />
+          <Btn variant="ghost" disabled={numSalvando || !nfseApi.configured} onClick={salvarNumeracao}>{numSalvando ? "Salvando…" : "Salvar numeração"}</Btn>
+        </div>
+        {numMsg && <div role="status" style={{ fontSize: 11.5, marginTop: 8, color: numMsg.ok ? C.green : C.red }}>{numMsg.texto}</div>}
       </div>
       <Btn style={{ width: "100%", justifyContent: "center" }} onClick={() => { onSalvar(f); setSalvo(true); }}>
         <SlidersHorizontal size={16} /> {salvo ? "Configuração salva" : "Salvar configuração fiscal"}

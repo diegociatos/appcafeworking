@@ -63,4 +63,6 @@ export const nfseApi = {
   cancelar: (nota_id, motivo) => callFn("cancelar-nfse", { nota_id, motivo }),
   // Diagnóstico: testa o endpoint nacional + convênio do município (não emite).
   testar: (unidade_id) => callFn("testar-fiscal", { unidade_id }),
+  // Define o último nDPS já emitido (continua a sequência; não deixa colidir).
+  definirNumeracao: (unidade_id, ultimo_numero) => callFn("definir-numeracao-nfse", { unidade_id, ultimo_numero }),
 };
