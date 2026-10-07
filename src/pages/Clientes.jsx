@@ -90,7 +90,7 @@ export default function Clientes({ go }) {
   const cli = clientes.find((c) => c.id === sel);
   const termo = busca.trim().toLowerCase();
   const lista = clientes
-    .filter((c) => !termo || `${c.nome || ""} ${c.cnpj || ""} ${c.plano || ""}`.toLowerCase().includes(termo))
+    .filter((c) => !termo || `${c.nome || ""} ${c.cnpj || ""} ${c.plano || ""} ${c.vinculo === "avulso" ? "avulso" : "contrato"}`.toLowerCase().includes(termo))
     .slice()
     .sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"));
   if (cli) {
@@ -204,7 +204,10 @@ export default function Clientes({ go }) {
                 )}
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                <Badge color={C.cafe}>{c.plano}</Badge>
+                <Badge color={c.vinculo === "avulso" ? C.amber : C.teal} bg={c.vinculo === "avulso" ? C.amberPale : C.tealPale}>
+                  {c.vinculo === "avulso" ? "Avulso" : "Contrato"}
+                </Badge>
+                {c.plano && <Badge color={C.cafe}>{c.plano}</Badge>}
                 {c.fiscal && <Badge color={C.teal}>Endereço Fiscal</Badge>}
                 {novos > 0 && (
                   <Badge color={C.amber} bg={C.amberPale}>
@@ -306,6 +309,7 @@ function AcessoApp({ cli, acesso, podeConvidar, convite, onConvidar }) {
 function NovoClienteForm({ inicial = {}, unidades, planosDe, onSalvar }) {
   const [f, setF] = useState({
     nome: inicial.nome || "", cnpj: inicial.cnpj || "", plano: inicial.plano || "",
+    vinculo: inicial.vinculo === "avulso" ? "avulso" : "contrato",
     unidade: inicial.unidade || unidades[0]?.nome || "", fiscal: inicial.fiscal || false,
     contato: inicial.contato || "", email: inicial.email || "", emailsAdicionais: inicial.emailsAdicionais || [], tel: inicial.tel || "",
     cep: inicial.cep || "", endereco: inicial.endereco || "", numero: inicial.numero || "",
@@ -377,6 +381,15 @@ function NovoClienteForm({ inicial = {}, unidades, planosDe, onSalvar }) {
         </Field>
       </div>
       {erroBusca && <div style={{ fontSize: 11.5, color: C.red, marginTop: -6, marginBottom: 10 }}>{erroBusca}</div>}
+      <Field label="Tipo de cliente">
+        <select value={f.vinculo} onChange={set("vinculo")} style={inp}>
+          <option value="contrato">Com contrato / plano (recorrente)</option>
+          <option value="avulso">Avulso (uso pontual)</option>
+        </select>
+        <div style={{ fontSize: 11, color: C.text4, marginTop: 4 }}>
+          {f.vinculo === "avulso" ? "Cliente de uso pontual — sem cobrança recorrente. O plano abaixo é opcional." : "Cliente com contrato/plano recorrente."}
+        </div>
+      </Field>
       <Field label="Plano / contrato">
         <select value={f.plano} onChange={set("plano")} style={inp}>
           <option value="">— sem plano —</option>
