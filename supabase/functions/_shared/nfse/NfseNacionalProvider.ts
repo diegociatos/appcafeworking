@@ -68,6 +68,14 @@ export class NfseNacionalProvider implements NfseProvider {
    * negocia h2 por ALPN, então desligamos http2 no cliente.
    */
   private async mtlsFetch(url: string, init?: RequestInit): Promise<Response> {
+    // Com o transmissor ligado, quem tem o certificado é ele — não exigimos as
+    // credenciais do Vault (que podem estar vazias). Sem transmissor (local), o
+    // mTLS direto precisa do cert/key em PEM. Isto também vale para buscar o
+    // DANFSe: antes, pedir as creds aqui derrubava a busca do PDF e a nota saía
+    // sem anexo.
+    if (transmissorConfigurado()) {
+      return buscarSefin(url, init, undefined, undefined, Deno, fetch as never, this.config.unidade_id);
+    }
     const pem = credenciaisPemComCadeia(this.creds);
     return buscarSefin(url, init, pem.cert, pem.key, Deno, fetch as never, this.config.unidade_id);
   }
