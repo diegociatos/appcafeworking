@@ -1,0 +1,52 @@
+project_id = "lmgbysfrbtgqzbtouzft"
+
+# Funções PÚBLICAS (sem JWT do gateway): webhooks externos e endpoints do site/
+# portal do cliente, que fazem a própria autenticação no código. Fixar aqui evita
+# que um redeploy sem --no-verify-jwt volte a exigir JWT e derrube o endpoint em
+# silêncio (foi o que pausou a fila do Asaas por 14 dias). Lista = DEPLOY.md.
+# QUALQUER função nova pública precisa entrar aqui.
+
+[functions.asaas-webhook]
+verify_jwt = false
+[functions.webhook-boletos]
+verify_jwt = false
+[functions.remover-conta-bancaria]
+verify_jwt = false
+[functions.unidades-publicas]
+verify_jwt = false
+[functions.cadastrar-cliente]
+verify_jwt = false
+[functions.cancelar-reserva]
+verify_jwt = false
+[functions.contas-plataforma]
+verify_jwt = false
+[functions.email-ms365]
+verify_jwt = false
+[functions.email-ms365-callback]
+verify_jwt = false
+[functions.enviar-email]
+verify_jwt = false
+[functions.convidar-cliente]
+verify_jwt = false
+[functions.aberturas]
+verify_jwt = false
+[functions.rotina-diaria]
+verify_jwt = false
+[functions.cancelar-assinatura]
+verify_jwt = false
+[functions.documentos-assinatura]
+verify_jwt = false
+[functions.gestao-assinaturas]
+verify_jwt = false
+[functions.kit-endereco]
+verify_jwt = false
+[functions.lead-site]
+verify_jwt = false
+[functions.minha-assinatura]
+verify_jwt = false
+[functions.minhas-correspondencias]
+verify_jwt = false
+[functions.minhas-faturas]
+verify_jwt = false
+[functions.reservas-cliente]
+verify_jwt = false
