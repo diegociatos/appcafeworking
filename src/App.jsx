@@ -403,6 +403,9 @@ export default function App() {
                     </div>
                     {g.itens.map((s) => {
                       const ativo = finTab === s.id;
+                      // Mostra o contador na sub-aba certa, para a equipe saber ONDE está
+                      // a novidade (o item pai "Financeiro" sozinho não dizia em qual aba).
+                      const subBadge = s.id === "contratos" ? contratosRenovar : 0;
                       return (
                         <button
                           key={s.id}
@@ -417,7 +420,20 @@ export default function App() {
                           }}
                         >
                           <s.icon size={14} style={{ flexShrink: 0, opacity: ativo ? 1 : 0.75 }} />
-                          <span>{s.label}</span>
+                          <span style={{ flex: 1 }}>{s.label}</span>
+                          {subBadge > 0 && (
+                            <span
+                              className="cw-pulse"
+                              title="Contrato(s) a renovar"
+                              style={{
+                                background: C.amber, color: "#fff", fontSize: 10, fontWeight: 700,
+                                minWidth: 17, height: 17, borderRadius: 9, padding: "0 5px",
+                                display: "grid", placeItems: "center",
+                              }}
+                            >
+                              {subBadge}
+                            </span>
+                          )}
                         </button>
                       );
                     })}
