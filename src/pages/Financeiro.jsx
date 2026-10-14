@@ -155,7 +155,7 @@ export default function Financeiro({ finTab }) {
             onExcluir={(l) => store.removeLancamento(l.id)}
           />
         )}
-        {tab === "contratos" && <Contratos store={store} activeUnit={activeUnit} />}
+        {tab === "contratos" && <Contratos store={store} activeUnit={activeUnit} clientesUnidade={clientesUnidade} />}
         {tab === "confirmacoes" && <ConfirmacoesEmail unidadeId={activeUnit} />}
         {tab === "extrato" && <Extrato contas={contas} lancamentos={lancamentos} onAbrir={setDetalheLanc} onRemoverImportados={(contaId) => store.removerImportados(activeUnit, contaId)} />}
         {tab === "dre" && <DRE lancamentos={lancamentos} categorias={categorias} />}
@@ -841,7 +841,7 @@ function ContaPRForm({ inicialTipo, contas, categorias, bankAccounts = [], clien
 }
 
 // ===== CONTRATOS RECORRENTES ==============================================
-function Contratos({ store, activeUnit }) {
+function Contratos({ store, activeUnit, clientesUnidade = [] }) {
   const contratos = store.contratosDe(activeUnit);
   const bankAccounts = store.bankAccountsDe(activeUnit);
   const vencendo = store.contratosVencendoDe(activeUnit);
