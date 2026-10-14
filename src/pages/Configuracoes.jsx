@@ -79,7 +79,7 @@ export default function Configuracoes({ go }) {
             <input defaultValue="atendimento@cafeworking.com.br" style={inp} />
           </Field>
           <Field label="WhatsApp">
-            <input defaultValue="(31) 99712-9789" style={inp} />
+            <input defaultValue="(31) 99657-1215" style={inp} />
           </Field>
           <Field label="Fuso · Moeda">
             <input defaultValue="America/Sao_Paulo · BRL (R$)" style={inp} />
