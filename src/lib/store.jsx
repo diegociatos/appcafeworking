@@ -1231,18 +1231,30 @@ export function StoreProvider({ children }) {
   };
 
   // Contratos recorrentes ---------------------------------------------------
-  // Contrato anual tem 1 parcela, mas vale o ano todo: mantém "ativo" até
-  // dezembro para não pedir renovação no mesmo mês da cobrança.
-  const mesFimContrato = (c) => c.periodicidade === "anual" ? 11 : Math.min(c.mesInicial + c.meses - 1, 11);
+  // Competência absoluta = ano*12 + mês (0-11). Permite contratos que atravessam
+  // a virada do ano sem parar as parcelas em dezembro. Contratos antigos (só
+  // mesInicial/meses, sem anoInicial) caem no ano corrente e seguem valendo.
+  const COMP_ATUAL = ANO_ATUAL * 12 + MES_ATUAL;
+  const anoInicialContrato = (c) => Number(c.anoInicial ?? ANO_ATUAL);
+  // offset do 1º mês relativo a anoInicial (sempre o próprio mesInicial)
+  const compInicioContrato = (c) => anoInicialContrato(c) * 12 + Number(c.mesInicial || 0);
+  // offset do último mês: anual vale 12 meses; mensal, o prazo informado (sem teto)
+  const compFimContrato = (c) => compInicioContrato(c) + (c.periodicidade === "anual" ? 11 : Math.max(1, Number(c.meses || 1)) - 1);
+  // Compat: callers antigos pediam só o índice 0-11 do mês do fim.
+  const mesFimContrato = (c) => ((compFimContrato(c) % 12) + 12) % 12;
+  const anoFimContrato = (c) => Math.floor(compFimContrato(c) / 12);
   const contratosDe = (unidadeId) => contratos.filter((c) => c.unidadeId === unidadeId);
-  // "Vencendo" = ativo cujo prazo já chegou ao fim → financeiro precisa renovar.
+  // "Vencendo" = ativo cuja última competência já passou (ou é a atual) → renovar.
   const contratosVencendoDe = (unidadeId) =>
-    contratos.filter((c) => c.unidadeId === unidadeId && c.status === "ativo" && mesFimContrato(c) <= MES_ATUAL);
+    contratos.filter((c) => c.unidadeId === unidadeId && c.status === "ativo" && compFimContrato(c) <= COMP_ATUAL);
 
-  // Provisiona as cobranças mensais (contas a receber + boletos) de um período.
-  const gerarCobrancasContrato = (c, inicio, fim, valor, sufixo = "") => {
+  // Provisiona as cobranças mensais (contas a receber + boletos) de uma faixa de
+  // offsets de mês RELATIVOS a anoInicial do contrato. Offsets > 11 viram meses do
+  // ano seguinte dentro do addContaRecorrente (ex.: mesInicial 10 + 5 meses →
+  // nov, dez, jan, fev, mar do ano seguinte).
+  const gerarCobrancasContrato = (c, offInicio, offFim, valor, sufixo = "") => {
     const meses = [];
-    for (let m = inicio; m <= fim; m++) meses.push(m);
+    for (let m = offInicio; m <= offFim; m++) meses.push(m);
     if (!meses.length) return;
     const contaCx = contas.find((x) => x.unidadeId === c.unidadeId)?.id || "";
     const base = {
@@ -1250,7 +1262,7 @@ export function StoreProvider({ children }) {
       descricao: `${c.plano} · ${c.cliente}${sufixo}`,
       categoria: "Receita Operacional Bruta", subcategoria: "",
       valor, contaId: contaCx, data: String(c.diaVencimento || "10"),
-      recorrente: true, contratoId: c.id, clienteId: c.clienteId || null, ano: ANO_ATUAL,
+      recorrente: true, contratoId: c.id, clienteId: c.clienteId || null, ano: anoInicialContrato(c),
     };
     addContaRecorrente(c.unidadeId, base, meses, {
       gerar: true, bankAccountId: c.bankAccountId, sacado: c.cliente, sacadoDocumento: c.documento,
@@ -1259,22 +1271,32 @@ export function StoreProvider({ children }) {
 
   const addContrato = (unidadeId, cfg) => {
     const id = "ct_" + Date.now();
+    const anoInicial = Number(cfg.anoInicial ?? ANO_ATUAL);
+    const meses = cfg.periodicidade === "anual" ? 1 : Math.max(1, Number(cfg.meses || 1));
     const contrato = {
       id, unidadeId, cliente: cfg.cliente, clienteId: cfg.clienteId || null, itens: cfg.itens || [], documento: cfg.documento, plano: cfg.plano, planoId: cfg.planoId || null,
       valorMensal: cfg.valorMensal, bankAccountId: cfg.bankAccountId, diaVencimento: cfg.diaVencimento || "10",
       periodicidade: cfg.periodicidade === "anual" ? "anual" : "mensal",
-      mesInicial: cfg.mesInicial, meses: cfg.meses, status: "ativo", criadoEm: new Date().toISOString().slice(0, 7),
+      mesInicial: Number(cfg.mesInicial), anoInicial, meses,
+      dataInicio: cfg.dataInicio || null, dataFim: cfg.dataFim || null,
+      status: "ativo", criadoEm: new Date().toISOString().slice(0, 7),
     };
     setContratos((cs) => [...cs, contrato]);
-    gerarCobrancasContrato(contrato, cfg.mesInicial, Math.min(cfg.mesInicial + cfg.meses - 1, 11), cfg.valorMensal);
+    // offsets absolutos a partir de jan/anoInicial: começam em mesInicial.
+    // anual = 1 parcela (mesInicial); mensal = mesInicial..mesInicial+meses-1
+    gerarCobrancasContrato(contrato, contrato.mesInicial, contrato.mesInicial + (contrato.periodicidade === "anual" ? 0 : meses - 1), cfg.valorMensal);
     return contrato;
   };
 
   // Edita o cadastro sem reescrever o histórico financeiro. Somente provisões
-  // ainda não pagas, do mês atual em diante, são substituídas pelos novos dados.
+  // ainda não pagas, da competência atual em diante, são substituídas pelos
+  // novos dados — inclusive quando o contrato atravessa o ano.
   const updateContrato = (id, patch) => {
     const atual = contratos.find((x) => x.id === id);
     if (!atual) return null;
+    const anoInicial = Number(patch.anoInicial ?? atual.anoInicial ?? ANO_ATUAL);
+    const periodicidade = (patch.periodicidade ?? atual.periodicidade) === "anual" ? "anual" : "mensal";
+    const meses = periodicidade === "anual" ? 1 : Math.max(1, Number(patch.meses));
     const atualizado = {
       ...atual,
       ...patch,
@@ -1283,14 +1305,20 @@ export function StoreProvider({ children }) {
       itens: patch.itens || [],
       valorMensal: Number(patch.valorMensal),
       mesInicial: Number(patch.mesInicial),
-      meses: Number(patch.meses),
+      anoInicial, periodicidade, meses,
+      dataInicio: patch.dataInicio || atual.dataInicio || null,
+      dataFim: patch.dataFim || atual.dataFim || null,
       atualizadoEm: new Date().toISOString(),
     };
-    const inicioRecalculo = Math.max(MES_ATUAL, atualizado.mesInicial);
-    const fimAtualizado = Math.min(atualizado.mesInicial + atualizado.meses - 1, 11);
+    const compInicio = anoInicial * 12 + atualizado.mesInicial;
+    const compFim = compInicio + (periodicidade === "anual" ? 11 : meses - 1);
+    // só recalcula da competência atual (ou do início, se futuro) em diante
+    const compRecalculo = Math.max(COMP_ATUAL, compInicio);
+    const offRecalculo = compRecalculo - compInicio;          // meses desde o início do contrato até a competência de recálculo
+    const offFim = compFim - compInicio;                       // meses desde o início até a última competência
     const provisoesSubstituidas = lancamentos.filter((l) =>
       l.contratoId === id && l.status === "previsto" &&
-      (anoDoLancamento(l) > ANO_ATUAL || (anoDoLancamento(l) === ANO_ATUAL && l.mes >= MES_ATUAL)));
+      (anoDoLancamento(l) * 12 + l.mes) >= COMP_ATUAL);
     const idsLancamentos = new Set(provisoesSubstituidas.map((l) => l.id));
     const idsBoletos = new Set(provisoesSubstituidas.map((l) => l.boletoId).filter(Boolean));
 
@@ -1299,23 +1327,26 @@ export function StoreProvider({ children }) {
     if (idsBoletos.size) {
       setBoletos((bs) => bs.filter((b) => !idsBoletos.has(b.id) || b.status === "pago" || b.status === "cancelado"));
     }
-    if (atualizado.status === "ativo" && inicioRecalculo <= fimAtualizado) {
-      gerarCobrancasContrato(atualizado, inicioRecalculo, fimAtualizado, atualizado.valorMensal, " (atualizado)");
+    // offsets p/ gerarCobrancasContrato são relativos a anoInicial (= mesInicial + k)
+    const baseOff = atualizado.mesInicial;
+    if (atualizado.status === "ativo" && offRecalculo <= offFim) {
+      gerarCobrancasContrato(atualizado, baseOff + offRecalculo, baseOff + offFim, atualizado.valorMensal, " (atualizado)");
     }
     return atualizado;
   };
 
-  // Renova: novo prazo a partir do mês seguinte, com valor atualizado.
+  // Renova: novo prazo a partir da competência seguinte, com valor atualizado.
   const renovarContrato = (id, patch) => {
     const c = contratos.find((x) => x.id === id);
     if (!c) return;
-    const inicio = Math.min(MES_ATUAL + 1, 11);
+    const compInicio = COMP_ATUAL + 1;                 // mês que vem
+    const anoInicial = Math.floor(compInicio / 12);
+    const mesInicial = compInicio % 12;
     const novoValor = patch?.valorMensal ?? c.valorMensal;
-    const novoPrazo = patch?.meses ?? c.meses;
-    setContratos((cs) => cs.map((x) => (x.id === id
-      ? { ...x, valorMensal: novoValor, meses: novoPrazo, mesInicial: inicio, status: "ativo", renovadoEm: new Date().toISOString().slice(0, 7) }
-      : x)));
-    gerarCobrancasContrato({ ...c, valorMensal: novoValor }, inicio, Math.min(inicio + novoPrazo - 1, 11), novoValor, " (renovado)");
+    const novoPrazo = c.periodicidade === "anual" ? 1 : Math.max(1, Number(patch?.meses ?? c.meses));
+    const renovado = { ...c, valorMensal: novoValor, meses: novoPrazo, mesInicial, anoInicial, dataInicio: null, dataFim: null, status: "ativo", renovadoEm: new Date().toISOString().slice(0, 7) };
+    setContratos((cs) => cs.map((x) => (x.id === id ? renovado : x)));
+    gerarCobrancasContrato(renovado, mesInicial, mesInicial + (renovado.periodicidade === "anual" ? 0 : novoPrazo - 1), novoValor, " (renovado)");
   };
 
   const encerrarContrato = (id) => setContratos((cs) => cs.map((c) => (c.id === id ? { ...c, status: "encerrado" } : c)));
@@ -1584,7 +1615,7 @@ export function StoreProvider({ children }) {
       bankAccounts, boletos,
       bankAccountsDe, addBankAccount, updateBankAccount, removeBankAccount, conectarBanco, desconectarBanco,
       boletosDe, emitirBoleto, emitirBoletoConfirmado, cancelarBoleto, baixarBoleto, darBaixaLancamento, sincronizarBoleto,
-      contratos, contratosDe, contratosVencendoDe, mesFimContrato,
+      contratos, contratosDe, contratosVencendoDe, mesFimContrato, anoFimContrato, anoInicialContrato, compInicioContrato, compFimContrato,
       addContrato, updateContrato, renovarContrato, encerrarContrato,
       estoque, estoqueDe, estoqueBaixoDe, addItemEstoque, updateItemEstoque, removeItemEstoque, ajustarEstoque, comprarEstoque, venderEstoque, registrarSaidaEstoque,
       patrimonio, patrimonioDe, addAtivo, updateAtivo, removeAtivo,

@@ -21,11 +21,23 @@ import ConfirmacoesEmail from "./ConfirmacoesEmail.jsx";
 const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 // Competência atual a partir da data real (sem datas fixas).
 const { mes: MES_ATUAL, ano: ANO_ATUAL } = getCurrentCompetencia();
+const COMP_ATUAL = ANO_ATUAL * 12 + MES_ATUAL;
 const TODOS_MESES = MESES.map((_, i) => i);
 const diaDe = (data) => parseInt((data || "").slice(0, 2), 10) || 0;
 // "Jan" no ano atual, "Jan/25" em outro ano.
 const mesAnoCurto = (l) => (anoDoLancamento(l) === ANO_ATUAL ? MESES[l.mes] : `${MESES[l.mes]}/${String(anoDoLancamento(l)).slice(2)}`);
 const selPeq = { ...inp, width: "auto", padding: "7px 10px", fontSize: 13 };
+
+// Datas de contrato (dia/mês/ano) e competência absoluta (ano*12 + mês 0-11).
+const hojeISO = () => new Date().toISOString().slice(0, 10);
+const ymdDe = (iso) => { const [y, m, d] = String(iso || "").split("-").map(Number); return { y: y || ANO_ATUAL, m: (m || 1) - 1, d: d || 1 }; };
+const compDeISO = (iso) => { const { y, m } = ymdDe(iso); return y * 12 + m; };
+// soma n meses a uma data ISO, preservando o dia (limitado ao último dia do mês).
+const isoAddMeses = (iso, n) => { const { y, m, d } = ymdDe(iso); const t = y * 12 + m + Number(n || 0); const ny = Math.floor(t / 12), nm = ((t % 12) + 12) % 12; const ultimo = new Date(ny, nm + 1, 0).getDate(); return `${ny}-${String(nm + 1).padStart(2, "0")}-${String(Math.min(d, ultimo)).padStart(2, "0")}`; };
+// rótulo "out/2026" a partir de uma competência absoluta
+const compRotulo = (comp) => `${MESES[((comp % 12) + 12) % 12]}/${Math.floor(comp / 12)}`;
+// dataInicio de um contrato (novo campo ou derivada dos campos antigos)
+const inicioISODoContrato = (c) => c.dataInicio || `${c.anoInicial ?? ANO_ATUAL}-${String((c.mesInicial ?? 0) + 1).padStart(2, "0")}-01`;
 
 /** Seletor de ano (os anos com lançamento + o atual). */
 function SeletorAno({ valor, onChange, anos, style }) {
@@ -878,9 +890,11 @@ function Contratos({ store, activeUnit, clientesUnidade = [] }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {contratos.map((c) => {
             const anualC = c.periodicidade === "anual";
-            const fim = store.mesFimContrato(c);
-            const decorridos = Math.max(0, Math.min(c.meses, MES_ATUAL - c.mesInicial + 1));
-            const pct = Math.round((decorridos / c.meses) * 100);
+            const compIni = store.compInicioContrato(c);
+            const compFim = store.compFimContrato(c);
+            const totalMeses = Math.max(1, compFim - compIni + 1);
+            const decorridos = Math.max(0, Math.min(totalMeses, COMP_ATUAL - compIni + 1));
+            const pct = Math.round((decorridos / totalMeses) * 100);
             const venceu = venceuIds.has(c.id);
             const encerrado = c.status === "encerrado";
             const conta = bankAccounts.find((b) => b.id === c.bankAccountId);
@@ -909,13 +923,13 @@ function Contratos({ store, activeUnit, clientesUnidade = [] }) {
                 {/* progresso do contrato */}
                 {anualC ? (
                   <div style={{ marginTop: 12, fontSize: 11.5, color: C.text3 }}>
-                    {MODO_REAL ? "Parcela anual" : "Boleto anual"} · competência {MESES[c.mesInicial]}
+                    {MODO_REAL ? "Parcela anual" : "Boleto anual"} · competência {compRotulo(compIni)}
                   </div>
                 ) : (
                   <div style={{ marginTop: 12 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: C.text3, marginBottom: 4 }}>
-                      <span>Mês {Math.min(decorridos, c.meses)} de {c.meses}{!venceu && !encerrado ? ` · ${MODO_REAL ? "próxima parcela" : "próximo boleto"} em ${MESES[Math.min(MES_ATUAL + 1, fim)]}` : ""}</span>
-                      <span>{MESES[c.mesInicial]}–{MESES[fim]}</span>
+                      <span>Mês {Math.min(decorridos, totalMeses)} de {totalMeses}{!venceu && !encerrado ? ` · ${MODO_REAL ? "próxima parcela" : "próximo boleto"} em ${compRotulo(Math.min(COMP_ATUAL + 1, compFim))}` : ""}</span>
+                      <span>{compRotulo(compIni)}–{compRotulo(compFim)}</span>
                     </div>
                     <div style={{ height: 7, borderRadius: 6, background: C.cream2, overflow: "hidden" }}>
                       <div style={{ width: `${pct}%`, height: "100%", background: venceu ? C.amber : C.green, borderRadius: 6 }} />
@@ -1087,15 +1101,23 @@ function FaturarContratoForm({ contrato, store, activeUnit, bankAccounts, onClos
 
 function ContratoForm({ bankAccounts, planos = [], clientes = [], inicial = null, onSalvar }) {
   const [buscaItem, setBuscaItem] = useState("");
-  const [f, setF] = useState(() => inicial ? {
-    clienteId: inicial.clienteId || "", itens: inicial.itens || [], cliente: inicial.cliente || "", documento: inicial.documento || "",
-    planoId: inicial.planoId || "", plano: inicial.plano || "", valorMensal: String(inicial.valorMensal ?? ""),
-    bankAccountId: inicial.bankAccountId || bankAccounts[0]?.id || "", diaVencimento: inicial.diaVencimento || "10",
-    periodicidade: inicial.periodicidade === "anual" ? "anual" : "mensal",
-    mesInicial: Number(inicial.mesInicial ?? MES_ATUAL), meses: Number(inicial.meses ?? 12),
-  } : {
-    clienteId: "", itens: [], cliente: "", documento: "", planoId: "", plano: "", valorMensal: "", bankAccountId: bankAccounts[0]?.id || "",
-    diaVencimento: "10", periodicidade: "mensal", mesInicial: MES_ATUAL, meses: 12,
+  const [f, setF] = useState(() => {
+    const comum = inicial ? {
+      clienteId: inicial.clienteId || "", itens: inicial.itens || [], cliente: inicial.cliente || "", documento: inicial.documento || "",
+      planoId: inicial.planoId || "", plano: inicial.plano || "", valorMensal: String(inicial.valorMensal ?? ""),
+      bankAccountId: inicial.bankAccountId || bankAccounts[0]?.id || "", diaVencimento: inicial.diaVencimento || "10",
+      periodicidade: inicial.periodicidade === "anual" ? "anual" : "mensal",
+      meses: Number(inicial.meses ?? 12),
+    } : {
+      clienteId: "", itens: [], cliente: "", documento: "", planoId: "", plano: "", valorMensal: "", bankAccountId: bankAccounts[0]?.id || "",
+      diaVencimento: "10", periodicidade: "mensal", meses: 12,
+    };
+    // dataInicio: campo novo, ou derivada dos campos antigos (mês/ano) de contratos já cadastrados.
+    const dataInicio = inicial ? inicioISODoContrato(inicial) : hojeISO();
+    const meses = Math.max(1, comum.meses || 1);
+    // dataFim: campo novo (p/ contratos antigos com término estabelecido) ou calculada por início + duração.
+    const dataFim = (inicial && inicial.dataFim) || isoAddMeses(dataInicio, meses - 1);
+    return { ...comum, dataInicio, dataFim };
   });
   const anual = f.periodicidade === "anual";
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
@@ -1103,8 +1125,18 @@ function ContratoForm({ bankAccounts, planos = [], clientes = [], inicial = null
     const p = planos.find((x) => x.id === id);
     setF((s) => ({ ...s, planoId: id, plano: p ? p.nome : s.plano, valorMensal: p && p.preco ? String(p.preco) : s.valorMensal }));
   };
-  const valido = f.cliente.trim() && f.plano.trim() && +f.valorMensal > 0 && (MODO_REAL || f.bankAccountId);
-  const ate = Math.min(f.mesInicial + (+f.meses) - 1, 11);
+  // duração (parcelas) derivada das competências de início e término — o término manda.
+  const mesesCalc = anual ? 1 : Math.max(1, compDeISO(f.dataFim) - compDeISO(f.dataInicio) + 1);
+  const fimInvalido = !anual && compDeISO(f.dataFim) < compDeISO(f.dataInicio);
+  const valido = f.cliente.trim() && f.plano.trim() && +f.valorMensal > 0 && (MODO_REAL || f.bankAccountId) && f.dataInicio && !fimInvalido;
+  const compIni = compDeISO(f.dataInicio);
+  const compFim = anual ? compIni + 11 : compIni + mesesCalc - 1;
+  // mudar o início mantém a duração atual (recalcula o término)
+  const mudarInicio = (iso) => setF((s) => ({ ...s, dataInicio: iso, dataFim: s.periodicidade === "anual" ? iso : isoAddMeses(iso, Math.max(1, s.meses || 1) - 1) }));
+  // mudar a duração recalcula o término a partir do início
+  const mudarDuracao = (n) => { const m = Math.max(1, Math.min(600, Math.floor(Number(n) || 1))); setF((s) => ({ ...s, meses: m, dataFim: isoAddMeses(s.dataInicio, m - 1) })); };
+  // mudar o término (editável) redefine a duração em parcelas
+  const mudarFim = (iso) => setF((s) => ({ ...s, dataFim: iso, meses: Math.max(1, compDeISO(iso) - compDeISO(s.dataInicio) + 1) }));
   const totalItens = f.itens.reduce((s, it) => s + Math.round(it.quantidade * it.valorUnitario * 100), 0) / 100;
 
   return (
@@ -1159,26 +1191,43 @@ function ContratoForm({ bankAccounts, planos = [], clientes = [], inicial = null
           </select>
         </Field>
       )}
-      <div style={{ display: "grid", gridTemplateColumns: anual ? "1fr" : "1fr 1fr", gap: 12 }}>
-        <Field label={anual ? "Competência (mês da cobrança)" : "Início (competência)"}>
-          <select value={f.mesInicial} onChange={(e) => setF({ ...f, mesInicial: +e.target.value })} style={inp}>
-            {MESES.map((m, i) => <option key={i} value={i}>{m}</option>)}
-          </select>
+      {anual ? (
+        <Field label="Início do contrato (competência da cobrança)">
+          <input type="date" value={f.dataInicio} onChange={(e) => mudarInicio(e.target.value)} style={inp} />
         </Field>
-        {!anual && (
-          <Field label="Prazo (meses)">
-            <input type="number" min="1" max="12" value={f.meses} onChange={(e) => setF({ ...f, meses: Math.max(1, Math.min(12, +e.target.value)) })} style={inp} />
+      ) : (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Field label="Início do contrato">
+              <input type="date" value={f.dataInicio} onChange={(e) => mudarInicio(e.target.value)} style={inp} />
+            </Field>
+            <Field label="Duração (meses)">
+              <input type="number" min="1" max="600" value={f.meses} onChange={(e) => mudarDuracao(e.target.value)} style={inp} />
+            </Field>
+          </div>
+          <Field label="Término do contrato (editável)">
+            <input type="date" value={f.dataFim} min={f.dataInicio} onChange={(e) => mudarFim(e.target.value)} style={inp} />
           </Field>
-        )}
-      </div>
+          {fimInvalido && <p style={{ fontSize: 12, color: C.red, marginTop: -6, marginBottom: 10 }}>O término não pode ser antes do início.</p>}
+        </>
+      )}
       <div style={{ fontSize: 12, color: C.text3, background: C.cafePale, borderRadius: 9, padding: "9px 12px", marginBottom: 14, display: "flex", alignItems: "center", gap: 7 }}>
         <Barcode size={14} color={C.cafe} /> {inicial
-          ? "As parcelas pagas e os meses anteriores serão preservados. As previsões futuras serão recalculadas."
+          ? "As parcelas pagas e as competências anteriores à atual serão preservadas. As previsões futuras serão recalculadas."
           : anual
-            ? <>{MODO_REAL ? "Provisiona" : "Emite"} {MODO_REAL ? "1 parcela anual" : "1 boleto anual"} na competência de {MESES[f.mesInicial]}.</>
-            : <>{MODO_REAL ? "Provisiona" : "Emite"} {Math.min(f.meses, MESES.length - f.mesInicial)} {MODO_REAL ? "parcelas" : "boletos"} ({MESES[f.mesInicial]}–{MESES[ate]}), 1 por mês.</>}
+            ? <>{MODO_REAL ? "Provisiona" : "Emite"} {MODO_REAL ? "1 parcela anual" : "1 boleto anual"} na competência de {compRotulo(compIni)}.</>
+            : <>{MODO_REAL ? "Provisiona" : "Emite"} {mesesCalc} {MODO_REAL ? "parcelas" : "boletos"} ({compRotulo(compIni)}–{compRotulo(compFim)}), 1 por mês.{compFim >= (ANO_ATUAL + 1) * 12 ? " Atravessa a virada do ano sem interromper em dezembro." : ""}</>}
       </div>
-      <Btn disabled={!valido} style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.5 }} onClick={() => valido && onSalvar({ ...f, valorMensal: +f.valorMensal, meses: anual ? 1 : +f.meses })}>
+      <Btn disabled={!valido} style={{ width: "100%", justifyContent: "center", opacity: valido ? 1 : 0.5 }} onClick={() => {
+        if (!valido) return;
+        const ini = ymdDe(f.dataInicio);
+        onSalvar({
+          ...f, valorMensal: +f.valorMensal,
+          mesInicial: ini.m, anoInicial: ini.y, diaInicial: ini.d,
+          meses: mesesCalc,
+          dataInicio: f.dataInicio, dataFim: anual ? f.dataInicio : f.dataFim,
+        });
+      }}>
         {inicial ? <Edit3 size={16} /> : <FileSignature size={16} />} {inicial ? "Salvar alterações" : MODO_REAL ? "Criar contrato" : "Criar contrato e emitir boletos"}
       </Btn>
     </>
@@ -2482,7 +2531,13 @@ function Provisao({ store, activeUnit, lancamentos = [], categorias = [], unidad
   const [incluirRealizado, setIncluirRealizado] = useState(false);
   const [anoSel, setAnoSel] = useState(ANO_ATUAL);
   const contratos = store.contratosDe(activeUnit).filter((c) => c.status === "ativo");
-  const mesFim = (c) => Math.min(c.mesInicial + c.meses - 1, 11);
+  // Faixa de competências do contrato DENTRO do ano projetado (anoSel). Contratos
+  // que atravessam a virada do ano aparecem só com os meses que caem neste ano.
+  const faixaAno = (c) => {
+    const ci = Math.max(store.compInicioContrato(c), anoSel * 12);
+    const cf = Math.min(store.compFimContrato(c), anoSel * 12 + 11);
+    return { ci, cf, meses: Math.max(0, cf - ci + 1) };
+  };
 
   // Base da provisão: lançamentos PREVISTOS (já incluem contratos recorrentes e
   // despesas recorrentes). Opcionalmente soma os realizados (pagos) p/ ver a
@@ -2509,7 +2564,7 @@ function Provisao({ store, activeUnit, lancamentos = [], categorias = [], unidad
     g.meses += 1; g.total += l.valor; despRecMap.set(k, g);
   });
   const despRec = [...despRecMap.values()].sort((a, b) => b.total - a.total);
-  const totContratos = contratos.reduce((s, c) => s + c.valorMensal * (mesFim(c) - c.mesInicial + 1), 0);
+  const totContratos = contratos.reduce((s, c) => s + c.valorMensal * faixaAno(c).meses, 0);
   const totDespRec = despRec.reduce((s, g) => s + g.total, 0);
 
   const Cel = ({ children, style }) => <div style={{ fontSize: 13, ...style }}>{children}</div>;
@@ -2525,7 +2580,7 @@ function Provisao({ store, activeUnit, lancamentos = [], categorias = [], unidad
     ano: anoSel, modo: incluirRealizado ? "Provisionado + realizado" : "Só provisionado",
     projRows: linhasMes.map((x) => ({ mes: `${x.lbl}/${anoSel}`, rec: x.rec, desp: x.desp, res: x.res })),
     dre,
-    contratoRows: contratos.map((c) => ({ cliente: c.cliente, plano: c.plano, periodo: `${MESES[c.mesInicial]}–${MESES[mesFim(c)]}/${ANO_ATUAL}`, valorMensal: c.valorMensal, meses: mesFim(c) - c.mesInicial + 1, total: c.valorMensal * (mesFim(c) - c.mesInicial + 1) })),
+    contratoRows: contratos.map((c) => { const r = faixaAno(c); return { cliente: c.cliente, plano: c.plano, periodo: `${MESES[((r.ci % 12) + 12) % 12]}–${MESES[((r.cf % 12) + 12) % 12]}/${anoSel}`, valorMensal: c.valorMensal, meses: r.meses, total: c.valorMensal * r.meses }; }).filter((row) => row.meses > 0),
     despRows: despRec.map((g) => ({ descricao: g.descricao, categoria: g.categoria, valorMensal: g.valorMensal, meses: g.meses, total: g.total })),
     unidadeNome,
   }).catch((e) => alert("Não foi possível exportar: " + (e?.message || e)));
@@ -2597,13 +2652,13 @@ function Provisao({ store, activeUnit, lancamentos = [], categorias = [], unidad
           <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border2}`, fontWeight: 700, fontSize: 13.5, display: "flex", justifyContent: "space-between" }}>
             <span>Contratos recorrentes (receita)</span><span style={{ color: C.green }}>{fmt(totContratos)}</span>
           </div>
-          {contratos.length === 0 && <div style={{ padding: 16, fontSize: 12.5, color: C.text4 }}>Nenhum contrato ativo. Crie em Financeiro → Contratos; as parcelas entram na provisão automaticamente.</div>}
-          {contratos.map((c) => (
+          {contratos.filter((c) => faixaAno(c).meses > 0).length === 0 && <div style={{ padding: 16, fontSize: 12.5, color: C.text4 }}>Nenhum contrato ativo em {anoSel}. Crie em Financeiro → Contratos; as parcelas entram na provisão automaticamente.</div>}
+          {contratos.map((c) => { const r = faixaAno(c); if (r.meses <= 0) return null; return (
             <div key={c.id} style={{ padding: "10px 16px", borderTop: `1px solid ${C.border2}`, display: "flex", justifyContent: "space-between", gap: 10 }}>
-              <div><div style={{ fontSize: 13, fontWeight: 600 }}>{c.cliente}</div><div style={{ fontSize: 11.5, color: C.text3 }}>{c.plano} · {MESES[c.mesInicial]}–{MESES[mesFim(c)]}/{ANO_ATUAL}</div></div>
-              <div style={{ textAlign: "right" }}><div style={{ fontFamily: serif, fontSize: 14 }}>{fmt(c.valorMensal)}<span style={{ fontSize: 11, color: C.text3 }}>/mês</span></div><div style={{ fontSize: 11, color: C.text3 }}>{mesFim(c) - c.mesInicial + 1} meses</div></div>
+              <div><div style={{ fontSize: 13, fontWeight: 600 }}>{c.cliente}</div><div style={{ fontSize: 11.5, color: C.text3 }}>{c.plano} · {MESES[((r.ci % 12) + 12) % 12]}–{MESES[((r.cf % 12) + 12) % 12]}/{anoSel}</div></div>
+              <div style={{ textAlign: "right" }}><div style={{ fontFamily: serif, fontSize: 14 }}>{fmt(c.valorMensal)}<span style={{ fontSize: 11, color: C.text3 }}>/mês</span></div><div style={{ fontSize: 11, color: C.text3 }}>{r.meses} {r.meses === 1 ? "mês" : "meses"}</div></div>
             </div>
-          ))}
+          ); })}
         </Card>
       </div>
 
