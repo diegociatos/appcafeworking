@@ -1528,6 +1528,9 @@ export function StoreProvider({ children }) {
         id: r.id, unidadeId: r.unidade_id, sala: r.sala_id, base: r.base ?? null,
         cliente: r.cliente_nome, clienteId: r.cliente_id, email: r.cliente_email,
         startAt: r.start_at, endAt: r.end_at, ...dateRangeToLegacy(r.start_at, r.end_at),
+        // Cor do bloco na agenda por origem — sem isto a reserva do site/app saía
+        // com fundo indefinido (quadrado branco, "ruim de visualizar").
+        cor: r.origem === "site" ? "#8A6550" : r.origem === "app" ? "#2A7E82" : "#1A6468",
         status: r.status, origem: r.origem, valor: Number(r.valor || 0),
         paymentStatus: r.payment_status, vista: r.origem !== "app",
         observacao: r.observacao || "", telefone: r.cliente_telefone || "",
