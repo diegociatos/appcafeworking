@@ -866,7 +866,7 @@ export function StoreProvider({ children }) {
   // (ou BHISS). DEMO: gera número/ISS plausíveis em memória.
   // Devolve Promise<{ nota } | { erro }> (nunca rejeita) para a tela mostrar a
   // recusa, ex.: "Configure o certificado digital da unidade antes de emitir."
-  const emitirNFSe = (unidadeId, dados) => {
+  const emitirNFSe = (unidadeId, dados, opts = {}) => {
     if (nfseApi.configured) {
       return nfseApi.emitir({
         unidade_id: unidadeId, tomador: dados.tomador, tomador_documento: dados.tomadorDoc,
@@ -876,6 +876,8 @@ export function StoreProvider({ children }) {
         boleto_id: dados.boletoId,
         // Só cobrança real (uuid): a nota fica vinculada e o webhook não emite outra.
         cobranca_id: /^[0-9a-f-]{36}$/i.test(String(dados.cobrancaId || "")) ? dados.cobrancaId : undefined,
+        // sem_email: faturamento com boleto junto manda um e-mail só (boleto + nota).
+        sem_email: opts.semEmail === true,
       }).then(({ nota }) => {
         const n = _mapApiNota(nota);
         setNotasFiscais((ns) => [n, ...ns]);
@@ -1129,7 +1131,7 @@ export function StoreProvider({ children }) {
       dados: { valor: b.valor, vencimento: b.vencimento, linhaDigitavel: b.linhaDigitavel, pixCopiaCola: b.pixCopiaCola, pdfUrl: b.pdfUrl } })));
   };
 
-  const emitirBoleto = (unidadeId, dados) => {
+  const emitirBoleto = (unidadeId, dados, opts = {}) => {
     // PRODUÇÃO: emite pela Edge Function (credenciais no Vault, nunca no front).
     if (boletosApi.configured) {
       boletosApi.emitir({
@@ -1142,7 +1144,7 @@ export function StoreProvider({ children }) {
       }).then(({ boleto }) => {
         const b = _mapApiBoleto(boleto, unidadeId);
         setBoletos((bs) => [...bs, b]);
-        _avisarBoletoEmail(unidadeId, b, dados.sacadoEmails || dados.sacadoEmail);
+        if (!opts.semAviso) _avisarBoletoEmail(unidadeId, b, dados.sacadoEmails || dados.sacadoEmail);
       }).catch((e) => {
         setBoletos((bs) => [...bs, { id: "bolerr_" + Date.now(), unidadeId, ...dados, status: "erro", erro: String(e?.message || e), createdAt: new Date().toISOString().slice(0, 10) }]);
       });
@@ -1156,12 +1158,12 @@ export function StoreProvider({ children }) {
       status: "registrado", pdfUrl: "", createdAt: new Date().toISOString().slice(0, 10),
     };
     setBoletos((bs) => [...bs, novo]);
-    _avisarBoletoEmail(unidadeId, novo, dados.sacadoEmails || dados.sacadoEmail);
+    if (!opts.semAviso) _avisarBoletoEmail(unidadeId, novo, dados.sacadoEmails || dados.sacadoEmail);
     return novo;
   };
 
-  const emitirBoletoConfirmado = async (unidadeId, dados) => {
-    if (!boletosApi.configured) return emitirBoleto(unidadeId, dados);
+  const emitirBoletoConfirmado = async (unidadeId, dados, opts = {}) => {
+    if (!boletosApi.configured) return emitirBoleto(unidadeId, dados, opts);
     const { boleto } = await boletosApi.emitir({
       bank_account_id: dados.bankAccountId, sacado: dados.sacado,
       sacado_documento: dados.sacadoDocumento, sacado_email: dados.sacadoEmail,
@@ -1173,8 +1175,17 @@ export function StoreProvider({ children }) {
     if (!boleto?.id) throw new Error("O banco não confirmou o boleto. Consulte a emissão antes de tentar novamente.");
     const b = _mapApiBoleto(boleto, unidadeId);
     setBoletos(bs => [...bs.filter(x => x.id !== b.id), b]);
-    _avisarBoletoEmail(unidadeId, b, dados.sacadoEmails || dados.sacadoEmail);
+    // semAviso: quando a nota sai junto, o e-mail (boleto + nota) é mandado uma vez
+    // só depois, por avisarFaturamentoEmail — aqui não dispara para não duplicar.
+    if (!opts.semAviso) _avisarBoletoEmail(unidadeId, b, dados.sacadoEmails || dados.sacadoEmail);
     return b;
+  };
+
+  // Um e-mail só quando a equipe fatura boleto/cobrança + nota fiscal juntos:
+  // o template (boleto_nova/cobranca_nova) avisa da nota e anexa os dois PDFs.
+  const avisarFaturamentoEmail = (unidadeId, { evento, cliente, dados = {}, emails }) => {
+    const destinos = [...new Set((Array.isArray(emails) ? emails : [emails]).map((e) => String(e || "").trim().toLowerCase()).filter(Boolean))];
+    return Promise.all(destinos.map((email, i) => enfileirarEmail(unidadeId, { cliente, email, evento, dados, semCopias: i > 0 })));
   };
   const cancelarBoleto = (id) => {
     const aplicar = () => setBoletos((bs) => bs.map((b) => (b.id === id ? { ...b, status: "cancelado" } : b)));
@@ -1614,7 +1625,7 @@ export function StoreProvider({ children }) {
       addCategoria, updateCategoria, removeCategoria,
       bankAccounts, boletos,
       bankAccountsDe, addBankAccount, updateBankAccount, removeBankAccount, conectarBanco, desconectarBanco,
-      boletosDe, emitirBoleto, emitirBoletoConfirmado, cancelarBoleto, baixarBoleto, darBaixaLancamento, sincronizarBoleto,
+      boletosDe, emitirBoleto, emitirBoletoConfirmado, avisarFaturamentoEmail, cancelarBoleto, baixarBoleto, darBaixaLancamento, sincronizarBoleto,
       contratos, contratosDe, contratosVencendoDe, mesFimContrato, anoFimContrato, anoInicialContrato, compInicioContrato, compFimContrato,
       addContrato, updateContrato, renovarContrato, encerrarContrato,
       estoque, estoqueDe, estoqueBaixoDe, addItemEstoque, updateItemEstoque, removeItemEstoque, ajustarEstoque, comprarEstoque, venderEstoque, registrarSaidaEstoque,

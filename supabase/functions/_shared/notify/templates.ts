@@ -53,18 +53,25 @@ function layout(titulo: string, corpo: string, cta?: { label: string; url: strin
   </table></body></html>`;
 }
 
+// Quando a nota fiscal sai junto com o boleto/cobrança, um e-mail só leva os dois
+// (o PDF da nota vai em anexo, ao lado do boleto). Avisa o cliente no corpo.
+// deno-lint-ignore no-explicit-any
+const avisoNotaAnexa = (d: any) => d?.notaPdfUrl ? ` A nota fiscal${d.notaNumero ? ` nº ${d.notaNumero}` : ""} vai em anexo.` : "";
+// deno-lint-ignore no-explicit-any
+const avisoNotaAnexaHtml = (d: any) => d?.notaPdfUrl ? `<br><br>Enviamos também a sua <b>nota fiscal${d.notaNumero ? ` nº ${esc(String(d.notaNumero))}` : ""}</b> em anexo.` : "";
+
 type Render = { assunto: string; html: string; texto: string };
 
 // deno-lint-ignore no-explicit-any
 const TEMPLATES: Record<Evento, (d: any) => Render> = {
   boleto_nova: (d) => ({
     assunto: `Nova cobrança · ${brl(d.valor)} vence ${dataBR(d.vencimento)}`,
-    texto: `Olá ${d.cliente}, sua cobrança de ${brl(d.valor)} vence em ${dataBR(d.vencimento)}.${d.linhaDigitavel ? ` Linha digitável: ${d.linhaDigitavel}.` : ""} Veja em ${linkApp("faturas")}`,
+    texto: `Olá ${d.cliente}, sua cobrança de ${brl(d.valor)} vence em ${dataBR(d.vencimento)}.${d.linhaDigitavel ? ` Linha digitável: ${d.linhaDigitavel}.` : ""}${avisoNotaAnexa(d)} Veja em ${linkApp("faturas")}`,
     html: layout(
       "Sua cobrança está disponível",
       `Olá <b>${esc(d.cliente)}</b>,<br><br>Geramos sua cobrança no valor de <b>${brl(d.valor)}</b>, com vencimento em <b>${dataBR(d.vencimento)}</b>.
        ${d.linhaDigitavel ? `<br><br><b>Linha digitável:</b><br><span style="font-family:monospace;font-size:13px">${esc(d.linhaDigitavel)}</span>` : ""}
-       ${d.pixCopiaCola ? `<br><br><b>PIX copia e cola:</b><br><span style="font-family:monospace;font-size:12px;word-break:break-all">${esc(d.pixCopiaCola)}</span>` : ""}${rastreio(d)}`,
+       ${d.pixCopiaCola ? `<br><br><b>PIX copia e cola:</b><br><span style="font-family:monospace;font-size:12px;word-break:break-all">${esc(d.pixCopiaCola)}</span>` : ""}${avisoNotaAnexaHtml(d)}${rastreio(d)}`,
       d.pdfUrl ? { label: "Ver boleto (PDF)", url: d.pdfUrl } : { label: "Ver minhas faturas", url: linkApp("faturas") },
     ),
   }),
@@ -88,12 +95,12 @@ const TEMPLATES: Record<Evento, (d: any) => Render> = {
   }),
   cobranca_nova: (d) => ({
     assunto: `Sua cobrança · ${brl(d.valor)}${d.vencimento ? ` vence ${dataBR(d.vencimento)}` : ""}`,
-    texto: `Olá ${d.cliente}, sua cobrança de ${brl(d.valor)} está disponível. Pague por cartão, PIX ou boleto: ${d.invoiceUrl || d.pdfUrl || linkApp("faturas")}`,
+    texto: `Olá ${d.cliente}, sua cobrança de ${brl(d.valor)} está disponível. Pague por cartão, PIX ou boleto: ${d.invoiceUrl || d.pdfUrl || linkApp("faturas")}${avisoNotaAnexa(d)}`,
     html: layout(
       "Sua cobrança está disponível",
       `Olá <b>${esc(d.cliente)}</b>,<br><br>${d.descricao ? `${esc(d.descricao)}<br><br>` : ""}Valor: <b>${brl(d.valor)}</b>${d.vencimento ? ` · vence em <b>${dataBR(d.vencimento)}</b>` : ""}.<br><br>
        Você pode pagar por <b>cartão de crédito, PIX ou boleto</b> no botão abaixo.
-       ${d.pixCopiaCola ? `<br><br><b>PIX copia e cola:</b><br><span style="font-family:monospace;font-size:12px;word-break:break-all">${esc(d.pixCopiaCola)}</span>` : ""}${rastreio(d)}`,
+       ${d.pixCopiaCola ? `<br><br><b>PIX copia e cola:</b><br><span style="font-family:monospace;font-size:12px;word-break:break-all">${esc(d.pixCopiaCola)}</span>` : ""}${avisoNotaAnexaHtml(d)}${rastreio(d)}`,
       d.invoiceUrl ? { label: "Pagar agora", url: d.invoiceUrl }
         : d.pdfUrl ? { label: "Ver boleto (PDF)", url: d.pdfUrl }
         : { label: "Ver minhas faturas", url: linkApp("faturas") },

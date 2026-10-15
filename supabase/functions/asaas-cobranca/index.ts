@@ -112,7 +112,9 @@ Deno.serve(async (req) => {
     if (insErr) return json({ error: `Cobrança criada no Asaas, mas falhou ao gravar: ${insErr.message}` }, 500);
 
     // Avisa o cliente por e-mail (Resend) com o link de pagamento — best-effort.
-    const emails = [...new Set([body.cliente_email, ...(Array.isArray(body.cliente_emails) ? body.cliente_emails : [])]
+    // sem_email: a equipe vai faturar nota junto e o front manda um e-mail só
+    // (cobrança + nota anexa), então aqui não dispara para não duplicar.
+    const emails = body.sem_email === true ? [] : [...new Set([body.cliente_email, ...(Array.isArray(body.cliente_emails) ? body.cliente_emails : [])]
       .map((e) => String(e || "").trim().toLowerCase()).filter(emailValido))].slice(0, 10);
     for (let i = 0; i < emails.length; i++) {
       const email = emails[i];

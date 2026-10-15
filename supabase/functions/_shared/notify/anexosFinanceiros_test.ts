@@ -10,6 +10,15 @@ Deno.test("anexa o PDF do boleto somente a partir de host financeiro permitido",
   assertEquals(await anexosFinanceiros("boleto_nova", { pdfUrl: "https://malicioso.example/arquivo.pdf" }, fetchOk as typeof fetch), []);
 });
 
+Deno.test("boleto + nota fiscal juntos: anexa os dois PDFs", async () => {
+  const pdf = async () => new Response(new TextEncoder().encode("%PDF-1.4"), { headers: { "content-type": "application/pdf" } });
+  const anexos = await anexosFinanceiros("boleto_nova", {
+    pdfUrl: "https://x.supabase.co/boleto.pdf",
+    notaPdfUrl: "https://x.supabase.co/nota.pdf", notaNumero: "55",
+  }, pdf as typeof fetch);
+  assertEquals(anexos.map((a) => a.nome), ["boleto.pdf", "nota-fiscal-55.pdf"]);
+});
+
 Deno.test("nomeia o anexo da nota e ignora conteúdo que não é PDF", async () => {
   const pdf = async () => new Response(new TextEncoder().encode("%PDF-1.4"), { headers: { "content-type": "application/pdf" } });
   const nota = await anexosFinanceiros("nfse_emitida", { numero: "123/2026", pdfUrl: "https://x.supabase.co/n.pdf" }, pdf as typeof fetch);

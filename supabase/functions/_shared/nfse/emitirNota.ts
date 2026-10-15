@@ -48,6 +48,9 @@ export interface PedidoNota {
   tomador_bairro?: string;
   tomador_cidade?: string;
   tomador_uf?: string;
+  // Quando a equipe fatura boleto + nota juntos, o e-mail da nota é suprimido:
+  // o front manda um e-mail só, com o boleto e a nota (PDF) anexados.
+  sem_email?: boolean;
 }
 
 export interface AtorNota {
@@ -214,7 +217,7 @@ export async function emitirNotaFiscal(
 
   // Envia a nota ao e-mail do tomador (Resend) — best-effort. Só nota real de
   // produção: simulada e produção restrita não têm valor fiscal.
-  if (pedido.tomador_email && !simulada && config.ambiente === "producao") {
+  if (pedido.tomador_email && !simulada && config.ambiente === "producao" && !pedido.sem_email) {
     await dispatchNotificacao(admin, {
       unidade_id: config.unidade_id, evento: "nfse_emitida", email: pedido.tomador_email, cliente: input.tomador.nome,
       dados: { numero: nota.numero, valor: input.valor, descricao: input.descricao, pdfUrl: nota.pdf_url || result.pdfUrl },

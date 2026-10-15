@@ -80,6 +80,7 @@ Deno.serve(async (req) => {
       tomador_bairro: body.tomador_bairro,
       tomador_cidade: body.tomador_cidade,
       tomador_uf: body.tomador_uf,
+      sem_email: body.sem_email === true,
     }, {
       id: auth.user.id,
       email: (auth.user.email || "").toLowerCase(),

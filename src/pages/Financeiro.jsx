@@ -1006,6 +1006,8 @@ function FaturarContratoForm({ contrato, store, activeUnit, bankAccounts, onClos
 
   const emitirNotaDoFaturamento = async ({ boletoId, cobrancaId, valorFinal, dadosTomador = {} }) => {
     if (!emitirNota) return {};
+    // Emite a nota SEM e-mail próprio: o faturamento manda um e-mail só, com o
+    // boleto/cobrança e a nota (PDF) juntos (avisarFaturamentoEmail).
     const fiscal = await store.emitirNFSe(activeUnit, {
       tomador: dadosTomador.nome || contrato.cliente,
       tomadorDoc: dadosTomador.documento || contrato.documento,
@@ -1018,7 +1020,7 @@ function FaturarContratoForm({ contrato, store, activeUnit, bankAccounts, onClos
       tomadorCidade: dadosTomador.cidade || cliente.cidade,
       tomadorUf: dadosTomador.uf || cliente.uf,
       boletoId, cobrancaId,
-    });
+    }, { semEmail: true });
     return fiscal?.nota
       ? { nota: fiscal.nota }
       : { erroNota: fiscal?.erro || "Não foi possível emitir a nota fiscal." };
@@ -1038,9 +1040,25 @@ function FaturarContratoForm({ contrato, store, activeUnit, bankAccounts, onClos
       const { cobranca } = await asaasApi.criarCobranca({
         unidade_id: activeUnit, cliente: contrato.cliente, cliente_documento: contrato.documento,
         cliente_email: email || undefined, cliente_emails: [email, ...emailsAdicionais], valor: Number(valor), vencimento, descricao, tipo: "BOLETO",
+        // Com nota junto, o Asaas não manda o e-mail dele: um e-mail só (cobrança + nota).
+        sem_email: emitirNota,
       });
       if (provisao?.id) store.updateLancamento(provisao.id, { cobrancaId: cobranca.id, valor: Number(valor), data: `${vencimento.slice(8, 10)}/${vencimento.slice(5, 7)}/${vencimento.slice(0, 4)}` });
       const fiscal = await emitirNotaDoFaturamento({ cobrancaId: cobranca.id, valorFinal: valor });
+      // O Asaas não mandou o e-mail (sem_email): o aviso vai aqui, num e-mail só,
+      // com a cobrança e — se a nota saiu — a nota anexada. Se a nota falhou, o
+      // cliente ainda recebe o e-mail da cobrança.
+      if (emitirNota) {
+        await store.avisarFaturamentoEmail(activeUnit, {
+          evento: "cobranca_nova", cliente: contrato.cliente, emails: [email, ...emailsAdicionais],
+          dados: {
+            valor: Number(valor), vencimento, descricao,
+            invoiceUrl: cobranca.invoice_url, pdfUrl: cobranca.boleto_url,
+            pixCopiaCola: cobranca.pix_payload, linhaDigitavel: cobranca.linha_digitavel,
+            notaPdfUrl: fiscal.nota?.pdfUrl || null, notaNumero: fiscal.nota?.numero || "",
+          },
+        });
+      }
       setResultado({ texto: "Boleto emitido pelo Asaas.", url: cobranca.boleto_url || cobranca.invoice_url, ...fiscal });
     } catch (e) { setErro(e.message || "Não foi possível emitir o boleto."); }
     finally { setBusy(false); }
@@ -1083,7 +1101,8 @@ function FaturarContratoForm({ contrato, store, activeUnit, bankAccounts, onClos
       extraAntesEmitir={opcaoNota}
       inicial={{ sacado: contrato.cliente, sacadoDocumento: contrato.documento, email, emailsAdicionais, valor, vencimento, instrucoes: descricao, cep: cliente.cep, logradouro: cliente.endereco, numero: cliente.numero, bairro: cliente.bairro, cidade: cliente.cidade, uf: cliente.uf }}
       onEmitir={async (dados) => {
-        const boleto = await store.emitirBoletoConfirmado(activeUnit, dados);
+        // Com nota junto, o boleto não manda o e-mail dele: um e-mail só (boleto + nota).
+        const boleto = await store.emitirBoletoConfirmado(activeUnit, dados, { semAviso: emitirNota });
         if (provisao?.id && boleto?.id) store.updateLancamento(provisao.id, { boletoId: boleto.id, valor: dados.valor, data: `${dados.vencimento.slice(8, 10)}/${dados.vencimento.slice(5, 7)}/${dados.vencimento.slice(0, 4)}` });
         const fiscal = await emitirNotaDoFaturamento({
           boletoId: boleto?.id, valorFinal: dados.valor,
@@ -1093,6 +1112,17 @@ function FaturarContratoForm({ contrato, store, activeUnit, bankAccounts, onClos
             bairro: dados.sacadoBairro, cidade: dados.sacadoCidade, uf: dados.sacadoUf,
           },
         });
+        // Quando a nota saiu, o aviso vai num e-mail só, com o boleto e a nota anexada.
+        if (emitirNota && boleto?.id) {
+          await store.avisarFaturamentoEmail(activeUnit, {
+            evento: "boleto_nova", cliente: boleto.sacado, emails: dados.sacadoEmails || dados.sacadoEmail,
+            dados: {
+              valor: boleto.valor, vencimento: boleto.vencimento,
+              linhaDigitavel: boleto.linhaDigitavel, pixCopiaCola: boleto.pixCopiaCola, pdfUrl: boleto.pdfUrl,
+              notaPdfUrl: fiscal.nota?.pdfUrl || null, notaNumero: fiscal.nota?.numero || "",
+            },
+          });
+        }
         setResultado({ texto: boleto?.id?.startsWith("bol_") ? "Boleto de demonstração criado." : "Boleto emitido pelo banco selecionado.", url: boleto?.pdfUrl, ...fiscal });
       }}
     /> : <div role="status" style={{ color: C.text2, fontSize: 13 }}>Cadastre e configure uma conta bancária na área de Boletos antes de faturar por banco.</div>}
