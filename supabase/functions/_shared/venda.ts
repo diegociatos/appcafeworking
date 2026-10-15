@@ -173,6 +173,17 @@ export function valorReserva(horas: number, valorHora: number): number {
   return Math.round(horas * vh * 100) / 100;
 }
 
+/** Diária: bloco fixo de 8 horas consecutivas com 15% de desconto sobre o valor avulso das 8 horas. */
+export const DIARIA_HORAS = 8;
+export const DIARIA_DESCONTO = 0.15;
+
+/** Valor da diária (8h com 15% off o avulso), ao centavo. Nunca aceita valor/hora zerado. */
+export function valorDiaria(valorHora: number): number {
+  const vh = Number(valorHora);
+  if (!(vh > 0)) throw new Error("VALOR_INVALIDO");
+  return Math.round(DIARIA_HORAS * vh * (1 - DIARIA_DESCONTO) * 100) / 100;
+}
+
 // ---------------------------------------------------------------------------
 // Créditos do plano
 // ---------------------------------------------------------------------------

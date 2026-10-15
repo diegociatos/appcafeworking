@@ -4,7 +4,7 @@ import {
   billingTypePara, categoriaValida, cnpjValido, cpfValido, creditosDoPlano, documentoValido, economiaAnual,
   emailValido, fidelidadeAte, precoAnual, statusPublicoDoCadastro,
   hojeBRT, idCreditoPagamento, normalizarDocumento, payloadAssinaturaAsaas, referenciaExterna, sha256Hex,
-  somarMeses, validarPeriodoReserva, valorReserva, type JanelaReserva, JANELA_PADRAO,
+  somarMeses, validarPeriodoReserva, valorReserva, valorDiaria, type JanelaReserva, JANELA_PADRAO,
 } from "./venda.ts";
 
 Deno.test("CPF: dígitos verificadores", () => {
@@ -88,6 +88,12 @@ Deno.test("valor da reserva ao centavo e sem valor/hora zerado", () => {
   assertEquals(valorReserva(3, 33.333), 100);
   assertThrows(() => valorReserva(2, 0));
   assertThrows(() => valorReserva(0, 50));
+});
+
+Deno.test("diária: 8h com 15% de desconto sobre o avulso", () => {
+  assertEquals(valorDiaria(50), 340);   // Small: 8*50*0,85
+  assertEquals(valorDiaria(85), 578);   // Master/Private: 8*85*0,85
+  assertThrows(() => valorDiaria(0));
 });
 
 Deno.test("créditos do plano ignoram direitos zerados", () => {

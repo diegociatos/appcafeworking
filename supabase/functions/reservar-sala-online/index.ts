@@ -28,7 +28,8 @@ import { aceiteConfere, contratoVigente, registrarAceite } from "../_shared/cont
 import { garantirCobranca } from "../_shared/cobrancas.ts";
 import { regraDaUnidade } from "../_shared/parceirosDb.ts";
 import {
-  comSplit, documentoValido, emailValido, hojeBRT, JANELA_PADRAO, normalizarDocumento, validarPeriodoReserva, valorReserva,
+  comSplit, DIARIA_HORAS, documentoValido, emailValido, hojeBRT, JANELA_PADRAO, normalizarDocumento,
+  validarPeriodoReserva, valorDiaria, valorReserva,
 } from "../_shared/venda.ts";
 
 const MINUTOS_SEGURANDO = 30;
@@ -92,9 +93,15 @@ Deno.serve(async (req) => {
     if (!sala || sala.unidade_id !== body.unidade_id || !sala.reserva_online) {
       return json({ error: "Esta sala não está disponível para reserva online." }, 400, req);
     }
+    // Diária: bloco fixo de 8h consecutivas (início 8h/9h/10h p/ fechar até as 18h)
+    // com 15% off o avulso das 8h. A janela (8h–18h) já é garantida acima.
+    const ehDiaria = body.diaria === true;
+    if (ehDiaria && periodo.horas !== DIARIA_HORAS) {
+      return json({ error: `A diária é de ${DIARIA_HORAS} horas consecutivas.`, codigo: "DIARIA_HORAS" }, 400, req);
+    }
     let valor: number;
     try {
-      valor = valorReserva(periodo.horas, Number(sala.valor_hora));
+      valor = ehDiaria ? valorDiaria(Number(sala.valor_hora)) : valorReserva(periodo.horas, Number(sala.valor_hora));
     } catch (_) {
       return json({ error: "Sala sem preço por hora configurado." }, 400, req);
     }
@@ -166,7 +173,7 @@ Deno.serve(async (req) => {
 
     // 2) cobrança no Asaas
     const data = body.start_at.slice(0, 10);
-    const descricao = `${sala.nome} · ${data.split("-").reverse().join("/")} ${horaBRT(body.start_at)}–${horaBRT(body.end_at)}`;
+    const descricao = `${sala.nome} · ${data.split("-").reverse().join("/")} ${horaBRT(body.start_at)}–${horaBRT(body.end_at)}${ehDiaria ? " · Diária" : ""}`;
     // deno-lint-ignore no-explicit-any
     let pay: any;
     try {
@@ -216,6 +223,7 @@ Deno.serve(async (req) => {
       expira_em: expiraEm,
       valor,
       horas: periodo.horas,
+      diaria: ehDiaria,
       descricao,
       checkoutUrl: pay.invoiceUrl || "",
       pix_payload: pix.payload,
