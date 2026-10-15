@@ -32,6 +32,14 @@ export interface BankProvider {
   /** Consulta a situação atual de um boleto pelo id do banco. */
   consultarBoleto(bancoBoletoId: string): Promise<ConsultaResult>;
 
+  /**
+   * Busca o PDF do boleto (base64) quando o banco só gera o arquivo alguns
+   * segundos DEPOIS do registro. Usado pelo "Sincronizar" para completar
+   * boletos emitidos antes de o PDF existir. Opcional; bancos sem esse endpoint
+   * ficam de fora (o "Sincronizar" só atualiza situação/linha/PIX).
+   */
+  buscarBoletoPdf?(bancoBoletoId: string): Promise<string | undefined>;
+
   /** Cancela/baixa um boleto ainda não pago. */
   cancelarBoleto(bancoBoletoId: string, motivo?: string): Promise<CancelarResult>;
 

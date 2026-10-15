@@ -186,23 +186,28 @@ export class InterProvider implements BankProvider {
     );
     const id = criada.codigoSolicitacao;
 
-    // 2) busca os dados completos (linha digitável, PIX, etc.)
-    const det = await this.detalhar(id);
-
-    // 3) busca o PDF (base64) — a Edge Function sobe pro Storage.
-    //    O Inter gera o PDF alguns segundos DEPOIS do registro; uma única
-    //    tentativa quase sempre volta vazia e o e-mail sai sem anexo. Então
-    //    tentamos algumas vezes com espera curta até o PDF materializar.
-    //    Nunca falha a emissão: se não vier, segue sem anexo (o botão
-    //    "Reenviar e-mail" busca o PDF depois).
+    // 2+3) dados completos (linha digitável, PIX) E o PDF. O Inter materializa
+    //    TODOS esses campos alguns segundos DEPOIS do registro: a 1ª leitura
+    //    costuma vir sem linha digitável/PIX (e sem PDF). Antes só o PDF tinha
+    //    retry, então o boleto era gravado sem linha/PIX → e-mail sem anexo e
+    //    "sem meio de pagamento" na área do cliente. Agora repetimos o detalhar
+    //    junto com o PDF, com espera curta, até o boleto ficar completo.
+    //    Nunca falha a emissão: o que não vier, "Reenviar e-mail"/"Sincronizar"
+    //    busca depois.
+    let det = await this.detalhar(id);
     let pdfBase64: string | undefined;
-    for (let tentativa = 0; tentativa < 5; tentativa++) {
-      if (tentativa > 0) await new Promise((r) => setTimeout(r, 1500));
-      try {
-        const pdf = await this.api<{ pdf: string }>("GET", `/cobranca/v3/cobrancas/${id}/pdf`);
-        if (pdf?.pdf) { pdfBase64 = pdf.pdf; break; }
-      } catch (_) {
-        // ainda não disponível — tenta de novo
+    for (let tentativa = 1; tentativa <= 5 && (!det.linhaDigitavel || !pdfBase64); tentativa++) {
+      await new Promise((r) => setTimeout(r, 1500));
+      if (!det.linhaDigitavel) {
+        try { det = await this.detalhar(id); } catch (_) { /* ainda processando — tenta de novo */ }
+      }
+      if (!pdfBase64) {
+        try {
+          const pdf = await this.api<{ pdf: string }>("GET", `/cobranca/v3/cobrancas/${id}/pdf`);
+          if (pdf?.pdf) pdfBase64 = pdf.pdf;
+        } catch (_) {
+          // PDF ainda não disponível — tenta de novo
+        }
       }
     }
 
@@ -226,6 +231,21 @@ export class InterProvider implements BankProvider {
       status: mapSituacao(cob.situacao, temLinha),
       raw: d,
     } as EmitirBoletoResult & ConsultaResult;
+  }
+
+  // --- PDF ----------------------------------------------------------------
+  /** Busca o PDF (base64) de um boleto já registrado; undefined se ainda não existir. */
+  async buscarBoletoPdf(bancoBoletoId: string): Promise<string | undefined> {
+    for (let tentativa = 0; tentativa < 3; tentativa++) {
+      if (tentativa > 0) await new Promise((r) => setTimeout(r, 1500));
+      try {
+        const pdf = await this.api<{ pdf: string }>("GET", `/cobranca/v3/cobrancas/${bancoBoletoId}/pdf`);
+        if (pdf?.pdf) return pdf.pdf;
+      } catch (_) {
+        // ainda não disponível — tenta de novo
+      }
+    }
+    return undefined;
   }
 
   // --- consulta -----------------------------------------------------------

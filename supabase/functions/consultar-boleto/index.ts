@@ -7,6 +7,7 @@ import { handleOptions, json } from "../_shared/cors.ts";
 import { userClient, adminClient } from "../_shared/supabaseAdmin.ts";
 import { podeMexerNoDinheiro, recusaSemFinanceiro } from "../_shared/permissoes.ts";
 import { getBankCredentials } from "../_shared/vault.ts";
+import { uploadBoletoPdf } from "../_shared/storage.ts";
 import { getProvider, BankError, type BankAccount } from "../_shared/banks/index.ts";
 
 Deno.serve(async (req) => {
@@ -55,6 +56,22 @@ Deno.serve(async (req) => {
       nosso_numero: r.nossoNumero ?? boleto.nosso_numero,
     };
     if (r.status === "pago") patch.paid_at = r.pagoEm ?? new Date().toISOString();
+
+    // Completa o PDF que faltou na emissão (o banco gera o arquivo só depois do
+    // registro). Assim "Sincronizar" repara boletos antigos emitidos sem PDF:
+    // o anexo do e-mail e o botão "Boleto (PDF)" na área do cliente voltam.
+    if (!boleto.pdf_url && provider.buscarBoletoPdf) {
+      try {
+        const pdfBase64 = await provider.buscarBoletoPdf(boleto.banco_boleto_id);
+        if (pdfBase64) {
+          const path = `${boleto.unidade_id}/${account.banco}/${boleto.id}.pdf`;
+          const url = await uploadBoletoPdf(admin, path, pdfBase64);
+          if (url) patch.pdf_url = url;
+        }
+      } catch (_) {
+        // não bloqueia a sincronização se o PDF ainda não estiver pronto
+      }
+    }
 
     const { data: updated } = await admin
       .from("boletos")
