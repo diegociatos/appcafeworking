@@ -1,8 +1,14 @@
 # Cabeçalhos do app no Cloudflare Pages
+# A casca do SPA (index.html e qualquer rota, que o _redirects serve como HTML)
+# NUNCA pode ficar em cache "quieto": senão o navegador segura o HTML antigo, que
+# aponta para assets que já mudaram, e a tela fica em branco depois de publicar
+# ("o app saiu do ar"). no-cache = sempre revalida antes de usar. Os assets com
+# hash no nome (/assets/*) continuam com cache longo (regra mais específica vence).
 /*
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
+  Cache-Control: no-cache
 
-# Assets do Vite têm hash no nome: cache longo
+# Assets do Vite têm hash no nome: cache longo e imutável.
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
