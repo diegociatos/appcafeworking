@@ -4,6 +4,7 @@ import {
   Wallet, TrendingUp, Landmark, BarChart3, FileText, Tags,
   Plus, Edit3, Trash2, Check, X, ArrowUpRight, ArrowDownRight, Receipt, Paperclip, Download, Barcode, Copy, QrCode,
   FileSignature, RefreshCw, AlertTriangle, Upload, CheckCircle2, AlertCircle, MessageSquare, Phone, CreditCard, PiggyBank, ExternalLink, Mail,
+  Eye, SlidersHorizontal,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, FileInput } from "../components/ui.jsx";
 import { C, serif, sans, fmt, fmtShort, inp } from "../lib/theme.js";
@@ -169,7 +170,12 @@ export default function Financeiro({ finTab }) {
         )}
         {tab === "contratos" && <Contratos store={store} activeUnit={activeUnit} clientesUnidade={clientesUnidade} />}
         {tab === "confirmacoes" && <ConfirmacoesEmail unidadeId={activeUnit} />}
-        {tab === "extrato" && <Extrato contas={contas} lancamentos={lancamentos} onAbrir={setDetalheLanc} onRemoverImportados={(contaId) => store.removerImportados(activeUnit, contaId)} />}
+        {tab === "extrato" && <Extrato contas={contas} lancamentos={lancamentos}
+          onAbrir={setDetalheLanc}
+          onEditar={(l) => setLancModal(l)}
+          onDuplicar={(l) => { const { id: _id, boletoId: _b, cobrancaId: _c, grupoRecorrencia: _g, ...resto } = l; setLancModal({ ...resto, descricao: `${l.descricao || ""} (cópia)`.trim() }); }}
+          onExcluir={(l) => { if (window.confirm(`Excluir o lançamento "${l.descricao || l.categoria || ""}"?\n\nEsta ação não pode ser desfeita.`)) store.removeLancamento(l.id); }}
+          onRemoverImportados={(contaId) => store.removerImportados(activeUnit, contaId)} />}
         {tab === "dre" && <DRE lancamentos={lancamentos} categorias={categorias} />}
         {tab === "online" && <RecebimentosOnline cobrancas={store.cobrancasDe(activeUnit)} lancamentos={lancamentos} />}
         {tab === "repasses" && (store.unidadeEhParceira(activeUnit)
@@ -1291,196 +1297,234 @@ function RenovarForm({ contrato, onSalvar }) {
 }
 
 // ===== EXTRATO (por conta, com saldo corrente) =============================
-function Extrato({ contas, lancamentos, onAbrir, onRemoverImportados }) {
-  const [contaSel, setContaSel] = useState(contas[0]?.id || "");
-  const [mesSel, setMesSel] = useState(MES_ATUAL); // 0..11 ou "todos" (ano inteiro)
-  const [anoSel, setAnoSel] = useState(ANO_ATUAL);
+function Extrato({ contas, lancamentos, onAbrir, onEditar, onDuplicar, onExcluir, onRemoverImportados }) {
+  const pad2 = (n) => String(n).padStart(2, "0");
+  const ultimoDiaDoMes = (y, m) => new Date(y, m + 1, 0).getDate();
+  const isoDia = (y, m, d) => `${y}-${pad2(m + 1)}-${pad2(d)}`;
+  const mesPeriodo = (y, m) => [isoDia(y, m, 1), isoDia(y, m, ultimoDiaDoMes(y, m))];
+
+  const [de, setDe] = useState(() => mesPeriodo(ANO_ATUAL, MES_ATUAL)[0]);
+  const [ate, setAte] = useState(() => mesPeriodo(ANO_ATUAL, MES_ATUAL)[1]);
+  const [contaSel, setContaSel] = useState("todos"); // "todos" (todos os bancos) ou id da conta
   const [busca, setBusca] = useState("");
   const [tipoFiltro, setTipoFiltro] = useState("todos"); // todos | entradas | saidas
-  const conta = contas.find((c) => c.id === contaSel);
-  const qtdImportados = lancamentos.filter((l) => l.contaId === contaSel && l.origem === "importacao").length;
-  const desfazerImport = () => {
-    if (!qtdImportados) return;
-    if (!window.confirm(`Remover ${qtdImportados} lançamento(s) IMPORTADO(S) da conta "${conta?.banco}"?\n\nOs lançamentos digitados à mão NÃO são afetados. Esta ação não pode ser desfeita.`)) return;
-    const n = onRemoverImportados && onRemoverImportados(contaSel);
-    if (n != null) window.alert(`${n} lançamento(s) importado(s) removido(s).`);
+  const [maisFiltros, setMaisFiltros] = useState(false);
+  const [denso, setDenso] = useState(false);
+
+  if (!contas.length) return <Card><Empty icon={Wallet} title="Nenhuma conta" sub="Cadastre uma conta em Bancos." /></Card>;
+
+  const todos = contaSel === "todos";
+  const contasEscopo = todos ? contas : contas.filter((c) => c.id === contaSel);
+  const idsEscopo = new Set(contasEscopo.map((c) => c.id));
+  const contaDe = (id) => contas.find((c) => c.id === id);
+  const nomeConta = (id) => { const c = contaDe(id); return c ? (c.banco || c.apelido || "—") : "—"; };
+
+  // Data real do lançamento (ano/mês da competência + dia do campo `data`).
+  const dataDoLanc = (l) => {
+    const y = anoDoLancamento(l), m = Number(l.mes) || 0;
+    const dia = Math.min(Math.max(1, diaDe(l.data) || 1), ultimoDiaDoMes(y, m));
+    return new Date(y, m, dia);
   };
+  const dataBRdoLanc = (l) => {
+    const y = anoDoLancamento(l), m = Number(l.mes) || 0;
+    const dia = Math.min(Math.max(1, diaDe(l.data) || 1), ultimoDiaDoMes(y, m));
+    return `${pad2(dia)}/${pad2(m + 1)}/${y}`;
+  };
+  const deD = new Date(`${de}T00:00:00`), ateD = new Date(`${ate}T23:59:59`);
+  const periodoLabel = `${de.split("-").reverse().join("/")} a ${ate.split("-").reverse().join("/")}`;
 
-  if (!conta) return <Card><Empty icon={Wallet} title="Nenhuma conta" sub="Cadastre uma conta em Bancos." /></Card>;
-
-  // Extrato por período (mês selecionado ou ano inteiro), estilo extrato bancário.
-  const anoTodo = mesSel === "todos";
-  const pagosConta = lancamentos.filter((l) => l.contaId === contaSel && l.status === "pago");
-  const movs = pagosConta.filter((l) => noPeriodo(l, anoSel, anoTodo ? null : mesSel))
-    .slice()
-    .sort((a, b) => (chaveDoLancamento(a) - chaveDoLancamento(b)) || (diaDe(a.data) - diaDe(b.data)));
-  // Saldo de abertura do período = SALDO INICIAL (do cadastro) + movimentos
-  // ANTES do período (inclusive de anos anteriores). Assim o valor do banco é o
-  // ponto de partida do fluxo e os lançamentos somam a partir dele.
-  const saldoInicial = conta.saldo || 0;
-  const inicioPeriodo = chaveCompetencia(anoSel, anoTodo ? 0 : mesSel);
-  const antesDoPeriodo = pagosConta.filter((l) => chaveDoLancamento(l) < inicioPeriodo)
-    .reduce((s, l) => s + (l.tipo === "entrada" ? l.valor : -l.valor), 0);
-  const saldoAnterior = saldoInicial + antesDoPeriodo;
-  let run = saldoAnterior;
-  const linhas = movs.map((l) => {
-    run += l.tipo === "entrada" ? l.valor : -l.valor;
-    return { ...l, saldoCorrente: run };
-  });
+  // Saldo de caixa = saldo inicial das contas do escopo + lançamentos PAGOS.
+  const pagos = lancamentos.filter((l) => idsEscopo.has(l.contaId) && l.status === "pago");
+  const saldoInicial = contasEscopo.reduce((s, c) => s + (c.saldo || 0), 0);
+  const antes = pagos.filter((l) => dataDoLanc(l) < deD).reduce((s, l) => s + (l.tipo === "entrada" ? l.valor : -l.valor), 0);
+  const saldoAbertura = saldoInicial + antes;
+  const movs = pagos.filter((l) => { const dl = dataDoLanc(l); return dl >= deD && dl <= ateD; })
+    .slice().sort((a, b) => (dataDoLanc(a) - dataDoLanc(b)) || (diaDe(a.data) - diaDe(b.data)));
+  let run = saldoAbertura;
+  const linhas = movs.map((l) => { run += l.tipo === "entrada" ? l.valor : -l.valor; return { ...l, saldoCorrente: run, contaNome: nomeConta(l.contaId) }; });
   const saldoFimPeriodo = run;
   const totalEntradas = movs.reduce((s, l) => s + (l.tipo === "entrada" ? l.valor : 0), 0);
   const totalSaidas = movs.reduce((s, l) => s + (l.tipo === "saida" ? l.valor : 0), 0);
-  const saldoAtual = saldoAtualConta(conta, lancamentos);
-  const previstos = lancamentos.filter((l) => l.contaId === contaSel && l.status === "previsto");
+  const saldoAtual = contasEscopo.reduce((s, c) => s + saldoAtualConta(c, lancamentos), 0);
+  const previstos = lancamentos.filter((l) => idsEscopo.has(l.contaId) && l.status === "previsto");
+  const qtdImportados = lancamentos.filter((l) => idsEscopo.has(l.contaId) && l.origem === "importacao").length;
 
-  // Filtro do extrato (não altera o saldo corrente — só o que é exibido).
+  // Filtros de EXIBIÇÃO (busca, tipo) — não mexem no saldo corrido.
   const termo = busca.trim().toLowerCase();
-  const linhasFiltradas = linhas.filter((l) =>
+  const visiveis = linhas.filter((l) =>
     (tipoFiltro === "todos" || l.tipo === (tipoFiltro === "entradas" ? "entrada" : "saida")) &&
-    (!termo || `${l.descricao || ""} ${l.categoria || ""} ${l.subcategoria || ""}`.toLowerCase().includes(termo)));
-  const filtroAtivo = tipoFiltro !== "todos" || !!termo;
-  const fEntradas = linhasFiltradas.reduce((s, l) => s + (l.tipo === "entrada" ? l.valor : 0), 0);
-  const fSaidas = linhasFiltradas.reduce((s, l) => s + (l.tipo === "saida" ? l.valor : 0), 0);
+    (!termo || `${l.descricao || ""} ${l.categoria || ""} ${l.subcategoria || ""} ${l.contaNome} ${l.valor}`.toLowerCase().includes(termo)));
+  const filtroExib = tipoFiltro !== "todos" || !!termo;
+  const fEntradas = visiveis.reduce((s, l) => s + (l.tipo === "entrada" ? l.valor : 0), 0);
+  const fSaidas = visiveis.reduce((s, l) => s + (l.tipo === "saida" ? l.valor : 0), 0);
 
-  const col = "78px 110px 110px 130px 1fr";
-  const Cel = ({ children, style }) => <div style={{ fontSize: 13, ...style }}>{children}</div>;
+  const desfazerImport = () => {
+    if (!qtdImportados || todos) return;
+    const c = contaDe(contaSel);
+    if (!window.confirm(`Remover ${qtdImportados} lançamento(s) IMPORTADO(S) da conta "${c?.banco}"?\n\nOs digitados à mão NÃO são afetados. Esta ação não pode ser desfeita.`)) return;
+    const n = onRemoverImportados && onRemoverImportados(contaSel);
+    if (n != null) window.alert(`${n} lançamento(s) importado(s) removido(s).`);
+  };
+  const limpar = () => { const [d0, d1] = mesPeriodo(ANO_ATUAL, MES_ATUAL); setDe(d0); setAte(d1); setContaSel("todos"); setBusca(""); setTipoFiltro("todos"); };
+
+  const padLinha = denso ? "7px 16px" : "11px 16px";
+  // colunas: data · entrada · saída · saldo · descrição · banco/caixa · status · ações
+  const col = "84px 100px 100px 112px minmax(190px,1fr) 118px 72px 128px";
+  const Cel = ({ children, style }) => <div style={{ fontSize: 13, minWidth: 0, ...style }}>{children}</div>;
+  const AcaoBtn = ({ title, onClick, cor, children }) => (
+    <button type="button" title={title} aria-label={title} onClick={(e) => { e.stopPropagation(); onClick(); }} className="cw-btn"
+      style={{ width: 28, height: 28, display: "grid", placeItems: "center", borderRadius: 7, border: `1px solid ${C.border}`, background: C.white, color: cor || C.text3 }}>{children}</button>
+  );
 
   return (
     <>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-        {contas.map((c) => (
-          <button key={c.id} onClick={() => setContaSel(c.id)} className="cw-btn"
-            style={{
-              display: "flex", alignItems: "center", gap: 8, padding: "9px 14px", borderRadius: 11, fontSize: 13, fontWeight: 600,
-              border: `1px solid ${contaSel === c.id ? C.teal : C.border}`, background: contaSel === c.id ? C.tealPale : C.white, color: contaSel === c.id ? C.teal : C.text2,
-            }}>
-            <Landmark size={14} /> {c.banco}
-            <span style={{ color: C.text3, fontWeight: 500 }}>{fmtShort(saldoAtualConta(c, lancamentos))}</span>
-          </button>
-        ))}
-      </div>
+      {/* barra de filtros: mês · de/até · banco/caixa · busca */}
+      <Card style={{ padding: 14, marginBottom: 14 }}>
+        <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <Field label="Mês"><input type="month" value={de.slice(0, 7)} onChange={(e) => { if (!e.target.value) return; const [y, m] = e.target.value.split("-").map(Number); const [d0, d1] = mesPeriodo(y, m - 1); setDe(d0); setAte(d1); }} style={{ ...inp, width: "auto" }} /></Field>
+          <Field label="De"><input type="date" value={de} max={ate} onChange={(e) => e.target.value && setDe(e.target.value)} style={{ ...inp, width: "auto" }} /></Field>
+          <Field label="Até"><input type="date" value={ate} min={de} onChange={(e) => e.target.value && setAte(e.target.value)} style={{ ...inp, width: "auto" }} /></Field>
+          <Field label="Banco / caixa">
+            <select value={contaSel} onChange={(e) => setContaSel(e.target.value)} style={{ ...inp, width: "auto" }}>
+              <option value="todos">Todos</option>
+              {contas.map((c) => <option key={c.id} value={c.id}>{c.banco}{c.apelido ? ` · ${c.apelido}` : ""}</option>)}
+            </select>
+          </Field>
+          <Field label="Busca" style={{ flex: 1, minWidth: 200 }}>
+            <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Descrição, categoria ou valor (ex: 1500)…" style={{ ...inp, width: "100%" }} />
+          </Field>
+          <Btn variant="ghost" onClick={() => setMaisFiltros((v) => !v)}><SlidersHorizontal size={15} /> Mais filtros</Btn>
+          <Btn variant="ghost" onClick={limpar} style={{ color: C.text3 }}><X size={15} /> Limpar filtros</Btn>
+        </div>
+        {maisFiltros && (
+          <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border2}` }}>
+            <span style={{ fontSize: 12, color: C.text3, fontWeight: 600 }}>Tipo:</span>
+            <div style={{ display: "flex", background: C.cream, borderRadius: 9, padding: 3, gap: 2 }}>
+              {[["todos", "Todos"], ["entradas", "Entradas"], ["saidas", "Saídas"]].map(([v, lb]) => (
+                <button key={v} onClick={() => setTipoFiltro(v)} className="cw-btn"
+                  style={{ padding: "6px 12px", borderRadius: 7, fontSize: 12.5, fontWeight: 600, border: "none", background: tipoFiltro === v ? C.white : "transparent", color: tipoFiltro === v ? C.cafe : C.text3, boxShadow: tipoFiltro === v ? "0 1px 3px rgba(0,0,0,.08)" : "none" }}>{lb}</button>
+              ))}
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: C.text2, cursor: "pointer" }}>
+              <input type="checkbox" checked={denso} onChange={(e) => setDenso(e.target.checked)} /> Compacto
+            </label>
+            {!todos && qtdImportados > 0 && (
+              <Btn variant="ghost" onClick={desfazerImport} style={{ color: C.red }}><Trash2 size={15} /> Desfazer importação ({qtdImportados})</Btn>
+            )}
+          </div>
+        )}
+      </Card>
 
       <Card style={{ padding: 0, overflow: "hidden" }}>
-        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border2}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+        {/* cabeçalho: escopo + saldo */}
+        <div style={{ padding: "14px 16px", borderBottom: `1px solid ${C.border2}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
           <div>
-            <div style={{ fontFamily: serif, fontSize: 19 }}>{conta.banco}</div>
-            <div style={{ fontSize: 12, color: C.text3 }}>{conta.tipo} · extrato de {anoTodo ? `${anoSel} (ano todo)` : `${MESES[mesSel]}/${anoSel}`} · saldo inicial {fmt(saldoInicial)}</div>
+            <div style={{ fontFamily: serif, fontSize: 18 }}>{todos ? "Todos os bancos e caixas" : nomeConta(contaSel)}</div>
+            <div style={{ fontSize: 12, color: C.text3 }}>Fluxo de caixa · {periodoLabel} · saldo inicial {fmt(saldoInicial)}</div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-            <select value={String(mesSel)} onChange={(e) => setMesSel(e.target.value === "todos" ? "todos" : +e.target.value)}
-              style={{ ...inp, width: "auto", padding: "8px 12px", fontSize: 13 }}>
-              <option value="todos">Ano todo ({anoSel})</option>
-              {MESES.map((m, i) => <option key={i} value={i}>{m}/{anoSel}</option>)}
-            </select>
-            <SeletorAno valor={anoSel} onChange={setAnoSel} anos={anosDisponiveis(lancamentos)} style={{ padding: "8px 12px" }} />
-            <Btn variant="soft" disabled={linhasFiltradas.length === 0} onClick={() => exportarExtratoExcel({
-              contaNome: conta.banco, periodoLabel: anoTodo ? `Ano ${anoSel}` : `${MESES[mesSel]} ${anoSel}`,
-              saldoInicial, saldoAnterior, saldoFim: saldoFimPeriodo,
-              linhas: filtroAtivo ? linhasFiltradas : linhas,
-              totalEntradas: filtroAtivo ? fEntradas : totalEntradas,
-              totalSaidas: filtroAtivo ? fSaidas : totalSaidas,
-              comSaldo: !filtroAtivo,
-              filtroLabel: filtroAtivo ? [tipoFiltro === "entradas" ? "só entradas" : tipoFiltro === "saidas" ? "só saídas" : "", termo ? `"${busca.trim()}"` : ""].filter(Boolean).join(" · ") : "",
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            <Btn variant="soft" disabled={visiveis.length === 0} onClick={() => exportarExtratoExcel({
+              contaNome: todos ? "Todos os bancos" : nomeConta(contaSel), periodoLabel,
+              saldoInicial, saldoAnterior: saldoAbertura, saldoFim: saldoFimPeriodo,
+              linhas: filtroExib ? visiveis : linhas,
+              totalEntradas: filtroExib ? fEntradas : totalEntradas, totalSaidas: filtroExib ? fSaidas : totalSaidas,
+              comSaldo: !filtroExib,
+              filtroLabel: filtroExib ? [tipoFiltro === "entradas" ? "só entradas" : tipoFiltro === "saidas" ? "só saídas" : "", termo ? `"${busca.trim()}"` : ""].filter(Boolean).join(" · ") : "",
             }).catch((e) => alert("Não foi possível exportar: " + (e?.message || e)))}
-              style={{ opacity: linhasFiltradas.length === 0 ? 0.5 : 1 }} title={filtroAtivo ? "Exportar o que está filtrado" : "Exportar este período para Excel"}>
-              <Download size={15} /> {filtroAtivo ? "Exportar filtro" : "Exportar Excel"}
+              style={{ opacity: visiveis.length === 0 ? 0.5 : 1 }} title="Exportar o fluxo para Excel">
+              <Download size={15} /> Exportar Excel
             </Btn>
-            {qtdImportados > 0 && (
-              <Btn variant="ghost" onClick={desfazerImport} title="Remove em lote os lançamentos que vieram de importação nesta conta"
-                style={{ color: C.red }}>
-                <Trash2 size={15} /> Desfazer importação ({qtdImportados})
-              </Btn>
-            )}
             <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 11, color: C.text3 }}>Saldo atual</div>
+              <div style={{ fontSize: 11, color: C.text3 }}>Saldo atual{todos ? " (todos)" : ""}</div>
               <div style={{ fontFamily: serif, fontSize: 22, color: saldoAtual >= 0 ? C.teal : C.red }}>{fmt(saldoAtual)}</div>
             </div>
           </div>
         </div>
 
-        {/* barra de filtro */}
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", padding: "10px 20px", borderBottom: `1px solid ${C.border2}`, background: "#fff" }}>
-          <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por descrição, categoria ou cliente…"
-            style={{ ...inp, flex: 1, minWidth: 200, padding: "8px 12px", fontSize: 13 }} />
-          <div style={{ display: "flex", background: C.cream, borderRadius: 9, padding: 3, gap: 2 }}>
-            {[["todos", "Todos"], ["entradas", "Entradas"], ["saidas", "Saídas"]].map(([v, lb]) => (
-              <button key={v} onClick={() => setTipoFiltro(v)} className="cw-btn"
-                style={{ padding: "6px 12px", borderRadius: 7, fontSize: 12.5, fontWeight: 600, border: "none", background: tipoFiltro === v ? C.white : "transparent", color: tipoFiltro === v ? C.cafe : C.text3, boxShadow: tipoFiltro === v ? "0 1px 3px rgba(0,0,0,.08)" : "none" }}>{lb}</button>
+        <div style={{ overflowX: "auto" }}>
+          <div style={{ minWidth: 920 }}>
+            {/* cabeçalho de colunas */}
+            <div style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "10px 16px", background: C.cream, fontSize: 11, fontWeight: 700, color: C.text3, letterSpacing: 0.3 }}>
+              <div>DATA</div>
+              <div style={{ textAlign: "right" }}>ENTRADA</div>
+              <div style={{ textAlign: "right" }}>SAÍDA</div>
+              <div style={{ textAlign: "right" }}>SALDO</div>
+              <div>DESCRIÇÃO</div>
+              <div>BANCO / CAIXA</div>
+              <div>STATUS</div>
+              <div style={{ textAlign: "right" }}>AÇÕES</div>
+            </div>
+
+            {/* saldo de abertura do período */}
+            <div style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "11px 16px", borderBottom: `1px solid ${C.border2}`, background: C.cream2 }}>
+              <Cel style={{ color: C.text4 }}>abertura</Cel>
+              <Cel /><Cel />
+              <Cel style={{ textAlign: "right", fontWeight: 700 }}>{fmt(saldoAbertura)}</Cel>
+              <Cel style={{ color: C.text3, fontStyle: "italic" }}>Saldo de abertura do período</Cel>
+              <Cel /><Cel /><Cel />
+            </div>
+
+            {visiveis.map((l) => (
+              <div key={l.id} onClick={() => onAbrir && onAbrir(l)} title="Ver lançamento" style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: padLinha, borderBottom: `1px solid ${C.border2}`, alignItems: "center", cursor: "pointer" }}>
+                <Cel style={{ color: C.text3 }}>{dataBRdoLanc(l)}</Cel>
+                <Cel style={{ textAlign: "right", color: C.green, fontWeight: 600 }}>{l.tipo === "entrada" ? `+ ${fmt(l.valor)}` : ""}</Cel>
+                <Cel style={{ textAlign: "right", color: C.red, fontWeight: 600 }}>{l.tipo === "saida" ? `- ${fmt(l.valor)}` : ""}</Cel>
+                <Cel style={{ textAlign: "right", fontWeight: 600 }}>{fmt(l.saldoCorrente)}</Cel>
+                <Cel>
+                  <div style={{ fontWeight: 600, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{l.descricao || l.categoria}</div>
+                  <div style={{ fontSize: 11, color: C.text4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{l.categoria}{l.subcategoria ? ` › ${l.subcategoria}` : ""}</div>
+                </Cel>
+                <Cel><span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, color: C.text2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}><Landmark size={13} color={C.text3} /> {l.contaNome}</span></Cel>
+                <Cel><Badge color={C.green} bg={C.greenPale}>Pago</Badge></Cel>
+                <Cel style={{ display: "flex", gap: 5, justifyContent: "flex-end" }}>
+                  <AcaoBtn title="Ver" onClick={() => onAbrir && onAbrir(l)}><Eye size={14} /></AcaoBtn>
+                  <AcaoBtn title="Editar" onClick={() => onEditar && onEditar(l)}><Edit3 size={14} /></AcaoBtn>
+                  <AcaoBtn title="Duplicar" onClick={() => onDuplicar && onDuplicar(l)}><Copy size={14} /></AcaoBtn>
+                  <AcaoBtn title="Excluir" cor={C.red} onClick={() => onExcluir && onExcluir(l)}><X size={14} /></AcaoBtn>
+                </Cel>
+              </div>
             ))}
+
+            {visiveis.length === 0 && (
+              <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: C.text4 }}>
+                {filtroExib
+                  ? "Nenhum lançamento com esse filtro. Ajuste a busca, o tipo ou o período."
+                  : `Nenhuma movimentação paga em ${periodoLabel}${todos ? "" : " nesta conta"}. Troque o período ou o banco acima.`}
+              </div>
+            )}
+
+            {/* totais (respeita o filtro de exibição) */}
+            {visiveis.length > 0 && (
+              <div style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "12px 16px", borderTop: `1px solid ${C.border2}`, background: "#fff", fontWeight: 700 }}>
+                <Cel style={{ color: C.text4 }}>Totais</Cel>
+                <Cel style={{ textAlign: "right", color: C.green }}>{fmt(fEntradas)}</Cel>
+                <Cel style={{ textAlign: "right", color: C.red }}>{fmt(fSaidas)}</Cel>
+                <Cel style={{ textAlign: "right", color: (fEntradas - fSaidas) >= 0 ? C.teal : C.red }}>{fmt(fEntradas - fSaidas)}</Cel>
+                <Cel style={{ color: C.text3, fontStyle: "italic" }}>{visiveis.length} lançamento(s) · entradas − saídas</Cel>
+                <Cel /><Cel /><Cel />
+              </div>
+            )}
+
+            {/* saldo ao fim do período */}
+            <div style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "13px 16px", background: C.cream, fontWeight: 700 }}>
+              <Cel /><Cel /><Cel />
+              <Cel style={{ textAlign: "right", fontFamily: serif, fontSize: 16, color: saldoFimPeriodo >= 0 ? C.teal : C.red }}>{fmt(saldoFimPeriodo)}</Cel>
+              <Cel style={{ fontFamily: serif, fontSize: 15 }}>Saldo ao fim do período</Cel>
+              <Cel /><Cel /><Cel />
+            </div>
           </div>
-          {filtroAtivo && (
-            <button onClick={() => { setBusca(""); setTipoFiltro("todos"); }} className="cw-btn" style={{ fontSize: 12.5, color: C.text3, padding: "6px 8px", display: "flex", alignItems: "center", gap: 4 }}><X size={13} /> Limpar</button>
-          )}
-        </div>
-
-        {/* cabeçalho de colunas */}
-        <div style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "10px 20px", background: C.cream, fontSize: 11, fontWeight: 700, color: C.text3, letterSpacing: 0.3 }}>
-          <div>DATA</div>
-          <div style={{ textAlign: "right" }}>ENTRADA</div>
-          <div style={{ textAlign: "right" }}>SAÍDA</div>
-          <div style={{ textAlign: "right" }}>SALDO</div>
-          <div>DESCRIÇÃO</div>
-        </div>
-
-        {/* saldo anterior */}
-        <div style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "11px 20px", borderBottom: `1px solid ${C.border2}`, background: "#fff" }}>
-          <Cel style={{ color: C.text4 }}>—</Cel>
-          <Cel />
-          <Cel />
-          <Cel style={{ textAlign: "right", fontWeight: 600 }}>{fmt(saldoAnterior)}</Cel>
-          <Cel style={{ color: C.text3, fontStyle: "italic" }}>{anoTodo || saldoAnterior === saldoInicial ? "Saldo inicial" : "Saldo anterior"}</Cel>
-        </div>
-
-        {linhasFiltradas.map((l) => (
-          <div key={l.id} onClick={() => onAbrir && onAbrir(l)} title="Ver lançamento completo" style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "11px 20px", borderBottom: `1px solid ${C.border2}`, alignItems: "center", cursor: "pointer" }}>
-            <Cel style={{ color: C.text3 }}>{l.data}</Cel>
-            <Cel style={{ textAlign: "right", color: C.green, fontWeight: 600 }}>{l.tipo === "entrada" ? fmt(l.valor) : ""}</Cel>
-            <Cel style={{ textAlign: "right", color: C.red, fontWeight: 600 }}>{l.tipo === "saida" ? fmt(l.valor) : ""}</Cel>
-            <Cel style={{ textAlign: "right", fontWeight: 600 }}>{fmt(l.saldoCorrente)}</Cel>
-            <Cel>
-              <div style={{ fontWeight: 600, color: C.text }}>{l.descricao}</div>
-              <div style={{ fontSize: 11, color: C.text4 }}>{l.categoria}{l.subcategoria ? ` › ${l.subcategoria}` : ""}</div>
-            </Cel>
-          </div>
-        ))}
-
-        {linhasFiltradas.length === 0 && (
-          <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: C.text4 }}>
-            {filtroAtivo
-              ? "Nenhum lançamento com esse filtro. Ajuste a busca ou o tipo acima."
-              : `Nenhuma movimentação em ${anoTodo ? anoSel : `${MESES[mesSel]}/${anoSel}`} nesta conta. Troque o mês ou o ano acima para procurar em outro período.`}
-          </div>
-        )}
-
-        {/* totais de entradas e saídas (respeita o filtro) */}
-        {linhasFiltradas.length > 0 && (
-          <div style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "12px 20px", borderTop: `1px solid ${C.border2}`, background: "#fff", fontWeight: 700 }}>
-            <Cel style={{ color: C.text4 }}>Totais</Cel>
-            <Cel style={{ textAlign: "right", color: C.green }}>{fmt(fEntradas)}</Cel>
-            <Cel style={{ textAlign: "right", color: C.red }}>{fmt(fSaidas)}</Cel>
-            <Cel style={{ textAlign: "right", color: (fEntradas - fSaidas) >= 0 ? C.teal : C.red }}>{fmt(fEntradas - fSaidas)}</Cel>
-            <Cel style={{ color: C.text3, fontStyle: "italic" }}>{filtroAtivo ? `${linhasFiltradas.length} lançamento(s) no filtro · entradas − saídas` : `Entradas e saídas ${anoTodo ? `de ${anoSel}` : `de ${MESES[mesSel]}/${anoSel}`} · resultado do período`}</Cel>
-          </div>
-        )}
-
-        {/* saldo final do período */}
-        <div style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "13px 20px", background: C.cream, fontWeight: 700 }}>
-          <Cel />
-          <Cel /><Cel />
-          <Cel style={{ textAlign: "right", fontFamily: serif, fontSize: 16, color: saldoFimPeriodo >= 0 ? C.teal : C.red }}>{fmt(saldoFimPeriodo)}</Cel>
-          <Cel style={{ fontFamily: serif, fontSize: 15 }}>Saldo ao fim {anoTodo ? `de ${anoSel}` : `de ${MESES[mesSel]}/${anoSel}`}</Cel>
         </div>
       </Card>
 
       {previstos.length > 0 && (
         <Card style={{ marginTop: 16, padding: 0, overflow: "hidden" }}>
-          <div style={{ padding: "12px 20px", borderBottom: `1px solid ${C.border2}`, fontSize: 13, fontWeight: 700, color: C.text3 }}>
-            LANÇAMENTOS PREVISTOS (não entram no saldo)
+          <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border2}`, fontSize: 13, fontWeight: 700, color: C.text3 }}>
+            LANÇAMENTOS PREVISTOS (não entram no saldo){todos ? " · todos os bancos" : ""}
           </div>
           {previstos.map((l, i) => (
-            <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 20px", borderBottom: i < previstos.length - 1 ? `1px solid ${C.border2}` : "none" }}>
-              <Badge color={C.amber} bg={C.amberPale}>{l.data}</Badge>
-              <div style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{l.descricao}</div>
+            <div key={l.id} onClick={() => onAbrir && onAbrir(l)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 16px", borderBottom: i < previstos.length - 1 ? `1px solid ${C.border2}` : "none", cursor: "pointer" }}>
+              <Badge color={C.amber} bg={C.amberPale}>{dataBRdoLanc(l)}</Badge>
+              <div style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{l.descricao}<span style={{ fontWeight: 400, color: C.text4 }}> · {nomeConta(l.contaId)}</span></div>
               <div style={{ fontFamily: serif, color: l.tipo === "entrada" ? C.green : C.red }}>
                 {l.tipo === "entrada" ? "+" : "−"} {fmt(l.valor)}
               </div>
