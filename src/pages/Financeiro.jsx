@@ -606,6 +606,7 @@ function VisaoGeral({ lancamentos, onAbrir }) {
 
 // ===== CONTAS A PAGAR / RECEBER ===========================================
 function Contas({ lancamentos, tipo, onNova, onAbrir, onBaixar, onEditar, onExcluir }) {
+  const [busca, setBusca] = useState("");
   const previstos = lancamentos.filter((l) => l.status === "previsto");
   const ordena = (a, b) => chaveDoLancamento(a) - chaveDoLancamento(b) || diaDe(a.data) - diaDe(b.data);
   const receber = previstos.filter((l) => l.tipo === "entrada").sort(ordena);
@@ -613,7 +614,7 @@ function Contas({ lancamentos, tipo, onNova, onAbrir, onBaixar, onEditar, onExcl
   const totalRec = receber.reduce((s, l) => s + l.valor, 0);
   const totalPag = pagar.reduce((s, l) => s + l.valor, 0);
 
-  const Lista = ({ titulo, itens, total, cor, tipo }) => (
+  const Lista = ({ titulo, itens, total, cor, tipo, qtdTotal, filtrando, somaFiltrada }) => (
     <Card style={{ padding: 0, overflow: "hidden" }}>
       <div style={{ padding: "14px 18px", borderBottom: `1px solid ${C.border2}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <div>
@@ -624,8 +625,19 @@ function Contas({ lancamentos, tipo, onNova, onAbrir, onBaixar, onEditar, onExcl
           <Plus size={15} /> Nova
         </Btn>
       </div>
+      {/* busca local: cliente, descrição, categoria ou valor */}
+      <div style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 18px", borderBottom: `1px solid ${C.border2}`, background: "#fff" }}>
+        <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por cliente, descrição, categoria ou valor…"
+          style={{ ...inp, flex: 1, minWidth: 180, padding: "8px 12px", fontSize: 13 }} />
+        {filtrando && (
+          <button onClick={() => setBusca("")} className="cw-btn" style={{ fontSize: 12.5, color: C.text3, padding: "6px 8px", display: "flex", alignItems: "center", gap: 4 }}><X size={13} /> Limpar</button>
+        )}
+      </div>
+      {filtrando && (
+        <div style={{ padding: "8px 18px", fontSize: 12, color: C.text3, background: C.cream }}>{itens.length} de {qtdTotal} conta(s){itens.length ? ` · soma ${fmt(somaFiltrada)}` : ""}</div>
+      )}
       {itens.length === 0 ? (
-        <Empty icon={Receipt} title="Nada pendente" sub={`Sem contas a ${tipo === "entrada" ? "receber" : "pagar"}.`} />
+        <Empty icon={Receipt} title={filtrando ? "Nada encontrado" : "Nada pendente"} sub={filtrando ? "Nenhuma conta com essa busca. Ajuste o texto." : `Sem contas a ${tipo === "entrada" ? "receber" : "pagar"}.`} />
       ) : (
         itens.map((l, i) => (
           <div key={l.id} onClick={() => onAbrir && onAbrir(l)} title="Ver lançamento completo" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", borderBottom: i < itens.length - 1 ? `1px solid ${C.border2}` : "none", cursor: "pointer" }}>
@@ -659,6 +671,14 @@ function Contas({ lancamentos, tipo, onNova, onAbrir, onBaixar, onEditar, onExcl
   const total = ehReceber ? totalRec : totalPag;
   const cor = ehReceber ? C.green : C.red;
 
+  // Busca local da lista: por cliente, descrição, categoria ou valor. A descrição
+  // já traz o nome do cliente (ex.: "Reserva Reunião Small · Luiz Alberto…").
+  const termo = busca.trim().toLowerCase();
+  const itensFiltrados = termo
+    ? itens.filter((l) => `${l.descricao || ""} ${l.categoria || ""} ${l.subcategoria || ""} ${l.clienteNome || ""} ${l.valor}`.toLowerCase().includes(termo))
+    : itens;
+  const totalFiltrado = itensFiltrados.reduce((s, l) => s + l.valor, 0);
+
   return (
     <>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 16, marginBottom: 18 }}>
@@ -668,7 +688,8 @@ function Contas({ lancamentos, tipo, onNova, onAbrir, onBaixar, onEditar, onExcl
       <div style={{ fontSize: 12, color: C.text3, marginBottom: 14, fontStyle: "italic" }}>
         💡 Contas previstas (inclusive recorrentes) entram no DRE por <b>competência</b>, e saem do caixa só ao dar baixa.
       </div>
-      <Lista titulo={ehReceber ? "Contas a receber" : "Contas a pagar"} itens={itens} total={total} cor={cor} tipo={tipo} />
+      <Lista titulo={ehReceber ? "Contas a receber" : "Contas a pagar"} itens={itensFiltrados} total={total} cor={cor} tipo={tipo}
+        qtdTotal={itens.length} filtrando={!!termo} somaFiltrada={totalFiltrado} />
     </>
   );
 }
