@@ -28,6 +28,38 @@ async function getJson(pathQuery) {
   }
 }
 
+/**
+ * Como fetchAppState: o PostgREST corta a resposta em ~1000 linhas. Tabelas que
+ * podem passar disso (ex.: reservas) PRECISAM ser lidas em páginas — senão parte
+ * das linhas nunca chega ao front. Para reservas ordenadas por start_at.asc, o
+ * que ficava de fora eram justamente as FUTURAS (fim da ordem), que "sumiam" da
+ * agenda. Percorre em páginas de 1000 numa ordem estável (com desempate por id)
+ * até esgotar. `table` é o nome da tabela; `query` traz select/order (sem limit).
+ */
+async function getJsonPaged(table, query) {
+  if (!URL || !ANON) return [];
+  const token = await getAccessToken();
+  if (!token) return [];
+  const PAGE = 1000;
+  const all = [];
+  let offset = 0;
+  try {
+    for (;;) {
+      const res = await fetch(
+        `${URL}/rest/v1/${table}?${query}&limit=${PAGE}&offset=${offset}`,
+        { headers: { apikey: ANON, authorization: `Bearer ${token}` } },
+      );
+      if (!res.ok) break;
+      const rows = await res.json();
+      if (!Array.isArray(rows) || rows.length === 0) break;
+      all.push(...rows);
+      if (rows.length < PAGE) break; // última página
+      offset += PAGE;
+    }
+  } catch { /* devolve o que já veio */ }
+  return all;
+}
+
 export async function fetchMemberships() {
   return (await getJson("unidade_members?select=unidade_id,franqueado_id,role")) || [];
 }
@@ -271,7 +303,10 @@ export async function fetchCobrancasDb() {
   return (await getJson("cobrancas?select=*&order=created_at.desc")) || [];
 }
 export async function fetchReservasDb() {
-  return (await getJson("reservas?select=*&order=start_at.asc")) || [];
+  // PAGINADO (ver getJsonPaged): sem isto, com a tabela acima de ~1000 linhas o
+  // PostgREST cortava a resposta e as reservas FUTURAS (fim da ordem asc) sumiam
+  // da agenda — inclusive as de site/app do cliente, que só existem aqui.
+  return await getJsonPaged("reservas", "select=*&order=start_at.asc,id.asc");
 }
 export async function fetchSalasDb() {
   return (await getJson("salas?select=*")) || [];
