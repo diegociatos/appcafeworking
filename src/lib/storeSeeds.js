@@ -20,26 +20,26 @@ export const PERFIS = {
   master: {
     label: "Master (coworking)",
     cor: "#B8862F",
-    modules: ["painel_parceiro", "minha_unidade_parceira", "conversas_unidade", "dash", "equipe", "crm", "planos", "assinaturas", "aberturas", "unidades", "salas", "patrimonio", "reservas", "corresp", "pdv", "kds", "catalogo", "estoque", "clientes", "financeiro", "boletos", "cobrancas", "notafiscal", "eventos", "auditoria"],
+    modules: ["painel_parceiro", "minha_unidade_parceira", "conversas_unidade", "dash", "equipe", "crm", "planos", "assinaturas", "aberturas", "unidades", "salas", "patrimonio", "reservas", "corresp", "impressoes", "pdv", "kds", "catalogo", "estoque", "clientes", "financeiro", "boletos", "cobrancas", "notafiscal", "eventos", "auditoria"],
     landing: "dash",
   },
   recepcao: {
     label: "Recepção",
     cor: "#335C81",
-    modules: ["painel_parceiro", "conversas_unidade", "salas", "reservas", "pdv", "kds", "catalogo", "estoque", "crm", "assinaturas", "aberturas", "corresp", "clientes"],
+    modules: ["painel_parceiro", "conversas_unidade", "salas", "reservas", "pdv", "kds", "catalogo", "estoque", "crm", "assinaturas", "aberturas", "corresp", "impressoes", "clientes"],
     landing: "reservas",
   },
   financeiro: {
     label: "Financeiro",
     cor: "#3D7A5A",
-    modules: ["dash", "financeiro", "boletos", "cobrancas", "notafiscal", "planos", "assinaturas", "patrimonio", "estoque", "catalogo", "clientes", "crm"],
+    modules: ["dash", "financeiro", "boletos", "cobrancas", "notafiscal", "planos", "assinaturas", "patrimonio", "estoque", "catalogo", "clientes", "impressoes", "crm"],
     landing: "financeiro",
   },
   cliente: {
     label: "Cliente",
     cor: "#6E4E3B",
     // A loja usa uma função segura: o cliente não lê nem grava app_state direto.
-    modules: ["conversas_unidade", "cli_inicio", "cli_plano", "cli_abertura", "cli_reservar", "cli_cafeteria", "cli_faturas", "cli_docs", "cli_fiscal", "cli_contato", "cli_notif", "cli_conta"],
+    modules: ["conversas_unidade", "cli_inicio", "cli_plano", "cli_abertura", "cli_reservar", "cli_cafeteria", "cli_impressoes", "cli_faturas", "cli_docs", "cli_fiscal", "cli_contato", "cli_notif", "cli_conta"],
     landing: "cli_inicio",
   },
   // Contabilidade parceira (Ciatos Contabilidade): login próprio que só acompanha

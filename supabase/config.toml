@@ -8,6 +8,8 @@ project_id = "lmgbysfrbtgqzbtouzft"
 
 [functions.asaas-webhook]
 verify_jwt = false
+[functions.iniciar-assinatura]
+verify_jwt = false
 [functions.backfill-boleto-pdf]
 verify_jwt = false
 [functions.webhook-boletos]
@@ -51,4 +53,12 @@ verify_jwt = false
 [functions.minhas-faturas]
 verify_jwt = false
 [functions.reservas-cliente]
+verify_jwt = false
+[functions.impressoes-cliente]
+verify_jwt = false
+[functions.impressoes-admin]
+verify_jwt = false
+[functions.fila-impressao]
+verify_jwt = false
+[functions.impressao-concluida]
 verify_jwt = false

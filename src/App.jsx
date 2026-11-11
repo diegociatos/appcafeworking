@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   LayoutDashboard, KanbanSquare, Building2, CalendarDays, Mail, Coffee,
   Users, Wallet, Mic2, MessageSquare, UserCircle, Settings,
-  Search, Bell, Menu, X, ChevronDown, Check, Store, Eye, LogOut, ShieldCheck, Package, Home, FileText, Barcode, Boxes, Landmark, Tags, DoorOpen, ScrollText, ChefHat, Briefcase, Handshake,
+  Search, Bell, Menu, X, ChevronDown, Check, Store, Eye, LogOut, ShieldCheck, Package, Home, FileText, Barcode, Boxes, Landmark, Tags, DoorOpen, ScrollText, ChefHat, Briefcase, Handshake, Printer,
 } from "lucide-react";
 import { C, sans, serif, fmt, shadow } from "./lib/theme.js";
 import { useStore, PERFIS } from "./lib/store.jsx";
@@ -56,6 +56,8 @@ import NotificacoesCliente from "./pages/cliente/Notificacoes.jsx";
 import MinhaContaCliente from "./pages/cliente/MinhaConta.jsx";
 import AberturaEmpresaCliente from "./pages/cliente/AberturaEmpresa.jsx";
 import CafeteriaCliente from "./pages/cliente/Cafeteria.jsx";
+import Impressoes from "./pages/Impressoes.jsx";
+import ImpressoesCliente from "./pages/cliente/Impressoes.jsx";
 import Aberturas from "./pages/Aberturas.jsx";
 import { aberturasApi } from "./lib/aberturasApi.js";
 
@@ -78,6 +80,7 @@ const NAV = [
   { id: "salas", label: "Salas", icon: DoorOpen, group: "operacao" },
   { id: "reservas", label: "Reservas", icon: CalendarDays, group: "operacao" },
   { id: "corresp", label: "Correspondências", icon: Mail, group: "operacao" },
+  { id: "impressoes", label: "Impressões", icon: Printer, group: "operacao" },
   { id: "pdv", label: "Cafeteria · PDV", icon: Coffee, group: "operacao" },
   { id: "kds", label: "Cozinha · KDS", icon: ChefHat, group: "operacao" },
   { id: "catalogo", label: "Produtos da cafeteria", icon: Package, group: "operacao" },
@@ -105,12 +108,12 @@ const NAV_GRUPOS = [
 const PAGES = {
   painel_parceiro: PainelParceiro, minha_unidade_parceira: MinhaUnidadeParceira, conversas_unidade: ConversasUnidade,
   dash: Dashboard, franqueados: Franqueados, crm: CRM, unidades: Unidades,
-  reservas: Reservas, corresp: Correspondencias, pdv: PDV, clientes: Clientes,
+  reservas: Reservas, corresp: Correspondencias, pdv: PDV, clientes: Clientes, impressoes: Impressoes,
   financeiro: Financeiro, boletos: Boletos, cobrancas: Cobrancas, notafiscal: NotaFiscal, estoque: Estoque, patrimonio: Patrimonio, eventos: Eventos,
   area: AreaCliente, equipe: Equipe, catalogo: Catalogo, planos: Planos, tabela_nacional: PlanosNacionais, parceiros: Parceiros, salas: Salas, config: Configuracoes, auditoria: Auditoria, kds: KDS,
   assinaturas: Assinaturas, aberturas: Aberturas, cli_plano: MeuPlano, cli_abertura: AberturaEmpresaCliente,
   cli_inicio: InicioCliente, cli_reservar: ReservarCliente, cli_faturas: FaturasCliente, cli_docs: CorrespondenciasCliente,
-  cli_cafeteria: CafeteriaCliente,
+  cli_cafeteria: CafeteriaCliente, cli_impressoes: ImpressoesCliente,
   cli_fiscal: EnderecoFiscalCliente, cli_contato: FaleConoscoCliente, cli_notif: NotificacoesCliente, cli_conta: MinhaContaCliente,
 };
 
@@ -220,6 +223,7 @@ export default function App() {
     ...(temAbertura || page === "cli_abertura" ? [{ id: "cli_abertura", label: "Abertura da empresa", icon: Briefcase }] : []),
     { id: "cli_reservar", label: "Reservar sala", icon: CalendarDays },
     { id: "cli_cafeteria", label: "Cafeteria e conveniência", icon: Coffee },
+    { id: "cli_impressoes", label: "Impressões", icon: Printer },
     { id: "cli_faturas", label: "Faturas", icon: Wallet },
     { id: "cli_docs", label: "Correspondências", icon: Mail },
     ...(meusCadastros.some((c) => c.fiscal) ? [{ id: "cli_fiscal", label: "Endereço fiscal", icon: Building2 }] : []),

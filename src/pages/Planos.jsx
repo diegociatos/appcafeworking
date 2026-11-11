@@ -145,7 +145,7 @@ export function PlanoForm({ inicial, onSave }) {
     beneficiosTexto: (inicial.beneficios || []).join("\n"),
     prazoMinimoMeses: inicial.prazoMinimoMeses ?? 0, ordem: inicial.ordem ?? "",
     direitos: {
-      horasReuniao: 0, horasCoworking: 0, dayPass: 0, correspondencias: 0,
+      horasReuniao: 0, horasCoworking: 0, dayPass: 0, correspondencias: 0, impressaoMensal: 0,
       cafeIncluso: false, descontoSala: 0, descontoCafe: 0, ...(inicial.direitos || {}),
     },
   });
@@ -229,6 +229,7 @@ export function PlanoForm({ inicial, onSave }) {
           <Field label="Horas coworking / mês" style={{ marginBottom: 0 }}><input type="number" min="0" value={f.direitos.horasCoworking} onChange={setD("horasCoworking")} style={inp} /></Field>
           <Field label="Day-pass / mês" style={{ marginBottom: 0 }}><input type="number" min="0" value={f.direitos.dayPass} onChange={setD("dayPass")} style={inp} /></Field>
           <Field label="Correspondências / mês" style={{ marginBottom: 0 }}><input type="number" min="0" value={f.direitos.correspondencias} onChange={setD("correspondencias")} style={inp} /></Field>
+          <Field label="Impressões / mês (folhas)" style={{ marginBottom: 0 }}><input type="number" min="0" value={f.direitos.impressaoMensal} onChange={setD("impressaoMensal")} style={inp} /></Field>
           <Field label="Desconto sala (%)" style={{ marginBottom: 0 }}><input type="number" min="0" max="100" value={f.direitos.descontoSala} onChange={setD("descontoSala")} style={inp} /></Field>
           <Field label="Desconto cafeteria (%)" style={{ marginBottom: 0 }}><input type="number" min="0" max="100" value={f.direitos.descontoCafe} onChange={setD("descontoCafe")} style={inp} /></Field>
         </div>
