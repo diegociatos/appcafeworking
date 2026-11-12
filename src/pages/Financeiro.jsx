@@ -889,6 +889,10 @@ function Contratos({ store, activeUnit, clientesUnidade = [] }) {
   const [faturar, setFaturar] = useState(null);
   const [renovar, setRenovar] = useState(null);
   const venceuIds = new Set(vencendo.map((c) => c.id));
+  const [buscaC, setBuscaC] = useState("");
+  const normTxt = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const qc = normTxt(buscaC.trim());
+  const contratosFiltrados = qc ? contratos.filter((c) => normTxt(c.cliente).includes(qc) || normTxt(c.plano).includes(qc)) : contratos;
 
   return (
     <>
@@ -911,11 +915,22 @@ function Contratos({ store, activeUnit, clientesUnidade = [] }) {
         </div>
       )}
 
+      {contratos.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+          <div style={{ position: "relative", display: "flex", alignItems: "center", flex: "1 1 240px", minWidth: 200 }}>
+            <Search size={15} style={{ position: "absolute", left: 10, color: C.text4, pointerEvents: "none" }} />
+            <input value={buscaC} onChange={(e) => setBuscaC(e.target.value)} placeholder="Buscar contrato por cliente ou plano…" style={{ ...inp, paddingLeft: 32 }} />
+          </div>
+          <span style={{ fontSize: 12.5, color: C.text3, marginLeft: "auto", whiteSpace: "nowrap" }}>{contratosFiltrados.length} de {contratos.length}</span>
+        </div>
+      )}
       {contratos.length === 0 ? (
         <Card><Empty icon={FileSignature} title="Nenhum contrato" sub={MODO_REAL ? "Cadastre um contrato mensal para provisionar as parcelas no financeiro." : "Cadastre um contrato mensal para emitir boletos recorrentes automaticamente."} /></Card>
+      ) : contratosFiltrados.length === 0 ? (
+        <Card><Empty icon={FileSignature} title="Nenhum contrato encontrado" sub="Ajuste a busca pelo cliente ou plano." /></Card>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {contratos.map((c) => {
+          {contratosFiltrados.map((c) => {
             const anualC = c.periodicidade === "anual";
             const compIni = store.compInicioContrato(c);
             const compFim = store.compFimContrato(c);

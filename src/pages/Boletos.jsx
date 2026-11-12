@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   Barcode, Plus, Landmark, Copy, Check, Download, XCircle, CircleDollarSign,
-  QrCode, Building2, ShieldCheck, Trash2, Info, RefreshCw, Plug, CheckCircle2, ExternalLink, Mail,
+  QrCode, Building2, ShieldCheck, Trash2, Info, RefreshCw, Plug, CheckCircle2, ExternalLink, Mail, Search,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, ConfirmDialog } from "../components/ui.jsx";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
@@ -58,6 +58,28 @@ export default function Boletos() {
   const [integracao, setIntegracao] = useState(null);
   const [removendo, setRemovendo] = useState(null); // conta a confirmar
   const [avisoContas, setAvisoContas] = useState(null); // { ok, texto }
+  const [busca, setBusca] = useState("");
+  const [venDe, setVenDe] = useState("");
+  const [venAte, setVenAte] = useState("");
+
+  // Filtro local da aba (busca por cliente/documento + período de vencimento),
+  // para localizar os boletos de um cliente sem sair para a tela de contratos.
+  const normTxt = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const qn = normTxt(busca.trim());
+  const qd = busca.replace(/\D/g, "");
+  const boletosFiltrados = boletos.filter((b) => {
+    if (qn) {
+      const nomeOk = normTxt(b.sacado).includes(qn);
+      const docOk = qd && String(b.sacadoDocumento || "").replace(/\D/g, "").includes(qd);
+      if (!nomeOk && !docOk) return false;
+    }
+    if (venDe && String(b.vencimento || "") < venDe) return false;
+    if (venAte && String(b.vencimento || "") > venAte) return false;
+    return true;
+  });
+  const totalFiltrado = boletosFiltrados.reduce((s, b) => s + (Number(b.valor) || 0), 0);
+  const filtroAtivo = !!(busca.trim() || venDe || venAte);
+  const limparFiltros = () => { setBusca(""); setVenDe(""); setVenAte(""); };
 
   const confirmarRemocao = async () => {
     const conta = removendo;
@@ -137,14 +159,39 @@ export default function Boletos() {
       </div>
 
       {aba === "boletos" && (
-        <ListaBoletos
-          boletos={boletos}
-          contas={contas}
-          conectado={supabaseConfigured}
-          onCancelar={(b) => store.cancelarBoleto(b.id)}
-          onBaixar={(b) => store.baixarBoleto(b.id)}
-          onSincronizar={(b) => store.sincronizarBoleto(b.id)}
-        />
+        <>
+          {boletos.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+              <div style={{ position: "relative", display: "flex", alignItems: "center", flex: "1 1 240px", minWidth: 200 }}>
+                <Search size={15} style={{ position: "absolute", left: 10, color: C.text4, pointerEvents: "none" }} />
+                <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por cliente ou CPF/CNPJ…" style={{ ...inp, paddingLeft: 32 }} />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <label style={{ fontSize: 12, color: C.text3, whiteSpace: "nowrap" }}>Venc.</label>
+                <input type="date" value={venDe} onChange={(e) => setVenDe(e.target.value)} aria-label="Vencimento de" style={{ ...inp, width: "auto", padding: "7px 10px" }} />
+                <span style={{ color: C.text4 }}>–</span>
+                <input type="date" value={venAte} onChange={(e) => setVenAte(e.target.value)} aria-label="Vencimento até" style={{ ...inp, width: "auto", padding: "7px 10px" }} />
+              </div>
+              {filtroAtivo && (
+                <button onClick={limparFiltros} className="cw-btn" style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 9, fontSize: 12.5, fontWeight: 600, color: C.text3, border: `1px solid ${C.border}` }}>
+                  <XCircle size={14} /> Limpar
+                </button>
+              )}
+              <span style={{ fontSize: 12.5, color: C.text3, marginLeft: "auto", whiteSpace: "nowrap" }}>
+                {boletosFiltrados.length} de {boletos.length} · total <b style={{ color: C.text2 }}>{fmt(totalFiltrado)}</b>
+              </span>
+            </div>
+          )}
+          <ListaBoletos
+            boletos={boletosFiltrados}
+            contas={contas}
+            conectado={supabaseConfigured}
+            vazioPorFiltro={boletos.length > 0 && boletosFiltrados.length === 0}
+            onCancelar={(b) => store.cancelarBoleto(b.id)}
+            onBaixar={(b) => store.baixarBoleto(b.id)}
+            onSincronizar={(b) => store.sincronizarBoleto(b.id)}
+          />
+        </>
       )}
       {aba === "contas" && (
         <>
@@ -196,9 +243,11 @@ export default function Boletos() {
 }
 
 // ===========================================================================
-function ListaBoletos({ boletos, contas, conectado, onCancelar, onBaixar, onSincronizar }) {
+function ListaBoletos({ boletos, contas, conectado, vazioPorFiltro, onCancelar, onBaixar, onSincronizar }) {
   if (!boletos.length) {
-    return <Card><Empty icon={Barcode} title="Nenhum boleto emitido" sub="Clique em “Emitir boleto” para gerar o primeiro." /></Card>;
+    return <Card><Empty icon={Barcode}
+      title={vazioPorFiltro ? "Nenhum boleto encontrado" : "Nenhum boleto emitido"}
+      sub={vazioPorFiltro ? "Ajuste a busca pelo cliente ou o período de vencimento." : "Clique em “Emitir boleto” para gerar o primeiro."} /></Card>;
   }
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
