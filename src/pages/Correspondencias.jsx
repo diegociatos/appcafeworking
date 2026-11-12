@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   Plus, PackageCheck, MessageCircle, AlertCircle, Paperclip, Filter,
-  CheckCircle2, Trash2, Download, FileText,
+  CheckCircle2, Trash2, Download, FileText, Search,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, FileInput, ConfirmDialog } from "../components/ui.jsx";
 import { C, serif, inp } from "../lib/theme.js";
@@ -63,6 +63,7 @@ export default function Correspondencias() {
     setAvisos((a) => ({ ...a, [id]: r }));
   };
   const [filtro, setFiltro] = useState("todas");
+  const [busca, setBusca] = useState("");
   const [modal, setModal] = useState(() => (registroPendente ? { clienteId: registroPendente } : false));
   useEffect(() => { registroPendente = null; }, []);
   const [anexoAberto, setAnexoAberto] = useState(null);
@@ -81,11 +82,15 @@ export default function Correspondencias() {
   const ehParceira = unidadeEhParceira(activeUnit);
   const atraso = (c) => (ehParceira ? prazoDaCorrespondencia(c) : { atrasada: false, dias: 0 });
   const foraDoPrazo = ehParceira ? corresp.filter((c) => atraso(c).atrasada) : [];
-  const filtrada =
+  const base =
     filtro === "urgente" ? corresp.filter((c) => c.urgente) :
     filtro === "aguardando" ? corresp.filter((c) => c.status === "aguardando") :
     filtro === "prazo" ? foraDoPrazo :
     corresp;
+  const qn = busca.trim().normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const filtrada = qn
+    ? base.filter((c) => `${c.cliente || ""} ${c.remetente || ""} ${c.tipo || ""} ${c.descricao || ""}`.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().includes(qn))
+    : base;
 
   const kpis = [
     { l: "Recebidas", v: corresp.length, c: C.cafe },
@@ -120,10 +125,14 @@ export default function Correspondencias() {
             <Filter size={13} style={{ verticalAlign: -2, marginRight: 5 }} /> {l}
           </button>
         ))}
+        <div style={{ position: "relative", display: "flex", alignItems: "center", flex: "1 1 220px", minWidth: 180 }}>
+          <Search size={14} style={{ position: "absolute", left: 10, color: C.text4, pointerEvents: "none" }} />
+          <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por cliente, remetente ou tipo…" style={{ ...inp, padding: "8px 10px 8px 32px", fontSize: 13 }} />
+        </div>
       </div>
 
       {filtrada.length === 0 ? (
-        <Card><Empty icon={PackageCheck} title="Nenhuma correspondência" sub="Registre o primeiro recebimento desta unidade." /></Card>
+        <Card><Empty icon={PackageCheck} title={busca || filtro !== "todas" ? "Nada encontrado" : "Nenhuma correspondência"} sub={busca || filtro !== "todas" ? "Ajuste a busca pelo cliente ou o filtro." : "Registre o primeiro recebimento desta unidade."} /></Card>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(330px,1fr))", gap: 16 }}>
           {filtrada.map((c) => {

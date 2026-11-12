@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   Coffee, Plus, Minus, ShoppingCart, QrCode, CreditCard, Banknote,
-  CheckCircle2, TrendingUp, Percent, Box, Bell, Clock, Smartphone, ArrowRight, UserCheck, Tag,
+  CheckCircle2, TrendingUp, Percent, Box, Bell, Clock, Smartphone, ArrowRight, UserCheck, Tag, Search,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Empty, Modal } from "../components/ui.jsx";
 import { C, serif, fmt, inp } from "../lib/theme.js";
@@ -22,6 +22,7 @@ export default function PDV() {
   const { activeUnit, unidadeAtiva, produtosDe, pedidosDe, addPedido, updatePedido, estoqueBaixoDe, clientesDe, planosDe } = useStore();
   const [cart, setCart] = useState([]);
   const [cat, setCat] = useState("Todos");
+  const [buscaProd, setBuscaProd] = useState("");
   const [pago, setPago] = useState(null);
   const [clienteId, setClienteId] = useState(""); // cliente identificado na comanda
   const [vendaOk, setVendaOk] = useState(null); // { total, conta } após finalizar
@@ -45,7 +46,9 @@ export default function PDV() {
   const pedidosAtivos = pedidosDe(activeUnit).filter((p) => !["entregue", "aguardando_pagamento"].includes(p.status));
   const novos = pedidosAtivos.filter((p) => p.status === "recebido").length;
   const cats = ["Todos", ...new Set(produtosUnidade.map((p) => p.cat))];
-  const prods = cat === "Todos" ? produtosUnidade : produtosUnidade.filter((p) => p.cat === cat);
+  const qProd = buscaProd.trim().normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const prodsBase = cat === "Todos" ? produtosUnidade : produtosUnidade.filter((p) => p.cat === cat);
+  const prods = qProd ? prodsBase.filter((p) => `${p.nome || ""} ${p.cat || ""}`.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().includes(qProd)) : prodsBase;
 
   // Trocar de unidade zera a comanda (não se mistura venda entre unidades)
   useEffect(() => {
@@ -53,6 +56,7 @@ export default function PDV() {
     setPago(null);
     setCat("Todos");
     setClienteId("");
+    setBuscaProd("");
   }, [activeUnit]);
 
   const add = (p) =>
@@ -206,6 +210,10 @@ export default function PDV() {
 
       <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 16 }} className="cw-grid-stack">
         <div>
+          <div style={{ position: "relative", display: "flex", alignItems: "center", marginBottom: 12, maxWidth: 360 }}>
+            <Search size={15} style={{ position: "absolute", left: 10, color: C.text4, pointerEvents: "none" }} />
+            <input value={buscaProd} onChange={(e) => setBuscaProd(e.target.value)} placeholder="Buscar produto…" style={{ ...inp, paddingLeft: 32 }} />
+          </div>
           <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
             {cats.map((c) => (
               <button

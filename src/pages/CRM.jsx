@@ -132,6 +132,7 @@ export default function CRM({ go }) {
   const [modal, setModal] = useState(null);
   const [etapaModal, setEtapaModal] = useState(null); // {} = nova | objeto = editar
   const [drag, setDrag] = useState(null);
+  const [busca, setBusca] = useState("");
   const [leadExcluir, setLeadExcluir] = useState(null); // lead aguardando confirmação de exclusão
 
   // Remove o lead do funil. Leads persistem via useSync("leads"), então o filtro
@@ -141,6 +142,13 @@ export default function CRM({ go }) {
     setLeads((ls) => ls.filter((x) => x.id !== l.id));
     setLeadExcluir(null);
   };
+
+  // Busca local do funil: filtra os cards por nome, empresa, e-mail, telefone ou
+  // interesse, sem mexer nos KPIs (que seguem contando todos os leads).
+  const qLead = busca.trim().normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const leadsExib = qLead
+    ? leads.filter((l) => `${l.nome || ""} ${l.empresa || ""} ${l.email || ""} ${l.tel || ""} ${l.interesse || ""}`.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().includes(qLead))
+    : leads;
 
   const totalPipeline = leads
     .filter((l) => l.etapa !== "fechado")
@@ -247,6 +255,10 @@ export default function CRM({ go }) {
         </Card>
       </div>
 
+      <div style={{ position: "relative", display: "flex", alignItems: "center", maxWidth: 360, marginBottom: 14 }}>
+        <SearchIcon size={15} style={{ position: "absolute", left: 10, color: C.text4, pointerEvents: "none" }} />
+        <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar lead por nome, empresa ou e-mail…" style={{ ...inp, paddingLeft: 32 }} />
+      </div>
       {/* Kanban */}
       <div
         style={{
@@ -258,7 +270,7 @@ export default function CRM({ go }) {
         }}
       >
         {etapas.map((e) => {
-          const leadsEtapa = leads.filter((l) => l.etapa === e.id);
+          const leadsEtapa = leadsExib.filter((l) => l.etapa === e.id);
           const valorEtapa = leadsEtapa.reduce((s, l) => s + l.valor, 0);
           return (
             <div

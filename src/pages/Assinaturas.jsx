@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ScrollText, FileCheck2, Loader2, RefreshCw, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
+import { ScrollText, FileCheck2, Loader2, RefreshCw, ChevronDown, ChevronUp, ExternalLink, Search } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Empty, Field } from "../components/ui.jsx";
 import { C, serif, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
@@ -50,6 +50,7 @@ function ListaAssinaturas({ unidadeId }) {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
   const [filtro, setFiltro] = useState("todas");
+  const [busca, setBusca] = useState("");
   const [aberta, setAberta] = useState(null);
 
   const carregar = () => {
@@ -62,15 +63,24 @@ function ListaAssinaturas({ unidadeId }) {
   };
   useEffect(carregar, [unidadeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const filtradas = useMemo(() => lista.filter((a) => ({
-    todas: true,
-    conferir: a.docs_status === "enviado",
-    acerto: a.requer_acerto && !a.acerto_resolvido_em,
-    sem_sala: precisaSala(a),
-    cancelando: a.status === "cancelando",
-    ativas: ["ativa", "inadimplente"].includes(a.status),
-    canceladas: a.status === "cancelada",
-  }[filtro])), [lista, filtro]);
+  const filtradas = useMemo(() => {
+    const qn = busca.trim().normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+    const qd = busca.replace(/\D/g, "");
+    return lista.filter((a) => ({
+      todas: true,
+      conferir: a.docs_status === "enviado",
+      acerto: a.requer_acerto && !a.acerto_resolvido_em,
+      sem_sala: precisaSala(a),
+      cancelando: a.status === "cancelando",
+      ativas: ["ativa", "inadimplente"].includes(a.status),
+      canceladas: a.status === "cancelada",
+    }[filtro])).filter((a) => {
+      if (!qn && !qd) return true;
+      const alvo = `${a.cliente_nome || ""} ${a.cliente_email || ""} ${a.plano_nome || ""}`.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+      const docOk = qd && String(a.cliente_documento || "").replace(/\D/g, "").includes(qd);
+      return alvo.includes(qn) || docOk;
+    });
+  }, [lista, filtro, busca]);
 
   const contagem = (id) => lista.filter((a) => ({
     conferir: a.docs_status === "enviado", acerto: a.requer_acerto && !a.acerto_resolvido_em, sem_sala: precisaSala(a), cancelando: a.status === "cancelando",
@@ -88,7 +98,11 @@ function ListaAssinaturas({ unidadeId }) {
             </button>
           );
         })}
-        <Btn variant="ghost" onClick={carregar} style={{ marginLeft: "auto", padding: "7px 12px", fontSize: 13 }} aria-label="Atualizar lista">
+        <div style={{ position: "relative", display: "flex", alignItems: "center", flex: "1 1 200px", minWidth: 180 }}>
+          <Search size={14} style={{ position: "absolute", left: 9, color: C.text4, pointerEvents: "none" }} />
+          <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar cliente, e-mail ou plano…" style={{ ...inp, padding: "7px 10px 7px 30px", fontSize: 13 }} />
+        </div>
+        <Btn variant="ghost" onClick={carregar} style={{ padding: "7px 12px", fontSize: 13 }} aria-label="Atualizar lista">
           {carregando ? <Loader2 size={14} className="cw-spin" /> : <RefreshCw size={14} />} Atualizar
         </Btn>
       </div>
