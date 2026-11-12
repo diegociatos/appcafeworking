@@ -7,6 +7,7 @@ import { Card, Badge, Btn, PageHead } from "../components/ui.jsx";
 import { C, serif, fmt, fmtShort } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 import { getCurrentCompetencia, MESES_BR as MESES, noPeriodo } from "../lib/dateUtils.js";
+import { resumoRecebiveis, hojeSP, ehNaoComercial } from "../lib/financeiro.js";
 import { cobrancasJaLancadas, competenciaBRT, receitaOnlineNoMes } from "../lib/recebimentosOnline.js";
 import { Store } from "lucide-react";
 
@@ -43,8 +44,10 @@ export default function Dashboard({ go }) {
   // Receita = lançamentos pagos + pagamentos do Asaas que ainda não viraram
   // lançamento pago (cobrança lançada e já baixada não conta duas vezes).
   const asaasNoMes = (ano, mes) => receitaOnlineNoMes(cobrancasUnidade, lancs, ano, mes, jaLancadas).valor;
+  // Receita exclui movimentos NÃO comerciais (transferências entre contas,
+  // aportes, investimentos) — eles não são faturamento, só não inflam a receita.
   const entradasPagas = (ano, mes) => lancs
-    .filter((l) => noPeriodo(l, ano, mes) && l.tipo === "entrada" && l.status === "pago")
+    .filter((l) => noPeriodo(l, ano, mes) && l.tipo === "entrada" && l.status === "pago" && !ehNaoComercial(l))
     .reduce((s, l) => s + (l.valor || 0), 0) + asaasNoMes(ano, mes);
   const fluxo = MESES.map((label, m) => ({ label, valor: entradasPagas(comp.ano, m) }));
   const receitaAsaasMes = asaasNoMes(comp.ano, comp.mes);
@@ -56,11 +59,18 @@ export default function Dashboard({ go }) {
 
   const recorrenteMes = contratos.reduce((s, c) => s + (c.valorMensal || 0), 0);
   const avulsaMes = Math.max(0, receitaMes - recorrenteMes);
-  const aReceber = lancs.filter((l) => l.tipo === "entrada" && l.status === "previsto").reduce((s, l) => s + (l.valor || 0), 0);
+  // Carteira de recebíveis pelo MESMO critério da tela de Inadimplência (núcleo
+  // financeiro): "a receber" = vencido + a vencer do ano corrente; a projeção
+  // futura (2027+) fica à parte e não infla o indicador.
+  const _receb = resumoRecebiveis(lancs, hojeSP());
+  const aReceber = _receb.vencido.total + _receb.a_vencer.total;
+  const aReceberFuturo = _receb.futuro.total;
+  const vencidosInad = _receb.itens.filter((x) => x.classe === "vencido");
+  const inadimplentes = new Set(vencidosInad.map((x) => x.l.clienteId || ("semcli:" + x.l.id))).size;
 
   const hoje = new Date();
-  const vencidos = boletos.filter((b) => b.status !== "pago" && b.status !== "cancelado" && b.vencimento && new Date(b.vencimento) < hoje);
-  const inadimplentes = new Set(vencidos.map((b) => b.sacado)).size;
+  // Boletos vencidos (tabela de boletos) — usados só nos alertas de fatura.
+  const boletosVencidos = boletos.filter((b) => b.status !== "pago" && b.status !== "cancelado" && b.vencimento && new Date(b.vencimento) < hoje);
 
   const totalMembros = clientes.filter((c) => c.status !== "inativo").length;
   const salasTotal = salas.length;
@@ -85,7 +95,7 @@ export default function Dashboard({ go }) {
   const stats = [
     { label: `Receita ${MESES[comp.mes]}`, val: fmtShort(receitaMes), delta: `${deltaMes >= 0 ? `▲ ${deltaMes}%` : `▼ ${Math.abs(deltaMes)}%`} vs mês anterior${receitaAsaasMes ? ` · ${fmtShort(receitaAsaasMes)} do Asaas` : ""}`, icon: DollarSign, cor: deltaMes >= 0 ? C.green : C.red },
     { label: "Receita recorrente", val: fmtShort(recorrenteMes), delta: `avulsa ${fmtShort(avulsaMes)}`, icon: TrendingUp, cor: C.teal },
-    { label: "Contas a receber", val: fmtShort(aReceber), delta: `${vencidos.length} boleto(s) vencido(s)`, icon: Receipt, cor: vencidos.length ? C.red : C.cafe },
+    { label: "Contas a receber", val: fmtShort(aReceber), delta: aReceberFuturo > 0 ? `+ ${fmtShort(aReceberFuturo)} projeção futura` : `${vencidosInad.length} título(s) vencido(s)`, icon: Receipt, cor: vencidosInad.length ? C.red : C.cafe },
     { label: "Inadimplentes", val: inadimplentes, delta: inadimplentes ? "acionar cobrança" : "em dia", icon: AlertCircle, cor: inadimplentes ? C.red : C.green },
     { label: "Ocupação de salas", val: `${ocupacao}%`, delta: `${horasReservadas}h reservadas`, icon: DoorOpen, cor: C.cafe },
     { label: "Cafeteria (mês)", val: fmtShort(cafeteriaMes), delta: `margem ${margemCafe}% · tkt ${fmtShort(ticketCafe)}`, icon: Coffee, cor: C.amber },
@@ -95,8 +105,7 @@ export default function Dashboard({ go }) {
 
   // Alertas inteligentes derivados do estado real (vazio = tudo em dia).
   const alertas = [];
-  boletos
-    .filter((b) => b.status !== "pago" && b.status !== "cancelado" && b.vencimento && new Date(b.vencimento) < hoje)
+  boletosVencidos
     .slice(0, 3)
     .forEach((b) => alertas.push({ id: "fat" + b.id, tipo: "fatura", cor: C.red, titulo: "Fatura vencida", sub: `${b.sacado} · ${fmt(b.valor)} · acionar cobrança` }));
   const baixo = store.estoqueBaixoDe ? store.estoqueBaixoDe(ativo) : [];
