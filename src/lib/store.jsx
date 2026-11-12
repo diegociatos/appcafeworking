@@ -23,6 +23,7 @@ import {
   upsertBankAccountDb, patchBankAccountDb,
 } from "./supabaseDb.js";
 import { getCurrentCompetencia, parseDateToCompetencia, anoDoLancamento } from "./dateUtils.js";
+import { montarParcela } from "./financeiro.js";
 import { legacyReservaToDateRange, dateRangeToLegacy, temConflito, TZ } from "./reservas.js";
 import { reservasApi } from "./reservasApi.js";
 import { notificacoesApi } from "./notificacoesApi.js";
@@ -651,10 +652,19 @@ export function StoreProvider({ children }) {
     const grupo = "rec" + Date.now();
     const ts = Date.now();
     const anoBase = Number(base.ano) || ANO_ATUAL;
-    const novos = meses.map((m, i) => ({
-      ...base, id: `lc${ts}_${m}_${i}`, unidadeId, mes: ((m % 12) + 12) % 12, ano: anoBase + Math.floor(m / 12),
-      status: base.status || "previsto", grupoRecorrencia: meses.length > 1 ? grupo : undefined,
-    }));
+    // Dia de vencimento: do campo diaVencimento, senão o dia do `data` (que pode
+    // vir como dia solto "10"), senão 10. montarParcela compõe data/vencimento
+    // COMPLETAS a partir de (ano, mes, dia) — corrige o bug "data=1".
+    const diaVenc = base.diaVencimento || String(base.data || "").split("/")[0] || "10";
+    const novos = meses.map((m, i) => {
+      const mes0 = ((m % 12) + 12) % 12;
+      const ano = anoBase + Math.floor(m / 12);
+      const p = montarParcela(base, mes0, ano, 0, diaVenc);
+      return {
+        ...p, id: `lc${ts}_${m}_${i}`, unidadeId,
+        status: base.status || "previsto", grupoRecorrencia: meses.length > 1 ? grupo : undefined,
+      };
+    });
     const novosBoletos = [];
     if (!REAL && boletoCfg && boletoCfg.gerar && base.tipo === "entrada") {
       const conta = bankAccounts.find((b) => b.id === boletoCfg.bankAccountId);
@@ -1272,7 +1282,8 @@ export function StoreProvider({ children }) {
       tipo: "entrada",
       descricao: `${c.plano} · ${c.cliente}${sufixo}`,
       categoria: "Receita Operacional Bruta", subcategoria: "",
-      valor, contaId: contaCx, data: String(c.diaVencimento || "10"),
+      valor, contaId: contaCx,
+      diaVencimento: String(c.diaVencimento || "10"),
       recorrente: true, contratoId: c.id, clienteId: c.clienteId || null, ano: anoInicialContrato(c),
     };
     addContaRecorrente(c.unidadeId, base, meses, {
@@ -1356,7 +1367,16 @@ export function StoreProvider({ children }) {
     const novoValor = patch?.valorMensal ?? c.valorMensal;
     const novoPrazo = c.periodicidade === "anual" ? 1 : Math.max(1, Number(patch?.meses ?? c.meses));
     const renovado = { ...c, valorMensal: novoValor, meses: novoPrazo, mesInicial, anoInicial, dataInicio: null, dataFim: null, status: "ativo", renovadoEm: new Date().toISOString().slice(0, 7) };
+    // Dedup: remove provisões previstas (não pagas) deste contrato a partir da
+    // competência da renovação, para renovar não duplicar parcelas que já se
+    // estendiam além do mês que vem.
+    const dupes = lancamentos.filter((l) =>
+      l.contratoId === id && l.status === "previsto" && (anoDoLancamento(l) * 12 + l.mes) >= compInicio);
+    const idsDup = new Set(dupes.map((l) => l.id));
+    const idsBolDup = new Set(dupes.map((l) => l.boletoId).filter(Boolean));
     setContratos((cs) => cs.map((x) => (x.id === id ? renovado : x)));
+    if (idsDup.size) setLancamentos((ls) => ls.filter((l) => !idsDup.has(l.id)));
+    if (idsBolDup.size) setBoletos((bs) => bs.filter((b) => !idsBolDup.has(b.id) || b.status === "pago" || b.status === "cancelado"));
     gerarCobrancasContrato(renovado, mesInicial, mesInicial + (renovado.periodicidade === "anual" ? 0 : novoPrazo - 1), novoValor, " (renovado)");
   };
 
