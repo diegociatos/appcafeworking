@@ -2,7 +2,7 @@ import { useState } from "react";
 import SelecionarCliente from "../components/SelecionarCliente.jsx";
 import {
   FileText, Receipt, Plus, Download, XCircle, SlidersHorizontal, CheckCircle2,
-  Building2, Percent, ShieldCheck, Coins, KeyRound, UploadCloud, AlertTriangle,
+  Building2, Percent, ShieldCheck, Coins, KeyRound, UploadCloud, AlertTriangle, Search,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, FileInput } from "../components/ui.jsx";
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
@@ -40,11 +40,27 @@ export default function NotaFiscal() {
   const notas = store.notasFiscaisDe(activeUnit);
   const [aba, setAba] = useState("notas");
   const [emitir, setEmitir] = useState(false);
+  const [busca, setBusca] = useState("");
+  const [emiDe, setEmiDe] = useState("");
+  const [emiAte, setEmiAte] = useState("");
 
   const simuladas = notas.filter((n) => n.status === "simulada").length;
   const faturado = notas.filter((n) => n.status === "autorizada").reduce((s, n) => s + n.valor, 0);
   const issTotal = notas.filter((n) => n.status === "autorizada").reduce((s, n) => s + (n.iss || 0), 0);
   const ativa = cfg?.emissaoAtiva;
+
+  // Filtro local: busca por tomador/número/descrição + período de emissão.
+  const normTxt = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const qn = normTxt(busca.trim());
+  const notasFiltradas = notas.filter((n) => {
+    if (qn && !(normTxt(n.tomador).includes(qn) || normTxt(n.descricao).includes(qn) || String(n.numero || "").includes(busca.trim()))) return false;
+    const d = String(n.emitidaEm || "").slice(0, 10);
+    if (emiDe && d < emiDe) return false;
+    if (emiAte && d > emiAte) return false;
+    return true;
+  });
+  const filtroAtivo = !!(busca.trim() || emiDe || emiAte);
+  const limparFiltros = () => { setBusca(""); setEmiDe(""); setEmiAte(""); };
 
   return (
     <div>
@@ -82,14 +98,34 @@ export default function NotaFiscal() {
             <Kpi label="Faturado (NFS-e)" valor={fmt(faturado)} icon={Coins} cor={C.cafe} />
             <Kpi label="ISS recolhido" valor={fmt(issTotal)} icon={Percent} cor={C.amber} />
           </div>
+          {notas.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+              <div style={{ position: "relative", display: "flex", alignItems: "center", flex: "1 1 240px", minWidth: 200 }}>
+                <Search size={15} style={{ position: "absolute", left: 10, color: C.text4, pointerEvents: "none" }} />
+                <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por tomador ou nº da nota…" style={{ ...inp, paddingLeft: 32 }} />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <label style={{ fontSize: 12, color: C.text3, whiteSpace: "nowrap" }}>Emissão</label>
+                <input type="date" value={emiDe} onChange={(e) => setEmiDe(e.target.value)} aria-label="Emitida de" style={{ ...inp, width: "auto", padding: "7px 10px" }} />
+                <span style={{ color: C.text4 }}>–</span>
+                <input type="date" value={emiAte} onChange={(e) => setEmiAte(e.target.value)} aria-label="Emitida até" style={{ ...inp, width: "auto", padding: "7px 10px" }} />
+              </div>
+              {filtroAtivo && (
+                <button onClick={limparFiltros} className="cw-btn" style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 9, fontSize: 12.5, fontWeight: 600, color: C.text3, border: `1px solid ${C.border}` }}><XCircle size={14} /> Limpar</button>
+              )}
+              <span style={{ fontSize: 12.5, color: C.text3, marginLeft: "auto", whiteSpace: "nowrap" }}>{notasFiltradas.length} de {notas.length}</span>
+            </div>
+          )}
           {notas.length === 0 ? (
             <Card><Empty icon={FileText} title="Nenhuma nota emitida" sub="Emita a primeira NFS-e pelo botão Emitir nota." /></Card>
+          ) : notasFiltradas.length === 0 ? (
+            <Card><Empty icon={FileText} title="Nenhuma nota encontrada" sub="Ajuste a busca pelo tomador ou o período de emissão." /></Card>
           ) : (
             <Card style={{ padding: 0, overflow: "hidden" }}>
-              {notas.map((n, i) => {
+              {notasFiltradas.map((n, i) => {
                 const st = STATUS[n.status] || STATUS.processando;
                 return (
-                  <div key={n.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 18px", borderBottom: i < notas.length - 1 ? `1px solid ${C.border2}` : "none", flexWrap: "wrap" }}>
+                  <div key={n.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 18px", borderBottom: i < notasFiltradas.length - 1 ? `1px solid ${C.border2}` : "none", flexWrap: "wrap" }}>
                     <div style={{ width: 40, height: 40, borderRadius: 10, background: C.tealPale, display: "grid", placeItems: "center", flexShrink: 0 }}><FileText size={19} color={C.teal} /></div>
                     <div style={{ flex: 1, minWidth: 160 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>

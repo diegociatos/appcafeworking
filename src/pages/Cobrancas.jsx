@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { EmitirForm, BANCOS } from "./Boletos.jsx";
-import { CreditCard, Plus, Barcode, QrCode, Link2, CheckCircle2, Copy, ExternalLink, AlertTriangle, Wallet, KeyRound, ShieldCheck, FileText, Receipt } from "lucide-react";
+import { CreditCard, Plus, Barcode, QrCode, Link2, CheckCircle2, Copy, ExternalLink, AlertTriangle, Wallet, KeyRound, ShieldCheck, FileText, Receipt, Search, X } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/ui.jsx";
 import { C, serif, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
@@ -42,6 +42,9 @@ export default function Cobrancas({ go }) {
   const [erroNota, setErroNota] = useState("");
   const [config, setConfig] = useState(false);
   const [recibo, setRecibo] = useState(null);
+  const [busca, setBusca] = useState("");
+  const [venDe, setVenDe] = useState("");
+  const [venAte, setVenAte] = useState("");
 
   useEffect(() => {
     let vivo = true;
@@ -53,6 +56,25 @@ export default function Cobrancas({ go }) {
   const cobrancas = lista; // já filtradas por RLS (unidades do usuário)
   const recebido = cobrancas.filter((c) => c.status === "pago").reduce((s, c) => s + c.valor, 0);
   const aberto = cobrancas.filter((c) => c.status === "pendente").reduce((s, c) => s + c.valor, 0);
+
+  // Filtro local da tela: busca por cliente/documento/descrição + período de vencimento.
+  const normTxt = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const qn = normTxt(busca.trim());
+  const qd = busca.replace(/\D/g, "");
+  const cobrancasFiltradas = cobrancas.filter((c) => {
+    if (qn) {
+      const nomeOk = normTxt(c.cliente).includes(qn) || normTxt(c.descricao).includes(qn);
+      const docOk = qd && String(c.documento || "").replace(/\D/g, "").includes(qd);
+      if (!nomeOk && !docOk) return false;
+    }
+    const v = String(c.vencimento || "").slice(0, 10);
+    if (venDe && v < venDe) return false;
+    if (venAte && v > venAte) return false;
+    return true;
+  });
+  const filtroAtivo = !!(busca.trim() || venDe || venAte);
+  const totalFiltrado = cobrancasFiltradas.reduce((s, c) => s + (Number(c.valor) || 0), 0);
+  const limparFiltros = () => { setBusca(""); setVenDe(""); setVenAte(""); };
 
   return (
     <div>
@@ -84,11 +106,31 @@ export default function Cobrancas({ go }) {
       {cobrancas.length === 0 ? (
         <Card><Empty icon={CreditCard} title="Nenhuma cobrança" sub="Crie a primeira cobrança — você escolhe boleto, PIX, cartão (link), nota fiscal ou recibo." /></Card>
       ) : (
-        <Card style={{ padding: 0, overflow: "hidden" }}>
-          {cobrancas.map((c, i) => {
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+            <div style={{ position: "relative", display: "flex", alignItems: "center", flex: "1 1 240px", minWidth: 200 }}>
+              <Search size={15} style={{ position: "absolute", left: 10, color: C.text4, pointerEvents: "none" }} />
+              <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por cliente ou CPF/CNPJ…" style={{ ...inp, paddingLeft: 32 }} />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <label style={{ fontSize: 12, color: C.text3, whiteSpace: "nowrap" }}>Venc.</label>
+              <input type="date" value={venDe} onChange={(e) => setVenDe(e.target.value)} aria-label="Vencimento de" style={{ ...inp, width: "auto", padding: "7px 10px" }} />
+              <span style={{ color: C.text4 }}>–</span>
+              <input type="date" value={venAte} onChange={(e) => setVenAte(e.target.value)} aria-label="Vencimento até" style={{ ...inp, width: "auto", padding: "7px 10px" }} />
+            </div>
+            {filtroAtivo && (
+              <button onClick={limparFiltros} className="cw-btn" style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 9, fontSize: 12.5, fontWeight: 600, color: C.text3, border: `1px solid ${C.border}` }}><X size={14} /> Limpar</button>
+            )}
+            <span style={{ fontSize: 12.5, color: C.text3, marginLeft: "auto", whiteSpace: "nowrap" }}>{cobrancasFiltradas.length} de {cobrancas.length} · total <b style={{ color: C.text2 }}>{fmt(totalFiltrado)}</b></span>
+          </div>
+          {cobrancasFiltradas.length === 0 ? (
+            <Card><Empty icon={CreditCard} title="Nenhuma cobrança encontrada" sub="Ajuste a busca pelo cliente ou o período de vencimento." /></Card>
+          ) : (
+          <Card style={{ padding: 0, overflow: "hidden" }}>
+          {cobrancasFiltradas.map((c, i) => {
             const st = STATUS[c.status] || STATUS.pendente;
             return (
-              <div key={c.id} onClick={() => setDetalhe(c)} style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 18px", borderBottom: i < cobrancas.length - 1 ? `1px solid ${C.border2}` : "none", cursor: "pointer", flexWrap: "wrap" }}>
+              <div key={c.id} onClick={() => setDetalhe(c)} style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 18px", borderBottom: i < cobrancasFiltradas.length - 1 ? `1px solid ${C.border2}` : "none", cursor: "pointer", flexWrap: "wrap" }}>
                 <div style={{ width: 40, height: 40, borderRadius: 10, background: C.cafePale, display: "grid", placeItems: "center", flexShrink: 0 }}><CreditCard size={19} color={C.cafe} /></div>
                 <div style={{ flex: 1, minWidth: 160 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -102,6 +144,8 @@ export default function Cobrancas({ go }) {
             );
           })}
         </Card>
+          )}
+        </>
       )}
 
       {novo && (

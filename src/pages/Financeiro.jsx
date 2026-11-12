@@ -2447,6 +2447,7 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
   const [cobrar, setCobrar] = useState(null); // título { l, dias } em registro de cobrança
   const [filtro, setFiltro] = useState("todos"); // todos | sem | hoje
   const [editarMsg, setEditarMsg] = useState(false);
+  const [buscaInad, setBuscaInad] = useState("");
   const template = store.cobrancaTemplate || COBRANCA_TEMPLATE_DEFAULT;
   const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
   const d2 = (n) => String(n).padStart(2, "0");
@@ -2505,6 +2506,10 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
   const ultimaCobranca = (l) => (l.cobrancas || []).slice(-1)[0];
   const cobradoHoje = (l) => (l.cobrancas || []).some((c) => c.data === hojeBR);
   const vencidosFiltrados = vencidos.filter(({ l }) => (filtro === "sem" ? !(l.cobrancas || []).length : filtro === "hoje" ? !cobradoHoje(l) : true));
+  const normTxtI = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const qi = normTxtI(buscaInad.trim());
+  const porClienteExib = qi ? porCliente.filter((g) => normTxtI(g.nome).includes(qi)) : porCliente;
+  const vencidosExib = qi ? vencidosFiltrados.filter(({ l }) => normTxtI(nomeCli(l)).includes(qi)) : vencidosFiltrados;
 
   const Cel = ({ children, style }) => <div style={{ fontSize: 13, ...style }}>{children}</div>;
   const colCli = "1fr 110px 130px 140px";
@@ -2543,13 +2548,21 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
         <Empty icon={CheckCircle2} title="Nenhuma inadimplência em aberto" sub="Não há recebíveis vencidos. Assim que um recebível passar do vencimento sem pagamento, ele aparece aqui." />
       ) : (
         <>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+            <div style={{ position: "relative", display: "flex", alignItems: "center", flex: "1 1 240px", minWidth: 200 }}>
+              <Search size={15} style={{ position: "absolute", left: 10, color: C.text4, pointerEvents: "none" }} />
+              <input value={buscaInad} onChange={(e) => setBuscaInad(e.target.value)} placeholder="Buscar cliente inadimplente…" style={{ ...inp, paddingLeft: 32 }} />
+            </div>
+            {qi && <span style={{ fontSize: 12.5, color: C.text3 }}>{porClienteExib.length} cliente(s)</span>}
+          </div>
           <Card style={{ padding: 0, overflow: "hidden", marginBottom: 16 }}>
             <div style={{ padding: "12px 18px", borderBottom: `1px solid ${C.border2}`, fontWeight: 700, fontSize: 13.5 }}>Resumo por cliente</div>
             <div style={{ overflowX: "auto" }}><div style={{ minWidth: 540 }}>
               <div style={{ display: "grid", gridTemplateColumns: colCli, gap: 8, padding: "10px 18px", background: C.cream, fontSize: 11, fontWeight: 700, color: C.text3 }}>
                 <div>CLIENTE</div><div style={{ textAlign: "right" }}>TÍTULOS</div><div style={{ textAlign: "right" }}>MAIOR ATRASO</div><div style={{ textAlign: "right" }}>TOTAL VENCIDO</div>
               </div>
-              {porCliente.map((g, i) => (
+              {porClienteExib.length === 0 && <div style={{ padding: "12px 18px", fontSize: 13, color: C.text4 }}>Nenhum cliente com esse nome.</div>}
+              {porClienteExib.map((g, i) => (
                 <div key={i} style={{ display: "grid", gridTemplateColumns: colCli, gap: 8, padding: "10px 18px", borderTop: `1px solid ${C.border2}`, alignItems: "center" }}>
                   <Cel style={{ fontWeight: 600 }}>{g.nome}</Cel>
                   <Cel style={{ textAlign: "right" }}>{g.titulos}</Cel>
@@ -2562,7 +2575,7 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
 
           <Card style={{ padding: 0, overflow: "hidden" }}>
             <div style={{ padding: "12px 18px", borderBottom: `1px solid ${C.border2}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-              <span style={{ fontWeight: 700, fontSize: 13.5 }}>Títulos vencidos ({vencidosFiltrados.length}{filtro !== "todos" ? ` de ${vencidos.length}` : ""})</span>
+              <span style={{ fontWeight: 700, fontSize: 13.5 }}>Títulos vencidos ({vencidosExib.length}{(filtro !== "todos" || qi) ? ` de ${vencidos.length}` : ""})</span>
               <div style={{ display: "flex", background: C.cream, borderRadius: 9, padding: 3, gap: 2 }}>
                 {[["todos", "Todos"], ["sem", "Sem cobrança"], ["hoje", "A cobrar hoje"]].map(([v, lb]) => (
                   <button key={v} onClick={() => setFiltro(v)} className="cw-btn"
@@ -2574,8 +2587,8 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
               <div style={{ display: "grid", gridTemplateColumns: colTit, gap: 8, padding: "10px 18px", background: C.cream, fontSize: 11, fontWeight: 700, color: C.text3 }}>
                 <div>CLIENTE · DESCRIÇÃO</div><div style={{ textAlign: "right" }}>VENCIMENTO</div><div style={{ textAlign: "right" }}>ATRASO</div><div style={{ textAlign: "right" }}>VALOR</div><div style={{ textAlign: "right" }}>AÇÕES</div>
               </div>
-              {vencidosFiltrados.length === 0 && <div style={{ padding: 22, textAlign: "center", fontSize: 13, color: C.text4 }}>{filtro === "sem" ? "Todos os títulos já têm ao menos uma cobrança registrada." : filtro === "hoje" ? "Nenhum título pendente de cobrança hoje. 👏" : "Nenhum título."}</div>}
-              {vencidosFiltrados.map(({ l, dias }) => { const uc = ultimaCobranca(l); const temTel = !!telDe(l); return (
+              {vencidosExib.length === 0 && <div style={{ padding: 22, textAlign: "center", fontSize: 13, color: C.text4 }}>{qi ? "Nenhum título para esse cliente." : filtro === "sem" ? "Todos os títulos já têm ao menos uma cobrança registrada." : filtro === "hoje" ? "Nenhum título pendente de cobrança hoje. 👏" : "Nenhum título."}</div>}
+              {vencidosExib.map(({ l, dias }) => { const uc = ultimaCobranca(l); const temTel = !!telDe(l); return (
                 <div key={l.id} style={{ display: "grid", gridTemplateColumns: colTit, gap: 8, padding: "10px 18px", borderTop: `1px solid ${C.border2}`, alignItems: "center" }}>
                   <Cel>
                     <div style={{ fontWeight: 600 }}>{nomeCli(l)}</div>
