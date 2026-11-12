@@ -126,12 +126,20 @@ export default function Impressoes() {
                           <td style={{ padding: "8px 10px" }}><Badge color={cor}>{rot}</Badge></td>
                           <td style={{ padding: "8px 10px", color: C.text3 }}>{dataBR(j.criado_em)}</td>
                           <td style={{ padding: "8px 10px" }}>
-                            {pendente && (
-                              <span style={{ display: "inline-flex", gap: 6 }}>
-                                <Btn variant="soft" disabled={acao === j.id} onClick={() => concluir(j, "impresso")} style={{ padding: "5px 10px", fontSize: 12.5 }}><CheckCircle2 size={14} /> Marcar impressa</Btn>
-                                <Btn variant="ghost" disabled={acao === j.id} onClick={() => concluir(j, "falha")} style={{ padding: "5px 10px", fontSize: 12.5, color: C.red }}><XCircle size={14} /> Falha</Btn>
-                              </span>
-                            )}
+                            <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
+                              {j.arquivo_url && (
+                                <a href={j.arquivo_url} target="_blank" rel="noopener noreferrer"
+                                  style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 10px", fontSize: 12.5, fontWeight: 600, borderRadius: 10, background: C.cafe, color: "#fff", textDecoration: "none" }}>
+                                  <Download size={14} /> Abrir
+                                </a>
+                              )}
+                              {pendente && (
+                                <>
+                                  <Btn variant="soft" disabled={acao === j.id} onClick={() => concluir(j, "impresso")} style={{ padding: "5px 10px", fontSize: 12.5 }}><CheckCircle2 size={14} /> Marcar impressa</Btn>
+                                  <Btn variant="ghost" disabled={acao === j.id} onClick={() => concluir(j, "falha")} style={{ padding: "5px 10px", fontSize: 12.5, color: C.red }}><XCircle size={14} /> Falha</Btn>
+                                </>
+                              )}
+                            </span>
                           </td>
                         </tr>
                       );

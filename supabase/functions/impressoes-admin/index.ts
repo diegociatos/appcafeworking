@@ -14,7 +14,7 @@ import { handleOptions, json } from "../_shared/cors.ts";
 import { adminClient } from "../_shared/supabaseAdmin.ts";
 import { ehEquipe, usuarioDoReq } from "../_shared/assinaturas.ts";
 import { erroInterno } from "../_shared/clienteArea.ts";
-import { competenciaBRT, PRECO_FOLHA_EXCEDENTE } from "../_shared/impressao.ts";
+import { competenciaBRT, PRECO_FOLHA_EXCEDENTE, BUCKET_IMPRESSOES } from "../_shared/impressao.ts";
 
 Deno.serve(async (req) => {
   const pre = handleOptions(req);
@@ -37,7 +37,7 @@ Deno.serve(async (req) => {
     const [impsR, jobsR, consumosR] = await Promise.all([
       admin.from("impressoras").select("id, nome, modelo, ativo").eq("unidade_id", unidadeId).order("nome"),
       admin.from("impressao_jobs")
-        .select("id, cliente_email, cliente_nome, documento_nome, paginas, copias, duplex, folhas, folhas_impressas, status, origem, criado_em, impresso_em")
+        .select("id, cliente_email, cliente_nome, documento_nome, storage_path, paginas, copias, duplex, folhas, folhas_impressas, status, origem, criado_em, impresso_em")
         .eq("unidade_id", unidadeId).order("criado_em", { ascending: false }).limit(300),
       admin.from("consumos_impressao").select("cliente_email, folhas").eq("unidade_id", unidadeId).eq("competencia", competencia),
     ]);
@@ -49,9 +49,21 @@ Deno.serve(async (req) => {
       .map(([cliente_email, folhas]) => ({ cliente_email, folhas, valor_excedente_ref: 0 }))
       .sort((a, b) => b.folhas - a.folhas);
 
+    // Link temporário do documento para a recepção abrir/imprimir — só p/ trabalhos
+    // ainda na fila (os já impressos têm o arquivo apagado por LGPD). URL expira em 1h.
+    const jobs = await Promise.all((jobsR.data || []).map(async (j) => {
+      const { storage_path, ...rest } = j as Record<string, unknown>;
+      let arquivo_url: string | null = null;
+      if (storage_path && (j.status === "fila" || j.status === "enviado")) {
+        const s = await admin.storage.from(BUCKET_IMPRESSOES).createSignedUrl(String(storage_path), 3600);
+        arquivo_url = s.data?.signedUrl ?? null;
+      }
+      return { ...rest, arquivo_url };
+    }));
+
     return json({
       competencia, preco_folha: PRECO_FOLHA_EXCEDENTE,
-      impressoras: impsR.data || [], jobs: jobsR.data || [], resumo,
+      impressoras: impsR.data || [], jobs, resumo,
     }, 200, req);
   } catch (e) {
     return erroInterno(req, "impressoes-admin", e);
