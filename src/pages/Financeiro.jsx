@@ -115,7 +115,11 @@ export default function Financeiro({ finTab }) {
   const clientesUnidade = store.clientesDe(unidadeAtiva?.nome);
 
   const saldoTotal = contas.reduce((s, c) => s + saldoAtualConta(c, lancamentos), 0);
-  const aReceber = lancamentos.filter((l) => l.tipo === "entrada" && l.status === "previsto").reduce((s, l) => s + l.valor, 0);
+  // "A receber" = carteira atual (vencido + a vencer); projeção futura (2027+)
+  // fica separada e não infla o indicador — mesmo critério do Dashboard/Inadimplência.
+  const _recebKpi = resumoRecebiveis(lancamentos, hojeSP());
+  const aReceber = _recebKpi.vencido.total + _recebKpi.a_vencer.total;
+  const aReceberFuturo = _recebKpi.futuro.total;
   const aPagar = lancamentos.filter((l) => l.tipo === "saida" && l.status === "previsto").reduce((s, l) => s + l.valor, 0);
   const entradasMes = lancamentos.filter((l) => noPeriodo(l, ANO_ATUAL, MES_ATUAL) && l.tipo === "entrada" && l.status === "pago").reduce((s, l) => s + l.valor, 0);
   const saidasMes = lancamentos.filter((l) => noPeriodo(l, ANO_ATUAL, MES_ATUAL) && l.tipo === "saida" && l.status === "pago").reduce((s, l) => s + l.valor, 0);
@@ -142,7 +146,7 @@ export default function Financeiro({ finTab }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 16, marginBottom: 20 }}>
         <Kpi label="Saldo em contas" valor={saldoTotal} icon={Wallet} cor={C.teal} sub={`${contas.length} contas`} />
-        <Kpi label="A receber" valor={aReceber} icon={ArrowUpRight} cor={C.green} sub="Previstos não pagos" />
+        <Kpi label="A receber" valor={aReceber} icon={ArrowUpRight} cor={C.green} sub={aReceberFuturo > 0 ? `+ ${fmt(aReceberFuturo)} projeção futura` : "Vencidos + a vencer"} />
         <Kpi label="A pagar" valor={aPagar} icon={ArrowDownRight} cor={C.red} sub="Despesas previstas" />
         <Kpi label="Resultado do mês" valor={resultadoMes} icon={TrendingUp} cor={resultadoMes >= 0 ? C.green : C.red} sub={`Entradas − saídas (${MESES[MES_ATUAL]}/${ANO_ATUAL})`} />
       </div>
