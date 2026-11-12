@@ -4,7 +4,7 @@ import {
   Wallet, TrendingUp, Landmark, BarChart3, FileText, Tags,
   Plus, Edit3, Trash2, Check, X, ArrowUpRight, ArrowDownRight, Receipt, Paperclip, Download, Barcode, Copy, QrCode,
   FileSignature, RefreshCw, AlertTriangle, Upload, CheckCircle2, AlertCircle, MessageSquare, Phone, CreditCard, PiggyBank, ExternalLink, Mail,
-  Eye, SlidersHorizontal,
+  Eye, SlidersHorizontal, Search,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, FileInput } from "../components/ui.jsx";
 import { C, serif, sans, fmt, fmtShort, inp } from "../lib/theme.js";
@@ -181,7 +181,7 @@ export default function Financeiro({ finTab }) {
         {tab === "repasses" && (store.unidadeEhParceira(activeUnit)
           ? <MeusRepasses cobrancas={store.cobrancasDe(activeUnit)} conta={store.contaDaUnidade(activeUnit)} unidadeId={activeUnit} />
           : <Card><Empty icon={PiggyBank} title="Só para unidades parceiras" sub="Os repasses do split aparecem nas unidades das contas parceiras da rede CafeWorking." /></Card>)}
-        {tab === "recebimentos" && <RecebimentosCliente clientes={clientesUnidade} lancamentos={lancamentos} updateLancamento={store.updateLancamento} />}
+        {tab === "recebimentos" && <RecebimentosCliente clientes={clientesUnidade} lancamentos={lancamentos} updateLancamento={store.updateLancamento} unidadeNome={unidadeAtiva?.nome} />}
         {tab === "inadimplencia" && <Inadimplencia clientes={clientesUnidade} lancamentos={lancamentos} contas={contas} categorias={categorias} store={store} activeUnit={activeUnit} />}
         {tab === "provisao" && <Provisao store={store} activeUnit={activeUnit} lancamentos={lancamentos} categorias={categorias} unidadeNome={unidadeAtiva?.nome} onNovaDespesa={() => setContaPRModal({ tipo: "saida" })} />}
         {tab === "bancos" && <Bancos contas={contas} lancamentos={lancamentos} saldoTotal={saldoTotal} onNovo={() => setContaModal({})} onEditar={(c) => setContaModal(c)} onExcluir={(c) => store.removeConta(c.id)} />}
@@ -1957,9 +1957,11 @@ function Bancos({ contas, lancamentos = [], saldoTotal, onNovo, onEditar, onExcl
 }
 
 // ===== RECEBIMENTOS POR CLIENTE ============================================
-function RecebimentosCliente({ clientes = [], lancamentos = [], updateLancamento }) {
+function RecebimentosCliente({ clientes = [], lancamentos = [], updateLancamento, unidadeNome }) {
   const [mesRef, setMesRef] = useState(MES_ATUAL);
   const [anoRef, setAnoRef] = useState(ANO_ATUAL);
+  const [busca, setBusca] = useState("");
+  const [ordem, setOrdem] = useState("nome"); // nome | maior | sem
   const [previa, setPrevia] = useState(null); // { vinculaveis:[{l,cliente}], ambiguos, semMatch }
   const [verLista, setVerLista] = useState(false); // mostrar os recebimentos sem cliente antes de vincular
   const normTxt = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -1986,25 +1988,78 @@ function RecebimentosCliente({ clientes = [], lancamentos = [], updateLancamento
   const noCaixa = (l, mes = null) => { const c = caixaDe(l); return c.ano === anoRef && (mes == null || c.mes === mes); };
   const recebidos = lancamentos.filter((l) => l.tipo === "entrada" && l.status === "pago" && l.clienteId);
   const clientesOrd = clientes.slice().sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"));
+  const buscaN = normTxt(busca);
+  const clientesFiltrados = buscaN ? clientesOrd.filter((c) => normTxt(c.nome).includes(buscaN)) : clientesOrd;
+  const ordenar = (arr, totalDe) => {
+    if (ordem === "maior") return arr.slice().sort((x, y) => totalDe(y) - totalDe(x));
+    if (ordem === "sem") return arr.slice().sort((x, y) => (totalDe(x) === 0 ? 0 : 1) - (totalDe(y) === 0 ? 0 : 1));
+    return arr;
+  };
   const triIdx = Math.floor(mesRef / 3);
   const triMeses = TRIMESTRES[triIdx].meses;
   const somaCli = (cid, filtro) => recebidos.filter((l) => l.clienteId === cid && filtro(l)).reduce((s, l) => s + l.valor, 0);
-  const linhas = clientesOrd.map((c) => ({
+  const linhas = ordenar(clientesFiltrados.map((c) => ({
     id: c.id, nome: c.nome,
     mes: somaCli(c.id, (l) => noCaixa(l, mesRef)),
     tri: somaCli(c.id, (l) => noCaixa(l) && triMeses.includes(caixaDe(l).mes)),
     ano: somaCli(c.id, (l) => noCaixa(l)),
     acum: somaCli(c.id, () => true),
-  }));
+  })), (r) => r.ano);
   const tot = linhas.reduce((t, r) => ({ mes: t.mes + r.mes, tri: t.tri + r.tri, ano: t.ano + r.ano, acum: t.acum + r.acum }), { mes: 0, tri: 0, ano: 0, acum: 0 });
   // Matriz mês a mês (regime de caixa): cada cliente x 12 meses + total
-  const matriz = clientesOrd.map((c) => {
+  const matriz = ordenar(clientesFiltrados.map((c) => {
     const meses = MESES.map((_, mi) => somaCli(c.id, (l) => noCaixa(l, mi)));
     return { id: c.id, nome: c.nome, meses, total: meses.reduce((s, v) => s + v, 0) };
-  });
+  }), (r) => r.total);
   const totMes = MESES.map((_, mi) => matriz.reduce((s, r) => s + r.meses[mi], 0));
   const totGeral = totMes.reduce((s, v) => s + v, 0);
+  const comReceb = matriz.filter((r) => r.total > 0).length;
   const semVinculo = lancamentos.filter((l) => l.tipo === "entrada" && l.status === "pago" && !l.clienteId).length;
+  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  // Exporta a visao atual (mes a mes ou consolidado) como PDF: abre uma janela de
+  // impressao ja com layout de relatorio (o usuario escolhe "Salvar como PDF").
+  const exportarPDF = () => {
+    const sub = unidadeNome ? `Unidade ${unidadeNome}` : "CafeWorking";
+    const periodo = view === "mensal" ? `Ano ${anoRef}` : `${MESES[mesRef]}/${anoRef}`;
+    const geradoEm = new Date().toLocaleString("pt-BR");
+    const money = (v) => (v ? fmt(v) : "—");
+    let thead, tbody, tfoot;
+    if (view === "mensal") {
+      thead = `<th class="l">Cliente</th>${MESES.map((m) => `<th>${m.slice(0, 3).toUpperCase()}</th>`).join("")}<th>Total ${anoRef}</th>`;
+      tbody = matriz.map((r) => `<tr class="${r.total === 0 ? "zero" : ""}"><td class="l">${esc(r.nome)}</td>${r.meses.map((v) => `<td>${v ? fmtNum(v) : "·"}</td>`).join("")}<td class="b">${r.total ? fmtNum(r.total) : "—"}</td></tr>`).join("");
+      tfoot = `<td class="l">TOTAL</td>${totMes.map((v) => `<td>${v ? fmtNum(v) : "·"}</td>`).join("")}<td>${fmtNum(totGeral)}</td>`;
+    } else {
+      thead = `<th class="l">Cliente</th><th>${MESES[mesRef].toUpperCase()}</th><th>${triIdx + 1}º Tri</th><th>Ano ${anoRef}</th><th>Acumulado</th>`;
+      tbody = linhas.map((r) => `<tr class="${r.ano === 0 ? "zero" : ""}"><td class="l">${esc(r.nome)}</td><td>${money(r.mes)}</td><td>${money(r.tri)}</td><td>${money(r.ano)}</td><td class="b">${money(r.acum)}</td></tr>`).join("");
+      tfoot = `<td class="l">TOTAL</td><td>${fmt(tot.mes)}</td><td>${fmt(tot.tri)}</td><td>${fmt(tot.ano)}</td><td>${fmt(tot.acum)}</td>`;
+    }
+    const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Recebimentos por Cliente — ${esc(sub)}</title>
+<style>@page{size:A4 landscape;margin:12mm}*{font-family:Arial,Helvetica,sans-serif}body{margin:0;color:#222}
+h1{font-size:16px;margin:0 0 2px}.meta{font-size:11px;color:#666;margin-bottom:10px}
+table{width:100%;border-collapse:collapse;font-size:10px}th,td{padding:4px 6px;border-bottom:1px solid #e8e8e8;text-align:right;white-space:nowrap}
+th{background:#f3efe9;font-size:9px;letter-spacing:.3px;text-transform:uppercase;color:#555}th.l,td.l{text-align:left}
+td.b{font-weight:700}tr.zero td.l{color:#b23}tfoot td{font-weight:700;background:#f3efe9;border-top:2px solid #ccc}
+.foot{margin-top:10px;font-size:9px;color:#999}</style></head><body>
+<h1>Recebimentos por Cliente</h1>
+<div class="meta">${esc(sub)} · ${periodo} · regime de caixa · ${clientesFiltrados.length} cliente(s)${busca ? ` · filtro "${esc(busca)}"` : ""} · gerado em ${geradoEm}</div>
+<table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody><tfoot><tr>${tfoot}</tr></tfoot></table>
+<div class="foot">Valores em reais. Regime de caixa (valor recebido no mes do pagamento).</div>
+</body></html>`;
+    const iframe = document.createElement("iframe");
+    iframe.setAttribute("aria-hidden", "true");
+    iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;";
+    document.body.appendChild(iframe);
+    const idoc = iframe.contentWindow.document;
+    idoc.open(); idoc.write(html); idoc.close();
+    const limpar = () => iframe.remove();
+    iframe.contentWindow.onafterprint = limpar;
+    setTimeout(() => {
+      try { iframe.contentWindow.focus(); iframe.contentWindow.print(); }
+      catch (e) { console.warn("Impressao do PDF falhou", e); limpar(); }
+      setTimeout(limpar, 60000);
+    }, 300);
+  };
   const fmtNum = (v) => fmt(v).replace("R$ ", "").replace("R$ ", "");
 
   const col = "1fr 110px 110px 110px 130px";
@@ -2032,6 +2087,24 @@ function RecebimentosCliente({ clientes = [], lancamentos = [], updateLancamento
             </select>
           )}
           <SeletorAno valor={anoRef} onChange={setAnoRef} anos={anosDisponiveis(lancamentos)} />
+          <Btn variant="soft" onClick={exportarPDF} disabled={clientesFiltrados.length === 0} style={{ padding: "7px 12px", fontSize: 12.5 }}><Download size={15} /> Exportar PDF</Btn>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+        <div style={{ fontSize: 12.5, color: C.text3 }}>
+          <b style={{ color: C.text2 }}>{clientesFiltrados.length}</b> cliente(s) · <b style={{ color: C.green }}>{comReceb}</b> com recebimento em {anoRef} · total <b style={{ color: C.text2 }}>{fmt(totGeral)}</b>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+            <Search size={14} style={{ position: "absolute", left: 9, color: C.text4, pointerEvents: "none" }} />
+            <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar cliente…" style={{ ...inp, width: 200, padding: "7px 10px 7px 28px", fontSize: 13 }} />
+          </div>
+          <select value={ordem} onChange={(e) => setOrdem(e.target.value)} aria-label="Ordenar" style={{ ...inp, width: "auto", padding: "7px 10px", fontSize: 13 }}>
+            <option value="nome">Nome (A–Z)</option>
+            <option value="maior">Maior total</option>
+            <option value="sem">Sem recebimento primeiro</option>
+          </select>
         </div>
       </div>
 
@@ -2098,28 +2171,31 @@ function RecebimentosCliente({ clientes = [], lancamentos = [], updateLancamento
             <div style={{ minWidth: 240 + 12 * 84 + 120 }}>
               {(() => {
                 const mcol = `220px repeat(12, 84px) 120px`;
+                const mesAtualCol = anoRef === ANO_ATUAL ? MES_ATUAL : -1;
+                const stickyH = { position: "sticky", left: 0, background: C.cream, zIndex: 2 };
                 return (
                   <>
-                    <div style={{ display: "grid", gridTemplateColumns: mcol, gap: 0, padding: "11px 18px", background: C.cream, fontSize: 10.5, fontWeight: 700, color: C.text3, letterSpacing: 0.3, position: "sticky", top: 0 }}>
-                      <div>CLIENTE</div>
-                      {MESES.map((m, i) => <div key={i} style={{ textAlign: "right" }}>{m.slice(0, 3).toUpperCase()}</div>)}
+                    <div style={{ display: "grid", gridTemplateColumns: mcol, gap: 0, padding: "11px 18px", background: C.cream, fontSize: 10.5, fontWeight: 700, color: C.text3, letterSpacing: 0.3, position: "sticky", top: 0, zIndex: 3 }}>
+                      <div style={stickyH}>CLIENTE</div>
+                      {MESES.map((m, i) => <div key={i} style={{ textAlign: "right", color: i === mesAtualCol ? C.cafe : undefined }}>{m.slice(0, 3).toUpperCase()}</div>)}
                       <div style={{ textAlign: "right" }}>TOTAL {anoRef}</div>
                     </div>
-                    {matriz.map((r) => {
+                    {matriz.map((r, idx) => {
                       const semRec = r.total === 0;
+                      const bgRow = semRec ? "#fdf2f2" : (idx % 2 ? "#ffffff" : "#faf8f4");
                       return (
-                        <div key={r.id} style={{ display: "grid", gridTemplateColumns: mcol, gap: 0, padding: "9px 18px", borderTop: `1px solid ${C.border2}`, alignItems: "center", background: semRec ? `${C.red}08` : "transparent" }}>
-                          <Cel style={{ fontWeight: 600, color: semRec ? C.red : C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", paddingRight: 8 }} >{r.nome}{semRec && <span style={{ fontSize: 10, fontWeight: 700, color: C.red, marginLeft: 6 }}>· sem recebimento</span>}</Cel>
-                          {r.meses.map((v, i) => <Cel key={i} style={{ textAlign: "right", fontSize: 11.5, color: v ? C.text : C.border, fontVariantNumeric: "tabular-nums" }}>{v ? fmtNum(v) : "·"}</Cel>)}
+                        <div key={r.id} style={{ display: "grid", gridTemplateColumns: mcol, gap: 0, padding: "9px 18px", borderTop: `1px solid ${C.border2}`, alignItems: "center", background: bgRow }}>
+                          <Cel title={r.nome} style={{ fontWeight: 600, color: semRec ? C.red : C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", paddingRight: 8, position: "sticky", left: 0, background: bgRow, zIndex: 1 }}>{r.nome}{semRec && <span style={{ fontSize: 10, fontWeight: 700, color: C.red, marginLeft: 6 }}>· sem recebimento</span>}</Cel>
+                          {r.meses.map((v, i) => <Cel key={i} style={{ textAlign: "right", fontSize: 11.5, color: v ? C.text : C.border, fontVariantNumeric: "tabular-nums", background: i === mesAtualCol ? `${C.cafe}0d` : undefined }}>{v ? fmtNum(v) : "·"}</Cel>)}
                           <Cel style={{ textAlign: "right", fontWeight: 700, fontSize: 12.5, color: r.total ? C.green : C.text4, fontVariantNumeric: "tabular-nums" }}>{r.total ? fmtNum(r.total) : "—"}</Cel>
                         </div>
                       );
                     })}
-                    {matriz.length === 0 && <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: C.text4 }}>Nenhum cliente cadastrado nesta unidade.</div>}
+                    {matriz.length === 0 && <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: C.text4 }}>{busca ? "Nenhum cliente encontrado para a busca." : "Nenhum cliente cadastrado nesta unidade."}</div>}
                     {matriz.length > 0 && (
                       <div style={{ display: "grid", gridTemplateColumns: mcol, gap: 0, padding: "12px 18px", background: C.cream, fontWeight: 700 }}>
-                        <Cel style={{ fontFamily: serif, fontSize: 13.5 }}>TOTAL</Cel>
-                        {totMes.map((v, i) => <Cel key={i} style={{ textAlign: "right", fontSize: 11, fontVariantNumeric: "tabular-nums" }}>{v ? fmtNum(v) : "·"}</Cel>)}
+                        <Cel style={{ fontFamily: serif, fontSize: 13.5, ...stickyH }}>TOTAL</Cel>
+                        {totMes.map((v, i) => <Cel key={i} style={{ textAlign: "right", fontSize: 11, fontVariantNumeric: "tabular-nums", background: i === mesAtualCol ? `${C.cafe}0d` : undefined }}>{v ? fmtNum(v) : "·"}</Cel>)}
                         <Cel style={{ textAlign: "right", color: C.green, fontSize: 12.5, fontVariantNumeric: "tabular-nums" }}>{fmtNum(totGeral)}</Cel>
                       </div>
                     )}
