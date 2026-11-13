@@ -689,6 +689,19 @@ export function StoreProvider({ children }) {
   };
   const updateLancamento = (id, patch) => setLancamentos((ls) => ls.map((l) => (l.id === id ? _comAno({ ...l, ...patch }) : l)));
   const removeLancamento = (id) => setLancamentos((ls) => ls.filter((l) => l.id !== id));
+  // Conciliação (Fase B): marca um recebível PREVISTO como satisfeito por um
+  // pagamento JÁ existente, SEM criar lançamento novo nem apagar o título. O
+  // previsto vira status "conciliado" (sai de "a receber" e da inadimplência) e
+  // aponta o pago em `conciliadoCom` — o dinheiro segue contado só uma vez (pelo
+  // lançamento pago). Reversível por desconciliar.
+  const conciliarPrevisto = (previstoId, pagoId) => setLancamentos((ls) => ls.map((l) =>
+    (l.id === previstoId && l.status === "previsto"
+      ? { ...l, status: "conciliado", conciliadoCom: pagoId || null, conciliadoEm: new Date().toISOString() }
+      : l)));
+  const desconciliarPrevisto = (previstoId) => setLancamentos((ls) => ls.map((l) =>
+    (l.id === previstoId && l.status === "conciliado"
+      ? { ...l, status: "previsto", conciliadoCom: undefined, conciliadoEm: undefined }
+      : l)));
   // Remove em lote os lançamentos que vieram de IMPORTAÇÃO (origem: "importacao")
   // de uma conta. Nunca toca nos digitados à mão. Retorna quantos foram removidos.
   const removerImportados = (unidadeId, contaId) => {
@@ -1640,7 +1653,7 @@ export function StoreProvider({ children }) {
       salasDe, produtosDe, unidadesDe,
       contas, lancamentos, catalogo, categorias,
       addConta, updateConta, removeConta, contasDe,
-      addLancamento, addLancamentosBulk, addContaRecorrente, updateLancamento, removeLancamento, removerImportados, lancamentosDe,
+      addLancamento, addLancamentosBulk, addContaRecorrente, updateLancamento, removeLancamento, conciliarPrevisto, desconciliarPrevisto, removerImportados, lancamentosDe,
       addItemCatalogo, updateItemCatalogo, removeItemCatalogo, catalogoDe,
       addCategoria, updateCategoria, removeCategoria,
       bankAccounts, boletos,

@@ -123,3 +123,13 @@ test("resumoRecebiveis separa vencido / a_vencer / futuro / inconsistente por sa
   assert.deepEqual([r.futuro.n, r.futuro.total], [1, 300]);
   assert.deepEqual([r.inconsistente.n, r.inconsistente.total], [1, 400]);
 });
+
+test("conciliado sai dos recebíveis (não é previsto) — sem dupla contagem", () => {
+  const lanc = [
+    { tipo: "entrada", status: "previsto", valor: 500, data: "14", mes: 10, ano: 2026 },  // conta
+    { tipo: "entrada", status: "conciliado", valor: 600, data: "14", mes: 10, ano: 2026, conciliadoCom: "lcX" }, // ignora
+  ];
+  const r = resumoRecebiveis(lanc, HOJE);
+  assert.deepEqual([r.vencido.n, r.vencido.total], [1, 500]);
+  assert.equal(r.itens.length, 1);
+});
