@@ -2474,6 +2474,25 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
     .sort((a, b) => b.dias - a.dias);
   const inconsistentes = _resumoRec.itens.filter((x) => x.classe === "inconsistente").map((x) => x.l);
 
+  // Conciliação sugerida (Fase B): recebíveis PREVISTOS que têm um PAGO de mesmo
+  // cliente e valor — candidatos a já terem sido pagos (sem baixa). Sugestão para
+  // revisão humana; nada é conciliado automaticamente.
+  const pagosPorChave = new Map();
+  for (const l of lancamentos) {
+    if (l.tipo === "entrada" && l.status === "pago" && l.clienteId) {
+      const k = `${l.clienteId}|${Number(l.valor)}`;
+      if (!pagosPorChave.has(k)) pagosPorChave.set(k, l);
+    }
+  }
+  const conciliaveis = lancamentos
+    .filter((l) => l.tipo === "entrada" && l.status === "previsto" && l.clienteId && pagosPorChave.has(`${l.clienteId}|${Number(l.valor)}`))
+    .map((l) => ({ previsto: l, pago: pagosPorChave.get(`${l.clienteId}|${Number(l.valor)}`) }));
+  const conciliar = (previstoId, pagoId) => {
+    if (window.confirm("Conciliar: marcar este previsto como já satisfeito pelo pagamento encontrado?\n\nO título sai de \"a receber\"/inadimplência e aponta o pagamento. Não cria lançamento novo e é reversível.")) {
+      store.conciliarPrevisto(previstoId, pagoId);
+    }
+  };
+
   const total = vencidos.reduce((s, x) => s + (x.l.valor || 0), 0);
   const maiorAtraso = vencidos[0]?.dias || 0;
 
@@ -2586,6 +2605,41 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
               </tbody>
             </table>
             {inconsistentes.length > 50 && <div style={{ fontSize: 12, color: C.text4, marginTop: 6 }}>+ {inconsistentes.length - 50} outros.</div>}
+          </div>
+        </Card>
+      )}
+
+      {conciliaveis.length > 0 && (
+        <Card style={{ marginBottom: 18, borderLeft: `4px solid ${C.teal}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <RefreshCw size={16} color={C.teal} />
+            <div style={{ fontFamily: serif, fontSize: 17 }}>Conciliação sugerida — {conciliaveis.length} previsto(s) com pagamento de mesmo cliente e valor</div>
+          </div>
+          <div style={{ fontSize: 12.5, color: C.text3, marginBottom: 10 }}>
+            Podem já ter sido pagos sem dar baixa. Confira caso a caso: ao conciliar, o previsto é marcado como satisfeito pelo pagamento (sai de “a receber”, não cria lançamento, reversível). Nada é conciliado automaticamente.
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead><tr style={{ textAlign: "left", color: C.text3, fontSize: 11 }}>
+                <th style={{ padding: "6px 8px" }}>CLIENTE</th><th style={{ padding: "6px 8px" }}>PREVISTO</th>
+                <th style={{ padding: "6px 8px" }}>PAGO EM</th><th style={{ padding: "6px 8px", textAlign: "right" }}>VALOR</th>
+                <th style={{ padding: "6px 8px" }}></th>
+              </tr></thead>
+              <tbody>
+                {conciliaveis.slice(0, 50).map(({ previsto, pago }) => (
+                  <tr key={previsto.id} style={{ borderTop: `1px solid ${C.border2}` }}>
+                    <td style={{ padding: "6px 8px" }}>{nomeCli(previsto)}</td>
+                    <td style={{ padding: "6px 8px", color: C.text3 }}>{previsto.descricao || "—"} · {MESES[previsto.mes] || "?"}/{anoDoLancamento(previsto)}</td>
+                    <td style={{ padding: "6px 8px", color: C.text3 }}>{pago.dataPagamento || pago.data || "—"}</td>
+                    <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 600 }}>{fmt(previsto.valor)}</td>
+                    <td style={{ padding: "6px 8px" }}>
+                      <button onClick={() => conciliar(previsto.id, pago.id)} className="cw-btn" style={{ fontSize: 12, fontWeight: 600, color: C.teal, border: `1px solid ${C.teal}55`, borderRadius: 8, padding: "4px 10px" }}>Conciliar</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {conciliaveis.length > 50 && <div style={{ fontSize: 12, color: C.text4, marginTop: 6 }}>+ {conciliaveis.length - 50} outros.</div>}
           </div>
         </Card>
       )}
