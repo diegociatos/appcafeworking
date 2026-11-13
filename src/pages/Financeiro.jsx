@@ -10,8 +10,9 @@ import { Card, Badge, Btn, PageHead, Modal, Field, Empty, FileInput } from "../c
 import { C, serif, sans, fmt, fmtShort, inp } from "../lib/theme.js";
 import { useStore, SECOES, COBRANCA_TEMPLATE_DEFAULT, MODO_REAL } from "../lib/store.jsx";
 import {
-  getCurrentCompetencia, parseDateBR, anoDoLancamento, chaveCompetencia, chaveDoLancamento, noPeriodo, anosDisponiveis, competenciaComAno,
+  getCurrentCompetencia, anoDoLancamento, chaveDoLancamento, noPeriodo, anosDisponiveis, competenciaComAno,
 } from "../lib/dateUtils.js";
+import { resumoRecebiveis, hojeSP, ehNaoComercial } from "../lib/financeiro.js";
 import { gerarModeloFluxo, lerPlanilhaFluxo, validarLinhas, exportarExtratoExcel, exportarProvisaoExcel } from "../lib/fluxoImport.js";
 import { resumoOnline, cobrancasJaLancadas, competenciaDaCobranca, situacaoCobranca, hojeBRT, repassesDoAno, extratoGarantia, ROTULO_GARANTIA } from "../lib/recebimentosOnline.js";
 import { fetchGarantiasDb } from "../lib/supabaseDb.js";
@@ -114,7 +115,11 @@ export default function Financeiro({ finTab }) {
   const clientesUnidade = store.clientesDe(unidadeAtiva?.nome);
 
   const saldoTotal = contas.reduce((s, c) => s + saldoAtualConta(c, lancamentos), 0);
-  const aReceber = lancamentos.filter((l) => l.tipo === "entrada" && l.status === "previsto").reduce((s, l) => s + l.valor, 0);
+  // "A receber" = carteira atual (vencido + a vencer); projeção futura (2027+)
+  // fica separada e não infla o indicador — mesmo critério do Dashboard/Inadimplência.
+  const _recebKpi = resumoRecebiveis(lancamentos, hojeSP());
+  const aReceber = _recebKpi.vencido.total + _recebKpi.a_vencer.total;
+  const aReceberFuturo = _recebKpi.futuro.total;
   const aPagar = lancamentos.filter((l) => l.tipo === "saida" && l.status === "previsto").reduce((s, l) => s + l.valor, 0);
   const entradasMes = lancamentos.filter((l) => noPeriodo(l, ANO_ATUAL, MES_ATUAL) && l.tipo === "entrada" && l.status === "pago").reduce((s, l) => s + l.valor, 0);
   const saidasMes = lancamentos.filter((l) => noPeriodo(l, ANO_ATUAL, MES_ATUAL) && l.tipo === "saida" && l.status === "pago").reduce((s, l) => s + l.valor, 0);
@@ -141,7 +146,7 @@ export default function Financeiro({ finTab }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 16, marginBottom: 20 }}>
         <Kpi label="Saldo em contas" valor={saldoTotal} icon={Wallet} cor={C.teal} sub={`${contas.length} contas`} />
-        <Kpi label="A receber" valor={aReceber} icon={ArrowUpRight} cor={C.green} sub="Previstos não pagos" />
+        <Kpi label="A receber" valor={aReceber} icon={ArrowUpRight} cor={C.green} sub={aReceberFuturo > 0 ? `+ ${fmt(aReceberFuturo)} projeção futura` : "Vencidos + a vencer"} />
         <Kpi label="A pagar" valor={aPagar} icon={ArrowDownRight} cor={C.red} sub="Despesas previstas" />
         <Kpi label="Resultado do mês" valor={resultadoMes} icon={TrendingUp} cor={resultadoMes >= 0 ? C.green : C.red} sub={`Entradas − saídas (${MESES[MES_ATUAL]}/${ANO_ATUAL})`} />
       </div>
@@ -1980,7 +1985,10 @@ function RecebimentosCliente({ clientes = [], lancamentos = [], updateLancamento
   const [previa, setPrevia] = useState(null); // { vinculaveis:[{l,cliente}], ambiguos, semMatch }
   const [verLista, setVerLista] = useState(false); // mostrar os recebimentos sem cliente antes de vincular
   const normTxt = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
-  const naoVinculados = lancamentos.filter((l) => l.tipo === "entrada" && l.status === "pago" && !l.clienteId);
+  // Fila de "vincular a cliente": só recebimentos COMERCIAIS. Transferências entre
+  // contas e investimentos/aportes (não-comerciais) ficam de fora — não são
+  // receita de cliente e não devem inflar a fila.
+  const naoVinculados = lancamentos.filter((l) => l.tipo === "entrada" && l.status === "pago" && !l.clienteId && !ehNaoComercial(l));
   const calcularVinculos = () => {
     const vinculaveis = []; let ambiguos = 0, semMatch = 0;
     for (const l of naoVinculados) {
@@ -2029,7 +2037,7 @@ function RecebimentosCliente({ clientes = [], lancamentos = [], updateLancamento
   const totMes = MESES.map((_, mi) => matriz.reduce((s, r) => s + r.meses[mi], 0));
   const totGeral = totMes.reduce((s, v) => s + v, 0);
   const comReceb = matriz.filter((r) => r.total > 0).length;
-  const semVinculo = lancamentos.filter((l) => l.tipo === "entrada" && l.status === "pago" && !l.clienteId).length;
+  const semVinculo = lancamentos.filter((l) => l.tipo === "entrada" && l.status === "pago" && !l.clienteId && !ehNaoComercial(l)).length;
   const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
   // Exporta a visao atual (mes a mes ou consolidado) como PDF: abre uma janela de
@@ -2454,12 +2462,17 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
   const hojeBR = `${d2(hoje.getDate())}/${d2(hoje.getMonth() + 1)}/${hoje.getFullYear()}`;
   const nomeCli = (l) => l.clienteNome || clientes.find((c) => c.id === l.clienteId)?.nome || "— sem cliente —";
 
-  // Todo recebível PREVISTO cujo vencimento já passou = inadimplente (automático).
-  const vencidos = lancamentos
-    .filter((l) => l.tipo === "entrada" && l.status === "previsto")
-    .map((l) => { const v = parseDateBR(l.dataVencimento || l.data); return v ? { l, venc: v, dias: Math.round((hoje - v) / 86400000) } : null; })
-    .filter((x) => x && x.dias >= 1)
+  // Recebíveis vencidos pelo núcleo financeiro: compõe o vencimento real a partir
+  // de (dia + competência) — recupera os títulos com `data` de dia solto que antes
+  // sumiam —, usa fuso America/Sao_Paulo e NÃO considera vencido no próprio dia.
+  // Títulos sem vencimento derivável vão para a fila de INCONSISTÊNCIAS (não somem).
+  const hojeRef = hojeSP();
+  const _resumoRec = resumoRecebiveis(lancamentos, hojeRef);
+  const vencidos = _resumoRec.itens
+    .filter((x) => x.classe === "vencido")
+    .map((x) => ({ l: x.l, venc: new Date(x.venc.ano, x.venc.mes, x.venc.dia), dias: x.diasAtraso }))
     .sort((a, b) => b.dias - a.dias);
+  const inconsistentes = _resumoRec.itens.filter((x) => x.classe === "inconsistente").map((x) => x.l);
 
   const total = vencidos.reduce((s, x) => s + (x.l.valor || 0), 0);
   const maiorAtraso = vencidos[0]?.dias || 0;
@@ -2543,6 +2556,39 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
           </Card>
         ))}
       </div>
+
+      {inconsistentes.length > 0 && (
+        <Card style={{ marginBottom: 18, borderLeft: `4px solid ${C.amber}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <AlertTriangle size={17} color={C.amber} />
+            <div style={{ fontFamily: serif, fontSize: 17 }}>Fila de inconsistências — {inconsistentes.length} título(s) sem vencimento válido</div>
+          </div>
+          <div style={{ fontSize: 12.5, color: C.text3, marginBottom: 10 }}>
+            Recebíveis previstos sem data de vencimento reconhecível: não entram na inadimplência (não dá para calcular atraso) e precisam de revisão — corrija a data no lançamento. Antes, estes títulos sumiam silenciosamente.
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead><tr style={{ textAlign: "left", color: C.text3, fontSize: 11 }}>
+                <th style={{ padding: "6px 8px" }}>CLIENTE</th><th style={{ padding: "6px 8px" }}>DESCRIÇÃO</th>
+                <th style={{ padding: "6px 8px" }}>COMPETÊNCIA</th><th style={{ padding: "6px 8px" }}>DATA GRAVADA</th>
+                <th style={{ padding: "6px 8px", textAlign: "right" }}>VALOR</th>
+              </tr></thead>
+              <tbody>
+                {inconsistentes.slice(0, 50).map((l) => (
+                  <tr key={l.id} style={{ borderTop: `1px solid ${C.border2}` }}>
+                    <td style={{ padding: "6px 8px" }}>{nomeCli(l)}</td>
+                    <td style={{ padding: "6px 8px", color: C.text3 }}>{l.descricao || "—"}</td>
+                    <td style={{ padding: "6px 8px" }}>{MESES[l.mes] || "?"}/{anoDoLancamento(l)}</td>
+                    <td style={{ padding: "6px 8px", color: C.red }}>{l.dataVencimento || l.data || "—"}</td>
+                    <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 600 }}>{fmt(l.valor)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {inconsistentes.length > 50 && <div style={{ fontSize: 12, color: C.text4, marginTop: 6 }}>+ {inconsistentes.length - 50} outros.</div>}
+          </div>
+        </Card>
+      )}
 
       {vencidos.length === 0 ? (
         <Empty icon={CheckCircle2} title="Nenhuma inadimplência em aberto" sub="Não há recebíveis vencidos. Assim que um recebível passar do vencimento sem pagamento, ele aparece aqui." />

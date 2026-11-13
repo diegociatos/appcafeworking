@@ -242,11 +242,14 @@ export function validarLinhas(rows, { contas = [], categorias = [], contaForcada
 
     if (motivos.length) { erros.push({ linha: linhaExcel, motivo: motivos.join("; "), descricao }); return; }
 
-    const { mes } = parseDateToCompetencia(dataStr);
+    // Competência explícita: grava mês E ano (antes só o mês ia, e o ano era
+    // derivado silenciosamente da data lá no store — célula sem ano caía no ano
+    // atual sem rastro). Agora o ano fica no próprio lançamento.
+    const { mes, ano } = parseDateToCompetencia(dataStr);
     validos.push({
       tipo, descricao, valor: Math.round(valor * 100) / 100,
       categoria: cat.nome, subcategoria: subFinal, contaId: conta.id,
-      data: dataStr, status, mes, origem: "importacao",
+      data: dataStr, status, mes, ano, origem: "importacao",
     });
   });
 
