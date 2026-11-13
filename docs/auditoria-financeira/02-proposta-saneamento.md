@@ -1,4 +1,17 @@
-# Fase C — Proposta de saneamento de dados (revisável, NÃO aplicada)
+# Fase C — Saneamento de dados
+
+> **EXECUTADO em 2026-11-13 (aprovado):** a correção determinística da classe A
+> foi aplicada em produção. **208** recebíveis com data inválida composável
+> receberam `data`/`dataVencimento` reais (compostos de dia+competência); **7**
+> reservas sem data permanecem na fila de inconsistências (revisão humana).
+> Backup em `saneamento_backup_datas` (rollback disponível). Nenhum valor,
+> cliente ou categoria foi alterado. Scripts: `_exec-backup.sql`, `_exec-update.sql`.
+> Verificado: `data_inval` 215 → 7; demais classes inalteradas; Ciatos 1.570,74
+> previstos agora 01/10, 01/11, 01/12/2026.
+
+---
+
+## (histórico) Proposta original — revisável, antes da execução
 
 > Nada aqui foi executado em produção. Toda mutação depende da sua aprovação.
 > Princípios: **não inventar** data/cliente/competência/classificação; **não
