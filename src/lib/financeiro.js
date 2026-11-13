@@ -69,17 +69,33 @@ function diaDoCampoData(s) {
  * (ex.: data "—" ou vazia) — nesse caso o recebível é inconsistente.
  */
 export function vencimentoReal(l) {
-  for (const campo of [l?.dataVencimento, l?.data]) {
+  // Um vencimento explícito inválido não pode virar outra data por fallback.
+  const explicito = String(l?.dataVencimento || '').trim();
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(explicito) && !dataValidaCompleta(explicito)) return null;
+  const mesExplicito = explicito.match(/^\d{1,2}\/(\d{1,2})$/);
+  if (mesExplicito && (+mesExplicito[1] < 1 || +mesExplicito[1] > 12 || l?.mes == null || +mesExplicito[1] !== +l.mes + 1)) return null;
+  if (explicito && !/^\d{1,2}$/.test(explicito) && !/^\d{1,2}\/\d{1,2}$/.test(explicito) && !dataValidaCompleta(explicito) && !/^\d{4}-\d{2}-\d{2}$/.test(explicito)) return null;
+  for (const campo of [explicito || l?.data]) {
+    const iso = String(campo || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (iso) {
+      if (!dataValidaCompleta(`${iso[3]}/${iso[2]}/${iso[1]}`)) return null;
+      const ano = +iso[1], mes = +iso[2] - 1, dia = +iso[3];
+      return { ano, mes, dia, chave: chaveDia(ano, mes, dia), composto: false };
+    }
     if (dataValidaCompleta(campo)) {
       const [dia, mes, ano] = String(campo).split("/").map(Number);
       return { ano, mes: mes - 1, dia, chave: chaveDia(ano, mes - 1, dia), composto: false };
     }
   }
+  if (explicito && /^\d{2}\/\d{2}\/\d{4}$/.test(explicito)) return null;
+  if (!explicito && /^\d{2}\/\d{2}\/\d{4}$/.test(String(l?.data || ''))) return null;
   const dia = diaDoCampoData(l?.dataVencimento) ?? diaDoCampoData(l?.data);
   if (dia == null) return null;
-  const mes0 = Number.isInteger(+l?.mes) ? Math.max(0, Math.min(11, +l.mes)) : null;
+  const mes0 = l?.mes != null && l.mes !== '' && Number.isInteger(+l.mes) && +l.mes >= 0 && +l.mes <= 11 ? +l.mes : null;
   if (mes0 == null) return null;
   const ano = anoDoLancamento(l);
+  const parcial = String(l?.dataVencimento || l?.data || '').match(/^\d{1,2}\/(\d{1,2})$/);
+  if (parcial && +parcial[1] !== mes0 + 1) return null;
   // Limita o dia ao último dia do mês (ex.: dia 31 em mês de 30).
   const ultimo = new Date(ano, mes0 + 1, 0).getDate();
   const diaOk = Math.min(dia, ultimo);

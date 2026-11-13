@@ -161,6 +161,16 @@ export function receitaOnlineNoMes(cobrancas = [], lancamentos = [], ano, mes, j
   let valor = 0, qtd = 0;
   for (const c of cobrancas) {
     if (c.status !== "pago" || jaLancadas.has(String(c.id))) continue;
+    // Reservas têm lançamento determinístico por reservaId. Só excluir a
+    // cobrança quando o total pago daquela operação já cobre o recebimento;
+    // sinal e complemento não podem ser descartados por mera igualdade de nome.
+    if (c.reservaId) {
+      const pagosReserva = lancamentos.filter(l => l.tipo === 'entrada' && l.status === 'pago' && l.unidadeId === c.unidadeId && String(l.reservaId || '') === String(c.reservaId));
+      const totalLancado = pagosReserva.reduce((s, l) => s + Math.round(Number(l.valor || 0) * 100), 0);
+      const onlineReserva = cobrancas.filter(x => x.status === 'pago' && x.unidadeId === c.unidadeId && String(x.reservaId || '') === String(c.reservaId));
+      const totalOnline = onlineReserva.reduce((s, x) => s + Math.round(valorRecebido(x) * 100), 0);
+      if (totalLancado === totalOnline && totalOnline > 0) continue;
+    }
     const comp = competenciaDaCobranca(c, "recebido");
     if (!comp || comp.ano !== ano || comp.mes !== mes) continue;
     valor += valorRecebido(c); qtd += 1;

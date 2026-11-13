@@ -10,13 +10,15 @@ import { useStore } from "../lib/store.jsx";
 import { onboardApi } from "../lib/onboardApi.js";
 import { enviarFotoSala } from "../lib/fotosSalas.js";
 import { buscarCnpj, buscarCep } from "../lib/lookup.js";
+import { indicadoresUnidade } from '../lib/indicadoresUnidade.js';
+import { hojeSP } from '../lib/financeiro.js';
 
 const PALETA = [C.cafe, C.teal, C.cafe2, C.teal3, C.green, C.amber, C.blue, C.red];
 
 export default function Unidades({ go }) {
   const {
     unidades, unidadesVisiveis, viewAs, franqueados, unidadeAtiva,
-    activeUnit, setActiveUnit, salasDe, produtosDe, addUnidade, removerUnidade,
+    activeUnit, setActiveUnit, salasDe, produtosDe, addUnidade, removerUnidade, clientes, lancamentos, cobrancas,
   } = useStore();
   const [novaUnidade, setNovaUnidade] = useState(false);
   const [gerenciando, setGerenciando] = useState(null);
@@ -85,6 +87,7 @@ export default function Unidades({ go }) {
         }
       />
       {unidadesVisiveis.map((u, i) => {
+        const indicadores = indicadoresUnidade({ unidadeId: u.id, clientes, lancamentos, cobrancas, ...hojeSP() });
         const nSalas = salasDe(u.id).length;
         const nProd = produtosDe(u.id).length;
         const franq = franqueados.find((fr) => fr.id === u.franqueadoId);
@@ -130,8 +133,8 @@ export default function Unidades({ go }) {
               {[
                 ["Salas", nSalas],
                 ["Produtos", nProd],
-                ["Membros", u.membros],
-                ["Receita/mês", fmtShort(u.receita)],
+                ["Membros", indicadores.membros],
+                ["Receita/mês", fmtShort(indicadores.receita)],
               ].map(([l, v], j) => (
                 <div key={j} style={{ textAlign: "center", minWidth: 84 }}>
                   <div style={{ fontFamily: serif, fontSize: 22, color: u.cor }}>{v}</div>
