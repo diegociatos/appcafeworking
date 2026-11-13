@@ -43,6 +43,7 @@ import { asaas, cancelarNoAsaas, type CredAsaas, credenciaisAsaas, pixDoPagament
 import { verificarTurnstile } from "../_shared/turnstile.ts";
 import { aceiteConfere, contratoVigente, registrarAceite } from "../_shared/contratos.ts";
 import { turnoValido } from "../_shared/catalogo.ts";
+import { ehDayPass, validarDataUso } from "../_shared/daypass.ts";
 import { salasDoPlano } from "../_shared/disponibilidade.ts";
 import { regraDaUnidade } from "../_shared/parceirosDb.ts";
 import {
@@ -177,6 +178,16 @@ Deno.serve(async (req) => {
       turno = body.turno;
     }
 
+    // day pass: o cliente escolhe a data no checkout; a reserva (bloco 08h–18h)
+    // entra na agenda quando o pagamento confirma (asaas-webhook). Só dia útil,
+    // data futura, até ~90 dias. Guardada em pending_signups.data_uso.
+    let dataUso: string | null = null;
+    if (ehDayPass(plano)) {
+      const v = validarDataUso(body.data_uso);
+      if (!v.ok) return json({ error: v.erro, codigo: "DATA_USO_OBRIGATORIA" }, 400, req);
+      dataUso = v.data;
+    }
+
     // sala privativa: a sala escolhida no site precisa estar livre (a do próprio
     // e-mail em andamento não conta: é a mesma pessoa tentando de novo)
     let salaId: string | null = null;
@@ -218,7 +229,8 @@ Deno.serve(async (req) => {
     if (anterior) {
       const recente = Date.now() - new Date(anterior.created_at).getTime() < JANELA_RETOMADA_MS;
       const mesmaCompra = anterior.plano_id === plano.id && anterior.unidade_id === unidade.id
-        && Number(anterior.valor) === valor && anterior.recorrencia === periodicidade && (anterior.turno ?? null) === turno && (anterior.sala_id ?? null) === salaId;
+        && Number(anterior.valor) === valor && anterior.recorrencia === periodicidade && (anterior.turno ?? null) === turno && (anterior.sala_id ?? null) === salaId
+        && (anterior.data_uso ?? null) === dataUso;
       if (recente && mesmaCompra && anterior.invoice_url) {
         if (senhaInformada && anterior.user_id) {
           await admin.auth.admin.updateUserById(anterior.user_id, { password: String(body.senha) });
@@ -302,6 +314,7 @@ Deno.serve(async (req) => {
       invoice_url: pagamento!.invoiceUrl || "", status: "aguardando",
       categoria, recorrencia: periodicidade, prazo_minimo_meses: prazoMinimo,
       direitos: plano.direitos || {}, origem, status_token: statusToken, senha_definida: senhaInformada, turno, sala_id: salaId,
+      data_uso: dataUso,
     });
     if (pErr) {
       await desfazer();

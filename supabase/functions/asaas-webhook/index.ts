@@ -46,6 +46,7 @@ import { proximaCobranca } from "../_shared/ciclo.ts";
 import { avisarEquipe } from "../_shared/assinaturas.ts";
 import { criarAberturaDaVenda } from "../_shared/aberturas.ts";
 import { ocuparSala } from "../_shared/disponibilidade.ts";
+import { blocoDayPass, CAPACIDADE_DAYPASS, ehDayPass, SALA_DAYPASS } from "../_shared/daypass.ts";
 import { nomeExibicaoUnidade } from "../_shared/unidadeNome.ts";
 import { emitirNotaAoReceber } from "../_shared/nfse/emitirNota.ts";
 import {
@@ -436,6 +437,106 @@ async function tratarAssinatura(admin: SupabaseClient, pay: Linha, status: strin
   return `assinatura_${status}`;
 }
 
+/**
+ * Day pass na agenda. Quando o pagamento confirma, cria a reserva na sala de
+ * coworking (s_lux_compartilhada) para a data escolhida no checkout (ps.data_uso),
+ * bloco 08h–18h BRT, numa base livre de 1..8. É SÓ AGENDA: a cobrança e a NF já
+ * saem pelo fluxo de signup, então NÃO lança no financeiro.
+ *
+ * Idempotente por asaas_payment_id: a reentrega do webhook (CONFIRMED + RECEIVED)
+ * não duplica. Lotado (8 estações ocupadas) ou falha: avisa a equipe e NUNCA
+ * derruba o webhook (o pagamento já entrou; um 500 aqui pausaria a fila do Asaas).
+ */
+async function garantirReservaDayPass(admin: SupabaseClient, ps: Linha, pay: Linha): Promise<void> {
+  try {
+    // idempotência: já há reserva (não cancelada) deste pagamento?
+    const { data: existente } = await admin.from("reservas").select("id")
+      .eq("asaas_payment_id", pay.id).eq("sala_id", SALA_DAYPASS).neq("status", "cancelada").limit(1).maybeSingle();
+    if (existente?.id) return;
+
+    const { startISO, endISO } = blocoDayPass(String(ps.data_uso));
+    const diaIni = `${ps.data_uso}T00:00:00.000Z`;
+    const diaFim = `${ps.data_uso}T23:59:59.999Z`;
+    const { data: doDia, error: eDia } = await admin.from("reservas")
+      .select("base").eq("sala_id", SALA_DAYPASS).gte("start_at", diaIni).lte("start_at", diaFim).neq("status", "cancelada");
+    if (eDia) throw new Error(`reservas do dia: ${eDia.message}`);
+    const ocupadas = (doDia || []).map((r) => Number(r.base)).filter((b) => Number.isInteger(b));
+
+    // bases livres em ordem (a RPC é a fonte da verdade do conflito: tenta a próxima no 23505)
+    const candidatas: number[] = [];
+    for (let b = 1; b <= CAPACIDADE_DAYPASS; b++) if (!ocupadas.includes(b)) candidatas.push(b);
+
+    let ultimoErro = "";
+    for (const base of candidatas) {
+      const { data, error } = await admin.rpc("criar_reserva_segura", {
+        p_id: null, p_unidade_id: ps.unidade_id, p_sala_id: SALA_DAYPASS,
+        p_cliente_id: null, p_cliente_nome: ps.nome, p_cliente_email: ps.email,
+        p_start_at: startISO, p_end_at: endISO, p_base: base,
+        p_origem: "daypass", p_valor: 0, p_status: "confirmada",
+      });
+      if (!error && data) {
+        const nova = Array.isArray(data) ? data[0] : data;
+        // vincula o pagamento à reserva: a RPC não grava asaas_payment_id
+        if (nova?.id) {
+          await admin.from("reservas").update({ asaas_payment_id: pay.id, payment_status: "pago" }).eq("id", nova.id);
+        }
+        return;
+      }
+      ultimoErro = error?.message || "";
+      // 23505 = base tomada nesse horário: tenta a próxima base
+    }
+
+    // nenhuma base entrou: lotou ou erro persistente → a equipe resolve (sem 500)
+    const fmtDia = new Date(startISO).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+    await avisarEquipe(`Day pass pago sem vaga no dia ${fmtDia} — ${ps.nome}`, [
+      `Cliente: ${ps.nome} (${ps.email})`,
+      `Data do day pass: ${fmtDia}`,
+      `Pagamento: ${pay.id}`,
+      candidatas.length === 0
+        ? "As 8 estações já estavam ocupadas nesse dia."
+        : `Não foi possível agendar${ultimoErro ? `: ${ultimoErro}` : "."}`,
+      "Combine outra data com o cliente ou libere uma estação; a reserva pode ser lançada manualmente na agenda.",
+    ], `${APP_URL}/?p=reservas`);
+  } catch (e) {
+    // o pagamento já entrou — a reserva nunca derruba o webhook
+    console.error(`[daypass ${pay.id}] agenda:`, (e as Error).message);
+    try {
+      await avisarEquipe(`Day pass pago: falha ao agendar — ${ps?.nome || pay.id}`, [
+        `Pagamento: ${pay.id}`, `Erro: ${(e as Error).message}`,
+        "Lance a reserva manualmente na agenda (sala Coworking (Day pass)).",
+      ], `${APP_URL}/?p=reservas`);
+    } catch (_) { /* nem o aviso pode derrubar */ }
+  }
+}
+
+/** Day pass estornado/cancelado: tira a reserva da agenda (best-effort, nunca lança). */
+async function cancelarReservaDayPass(admin: SupabaseClient, paymentId: string, status: string): Promise<void> {
+  try {
+    await admin.from("reservas")
+      .update({ status: "cancelada", payment_status: status })
+      .eq("asaas_payment_id", paymentId).eq("sala_id", SALA_DAYPASS).neq("status", "cancelada");
+  } catch (e) {
+    console.error(`[daypass ${paymentId}] cancelamento:`, (e as Error).message);
+  }
+}
+
+// Baixa idempotente do lançamento financeiro vinculado a uma cobrança (Fase B).
+// Acha a obrigação pelo `cobrancaId` gravado no doc e só vira previsto→pago, com
+// data de pagamento no fuso de São Paulo. Reentrega do webhook = no-op.
+async function baixarLancamentoDaCobranca(admin: SupabaseClient, unidadeId: string, cobrancaId: string): Promise<void> {
+  const { data: lancs, error } = await admin.from("app_state").select("item_id, doc")
+    .eq("unidade_id", unidadeId).eq("entity", "lancamentos").eq("doc->>cobrancaId", cobrancaId);
+  if (error) throw new Error(error.message);
+  const hojeBR = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo" }).format(new Date());
+  for (const l of lancs || []) {
+    if (l.doc?.status !== "previsto") continue; // idempotente
+    const { error: upd } = await admin.from("app_state")
+      .update({ doc: { ...l.doc, status: "pago", dataPagamento: hojeBR, baixadoPorWebhook: true }, updated_at: new Date().toISOString() })
+      .eq("unidade_id", unidadeId).eq("entity", "lancamentos").eq("item_id", l.item_id);
+    if (upd) throw new Error(upd.message);
+  }
+}
+
 async function tratarAvulso(admin: SupabaseClient, pay: Linha, status: string): Promise<string> {
   const { data: ps } = await admin.from("pending_signups").select("*").eq("asaas_payment_id", pay.id).maybeSingle();
   if (!ps) {
@@ -444,6 +545,13 @@ async function tratarAvulso(admin: SupabaseClient, pay: Linha, status: string): 
     if (status === "pago") {
       const { data: cob } = await admin.from("cobrancas").select("id, unidade_id, origem")
         .eq("asaas_payment_id", pay.id).maybeSingle();
+      if (cob) {
+        // Baixa financeira idempotente (Fase B): a cobrança paga satisfaz a
+        // obrigação prevista. Best-effort: um erro aqui é logado mas NÃO derruba
+        // o webhook (cobrança já baixada; não pausar a fila do Asaas).
+        try { await baixarLancamentoDaCobranca(admin, cob.unidade_id, cob.id); }
+        catch (e) { console.error("asaas-webhook baixa lancamento", pay.id, (e as Error).message); }
+      }
       if (cob?.origem === "cafeteria_app") {
         const { data: pedidos, error } = await admin.from("app_state").select("item_id, doc")
           .eq("unidade_id", cob.unidade_id).eq("entity", "pedidos");
@@ -466,13 +574,26 @@ async function tratarAvulso(admin: SupabaseClient, pay: Linha, status: string): 
     descricao: `${ps.plano_nome} · ${ps.recorrencia === "avulso" ? "avulso" : "assinatura"}`, origem: ps.origem,
   });
 
-  if (status === "pago" && ps.status === "aguardando") {
-    const { clienteId } = await ativarCadastro(admin, ps);
-    await concederCreditos(admin, {
-      unidade_id: ps.unidade_id, cliente_id: clienteId, cliente_email: ps.email,
-      plano_nome: ps.plano_nome, direitos: ps.direitos,
-    }, pay.id);
-    return "cadastro_ativado";
+  if (status === "pago") {
+    let ativou = false;
+    if (ps.status === "aguardando") {
+      const { clienteId } = await ativarCadastro(admin, ps);
+      await concederCreditos(admin, {
+        unidade_id: ps.unidade_id, cliente_id: clienteId, cliente_email: ps.email,
+        plano_nome: ps.plano_nome, direitos: ps.direitos,
+      }, pay.id);
+      ativou = true;
+    }
+    // Day pass entra na agenda (idempotente por asaas_payment_id). Roda em qualquer
+    // entrega paga, inclusive reentrega depois de já ativado — assim nunca "perde" a
+    // reserva se a primeira ativação aconteceu antes de a agenda existir.
+    if (ehDayPass(ps) && ps.data_uso) await garantirReservaDayPass(admin, ps, pay);
+    return ativou ? "cadastro_ativado" : `avulso_${status}`;
+  }
+
+  // Day pass estornado/cancelado: a reserva sai da agenda.
+  if (["cancelado", "estornado"].includes(status) && ehDayPass(ps)) {
+    await cancelarReservaDayPass(admin, pay.id, status);
   }
   return `avulso_${status}`;
 }
@@ -508,17 +629,20 @@ Deno.serve(async (req) => {
     // Razão de garantia do parceiro (idempotente; erro de banco responde 500 e o Asaas reenvia)
     const garantia = await lancarGarantia(admin, pay.id, status);
 
-    // Nota automática: depois da baixa, nunca falha o webhook.
-    let nota: string | undefined;
+    // Nota automática em SEGUNDO PLANO: emitir NFS-e é lento (transmissor/SEFIN) e,
+    // feito aqui de forma síncrona, segurava a resposta ao Asaas e estourava o tempo
+    // (HTTP 408 "Read timed out" → penalização → fila de webhooks pausada). A baixa do
+    // pagamento acima já está persistida e a nota nunca derruba o webhook, então ela sai
+    // depois da resposta, mantida viva por EdgeRuntime.waitUntil.
     if (status === "pago" && !SEM_NOTA_AO_RECEBER.includes(resultado)) {
-      try {
-        nota = await emitirNotaAoReceber(admin, pay.id);
-      } catch (e) {
-        console.error("asaas-webhook nota", pay.id, (e as Error).message);
-        nota = "nota_erro";
-      }
+      const emitirNota = Promise.resolve()
+        .then(() => emitirNotaAoReceber(admin, pay.id))
+        .catch((e) => console.error("asaas-webhook nota", pay.id, (e as Error).message));
+      const bg = (globalThis as { EdgeRuntime?: { waitUntil(p: Promise<unknown>): void } }).EdgeRuntime;
+      if (bg?.waitUntil) bg.waitUntil(emitirNota);
+      else await emitirNota; // fora do runtime do Supabase, não deixa a promessa órfã
     }
-    return json({ ok: true, status, resultado, ...(garantia ? { garantia } : {}), ...(nota ? { nota } : {}) }, 200, req);
+    return json({ ok: true, status, resultado, ...(garantia ? { garantia } : {}) }, 200, req);
   } catch (e) {
     console.error("asaas-webhook", ev, pay.id, (e as Error).message);
     return json({ error: (e as Error).message ?? "Erro interno" }, 500, req);

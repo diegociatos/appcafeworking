@@ -46,6 +46,13 @@ const tipoCreditoSala = (tipoSala) => {
   return null;
 };
 const NOME_CREDITO = { sala_reuniao: "sala de reunião", coworking: "coworking" };
+// Sala de coworking / compartilhada (day pass): a agenda mostra as reservas do dia
+// como uma lista de chips (cada estação ocupa o bloco 08–18h), não como blocos por
+// horário que se sobrepõem. Salas de reunião seguem a grade por horário normal.
+const ehSalaCompartilhada = (s) => {
+  const t = String(s?.tipo || "").toLowerCase();
+  return t.includes("compartilh") || t.includes("cowork") || (Number(s?.bases) > 0 && t === "compartilhada");
+};
 // Prévia do excedente (o servidor recalcula e manda a versão que vale).
 const previaCredito = previaExcedente;
 
@@ -338,7 +345,9 @@ export default function Reservas() {
                 </div>
               ))}
             </div>
-            {salasUnidade.map((s) => (
+            {salasUnidade.map((s) => {
+              const compart = ehSalaCompartilhada(s);
+              return (
               <div
                 key={s.id}
                 style={{
@@ -365,7 +374,7 @@ export default function Reservas() {
                     </div>
                   </div>
                 </div>
-                {HORARIOS.map((_, hi) => (
+                {!compart && HORARIOS.map((_, hi) => (
                   <div
                     key={hi}
                     onClick={s.contratada ? undefined : () => abrirNovaEm(s.id, hi)}
@@ -374,7 +383,39 @@ export default function Reservas() {
                     style={{ borderLeft: `1px solid ${C.border2}`, cursor: s.contratada ? "default" : "pointer" }}
                   />
                 ))}
-                {s.contratada && (
+                {/* Sala de coworking: reservas do dia como chips (nome + base + 08–18h), com quebra de linha. */}
+                {compart && (
+                  <div style={{ gridColumn: "2 / -1", padding: "8px 12px", display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                    {reservasDoDia.filter((r) => r.sala === s.id).length === 0 && (
+                      <span style={{ fontSize: 12, color: C.text3, fontStyle: "italic" }}>Nenhuma estação reservada neste dia.</span>
+                    )}
+                    {reservasDoDia
+                      .filter((r) => r.sala === s.id)
+                      .sort((a, b) => (Number(a.base) || 0) - (Number(b.base) || 0))
+                      .map((r) => (
+                        <button
+                          key={r.id}
+                          type="button"
+                          title={`${r.cliente} — clique para ver detalhes`}
+                          onClick={() => setDetalhe(r)}
+                          style={{
+                            display: "inline-flex", flexDirection: "column", alignItems: "flex-start", gap: 2,
+                            background: r.cor || C.teal2, color: "#fff", border: "none", borderRadius: 8,
+                            padding: "6px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600, maxWidth: 200,
+                            boxShadow: "0 2px 8px rgba(0,0,0,.06)",
+                          }}
+                        >
+                          <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 180 }}>
+                            {r.origem === "app" ? "📱 " : ""}{r.cliente}
+                          </span>
+                          <span style={{ fontSize: 10, opacity: 0.85 }}>
+                            {r.base ? `Base ${r.base} · ` : ""}{HORARIOS[r.inicio]}–{horaFim(r.inicio, r.dur)}
+                          </span>
+                        </button>
+                      ))}
+                  </div>
+                )}
+                {!compart && s.contratada && (
                   <div
                     style={{
                       position: "absolute", top: 6, bottom: 6, left: 154, right: 6,
@@ -386,7 +427,7 @@ export default function Reservas() {
                     🔒 Contratada · locação mensal{s.contratante ? ` · ${s.contratante}` : ""}
                   </div>
                 )}
-                {!s.contratada && reservasDoDia
+                {!compart && !s.contratada && reservasDoDia
                   .filter((r) => r.sala === s.id)
                   .map((r) => (
                     <div
@@ -428,7 +469,8 @@ export default function Reservas() {
                     </div>
                   ))}
               </div>
-            ))}
+              );
+            })}
             {salasUnidade.length === 0 && (
               <Empty
                 icon={CalendarOff}

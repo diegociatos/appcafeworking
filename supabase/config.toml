@@ -10,6 +10,8 @@ project_id = "lmgbysfrbtgqzbtouzft"
 verify_jwt = false
 [functions.iniciar-assinatura]
 verify_jwt = false
+[functions.reparar-reserva]
+verify_jwt = false
 [functions.backfill-boleto-pdf]
 verify_jwt = false
 [functions.webhook-boletos]
