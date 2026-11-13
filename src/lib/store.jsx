@@ -28,6 +28,7 @@ import { legacyReservaToDateRange, dateRangeToLegacy, temConflito, TZ } from "./
 import { reservasApi } from "./reservasApi.js";
 import { notificacoesApi } from "./notificacoesApi.js";
 import { mapCobrancaDb } from "./recebimentosOnline.js";
+import { validarConciliacao } from './conferenciaFinanceira.js';
 import {
   PERFIS, SECOES, gerarDadosBoleto,
   seedUnidades, seedFranqueados, seedUsuarios, seedContas, seedLancamentos,
@@ -694,10 +695,13 @@ export function StoreProvider({ children }) {
   // previsto vira status "conciliado" (sai de "a receber" e da inadimplência) e
   // aponta o pago em `conciliadoCom` — o dinheiro segue contado só uma vez (pelo
   // lançamento pago). Reversível por desconciliar.
-  const conciliarPrevisto = (previstoId, pagoId) => setLancamentos((ls) => ls.map((l) =>
-    (l.id === previstoId && l.status === "previsto"
-      ? { ...l, status: "conciliado", conciliadoCom: pagoId || null, conciliadoEm: new Date().toISOString() }
-      : l)));
+  const conciliarPrevisto = (previstoId, pagoId) => {
+    const erro = validarConciliacao(lancamentos, previstoId, pagoId);
+    if (erro) return { ok: false, erro };
+    setLancamentos(ls => validarConciliacao(ls, previstoId, pagoId) ? ls : ls.map(l => l.id === previstoId
+      ? { ...l, status: 'conciliado', conciliadoCom: pagoId, conciliadoEm: new Date().toISOString() } : l));
+    return { ok: true };
+  };
   const desconciliarPrevisto = (previstoId) => setLancamentos((ls) => ls.map((l) =>
     (l.id === previstoId && l.status === "conciliado"
       ? { ...l, status: "previsto", conciliadoCom: undefined, conciliadoEm: undefined }

@@ -12,7 +12,9 @@ import { useStore, SECOES, COBRANCA_TEMPLATE_DEFAULT, MODO_REAL } from "../lib/s
 import {
   getCurrentCompetencia, anoDoLancamento, chaveDoLancamento, noPeriodo, anosDisponiveis, competenciaComAno,
 } from "../lib/dateUtils.js";
-import { resumoRecebiveis, hojeSP, ehNaoComercial } from "../lib/financeiro.js";
+import { resumoRecebiveis, hojeSP, ehNaoComercial, dataValidaCompleta } from "../lib/financeiro.js";
+import { avaliarProjecao, baseContabil, clientesVencidos, sugerirConciliacoes } from '../lib/conferenciaFinanceira.js';
+import ConferenciaFinanceira from './ConferenciaFinanceira.jsx';
 import { gerarModeloFluxo, lerPlanilhaFluxo, validarLinhas, exportarExtratoExcel, exportarProvisaoExcel } from "../lib/fluxoImport.js";
 import { resumoOnline, cobrancasJaLancadas, competenciaDaCobranca, situacaoCobranca, hojeBRT, repassesDoAno, extratoGarantia, ROTULO_GARANTIA } from "../lib/recebimentosOnline.js";
 import { fetchGarantiasDb } from "../lib/supabaseDb.js";
@@ -68,6 +70,7 @@ const saldoAtualConta = (conta, lancamentos) =>
 // Seções do Financeiro — usadas no sidebar PRINCIPAL (App.jsx) como submenu.
 export const FIN_GRUPOS = [
   { titulo: "Movimento", itens: [
+    { id: 'conferencia', label: 'Central de conferência', icon: Eye },
     { id: "visao", label: "Visão Geral", icon: BarChart3 },
     { id: "extrato", label: "Fluxo de Caixa", icon: Wallet },
     { id: "receber", label: "Contas a Receber", icon: ArrowUpRight },
@@ -121,8 +124,9 @@ export default function Financeiro({ finTab }) {
   const aReceber = _recebKpi.vencido.total + _recebKpi.a_vencer.total;
   const aReceberFuturo = _recebKpi.futuro.total;
   const aPagar = lancamentos.filter((l) => l.tipo === "saida" && l.status === "previsto").reduce((s, l) => s + l.valor, 0);
-  const entradasMes = lancamentos.filter((l) => noPeriodo(l, ANO_ATUAL, MES_ATUAL) && l.tipo === "entrada" && l.status === "pago").reduce((s, l) => s + l.valor, 0);
-  const saidasMes = lancamentos.filter((l) => noPeriodo(l, ANO_ATUAL, MES_ATUAL) && l.tipo === "saida" && l.status === "pago").reduce((s, l) => s + l.valor, 0);
+  const caixaMes = baseContabil(lancamentos, 'caixa').filter(l => noPeriodo(l, ANO_ATUAL, MES_ATUAL));
+  const entradasMes = caixaMes.filter(l => l.tipo === 'entrada').reduce((s, l) => s + l.valor, 0);
+  const saidasMes = caixaMes.filter(l => l.tipo === 'saida').reduce((s, l) => s + l.valor, 0);
   const resultadoMes = entradasMes - saidasMes;
 
   const secaoAtual = FIN_GRUPOS.flatMap((g) => g.itens).find((i) => i.id === tab);
@@ -161,6 +165,7 @@ export default function Financeiro({ finTab }) {
 
       {/* Conteúdo (seções navegadas pelo sidebar principal) */}
       <div style={{ minWidth: 0 }}>
+        {tab === 'conferencia' && <ConferenciaFinanceira unidadeId={activeUnit} lancamentos={lancamentos} clientes={clientesUnidade} contratos={store.contratosDe(activeUnit)} boletos={store.boletos.filter(b => b.unidadeId === activeUnit)} cobrancas={store.cobrancasDe(activeUnit)} onAbrir={setDetalheLanc} />}
         {tab === "visao" && <VisaoGeral lancamentos={lancamentos} contas={contas} onAbrir={setDetalheLanc} />}
         {(tab === "receber" || tab === "pagar") && (
           <Contas
@@ -1632,7 +1637,7 @@ function DRE({ lancamentos, categorias }) {
 
   const porRegime = (l) => (regime === "caixa" ? l.status === "pago" : true);
   const mesesVisao = visao === "mes" ? [mesSel] : visao === "trimestre" ? TRIMESTRES[triSel].meses : TODOS_MESES;
-  const doAno = lancamentos.filter((l) => anoDoLancamento(l) === anoSel);
+  const doAno = baseContabil(lancamentos, regime).filter((l) => anoDoLancamento(l) === anoSel);
   const base = doAno.filter((l) => porRegime(l) && mesesVisao.includes(l.mes));
   const dre = calcDRE(base, categorias);
   const margem = dre.rb > 0 ? (dre.lucroLiq / dre.rb) * 100 : 0;
@@ -1660,6 +1665,7 @@ function DRE({ lancamentos, categorias }) {
         <div style={{ fontFamily: serif, fontSize: 20 }}>Demonstração do Resultado (DRE)</div>
         <Toggle opcoes={[["competencia", "Competência"], ["caixa", "Caixa"]]} valor={regime} set={setRegime} />
       </div>
+      <p style={{ fontSize: 12, color: C.text3 }}>{regime === 'competencia' ? 'Competência inclui parcelas previstas do período, inclusive futuras. Valores conciliados são representados pelo pagamento vinculado e não são somados novamente.' : 'Caixa considera a data efetiva do pagamento; registros antigos sem data completa usam a competência cadastrada e precisam de conferência.'}</p>
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <Toggle opcoes={[["mes", "Mês"], ["trimestre", "Trimestre"], ["ano", "Ano"], ["mensal", "Mensal (12 meses)"]]} valor={visao} set={setVisao} />
         {visao === "mes" && (
@@ -1978,6 +1984,7 @@ function Bancos({ contas, lancamentos = [], saldoTotal, onNovo, onEditar, onExcl
 
 // ===== RECEBIMENTOS POR CLIENTE ============================================
 function RecebimentosCliente({ clientes = [], lancamentos = [], updateLancamento, unidadeNome }) {
+  const [limiteVinculos, setLimiteVinculos] = useState(25);
   const [mesRef, setMesRef] = useState(MES_ATUAL);
   const [anoRef, setAnoRef] = useState(ANO_ATUAL);
   const [busca, setBusca] = useState("");
@@ -2143,12 +2150,12 @@ td.b{font-weight:700}tr.zero td.l{color:#b23}tfoot td{font-weight:700;background
       {verLista && naoVinculados.length > 0 && (
         <div style={{ background: C.white, border: `1px solid ${C.border2}`, borderRadius: 12, padding: 14, marginBottom: 12 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 10, flexWrap: "wrap" }}>
-            <div style={{ fontSize: 13.5, fontWeight: 700 }}>Recebimentos pagos sem cliente vinculado ({naoVinculados.length})</div>
+            <div style={{ fontSize: 13.5, fontWeight: 700 }}>Recebimentos comerciais pagos sem cliente vinculado ({naoVinculados.length})</div>
             <div style={{ fontSize: 12, color: C.text3 }}>Total {fmt(naoVinculados.reduce((s, l) => s + (l.valor || 0), 0))}</div>
           </div>
           <div style={{ fontSize: 12, color: C.text3, marginBottom: 10 }}>Confira antes de vincular. Dá para vincular manualmente aqui — útil para os que o automático não identifica.</div>
           <div style={{ maxHeight: 300, overflowY: "auto" }}>
-            {naoVinculados.map((l) => (
+            {naoVinculados.slice(0, limiteVinculos).map((l) => (
               <div key={l.id} style={{ display: "grid", gridTemplateColumns: "88px 1fr 110px 200px", gap: 10, alignItems: "center", padding: "7px 0", borderTop: `1px solid ${C.border2}` }}>
                 <span style={{ fontSize: 11.5, color: C.text3, fontVariantNumeric: "tabular-nums" }}>{l.dataPagamento || l.data || "—"}</span>
                 <span style={{ fontSize: 12.5, color: C.text2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={l.descricao}>{l.descricao || "—"}</span>
@@ -2162,6 +2169,7 @@ td.b{font-weight:700}tr.zero td.l{color:#b23}tfoot td{font-weight:700;background
           </div>
         </div>
       )}
+      {verLista && naoVinculados.length > limiteVinculos && <Btn variant="soft" onClick={() => setLimiteVinculos(n => n + 25)}>Mostrar mais 25 recebimentos</Btn>}
       {previa && (
         <div style={{ background: C.cream, border: `1px solid ${C.border2}`, borderRadius: 12, padding: 14, marginBottom: 12 }}>
           <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 6 }}>Vinculação automática pela descrição</div>
@@ -2470,26 +2478,20 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
   const _resumoRec = resumoRecebiveis(lancamentos, hojeRef);
   const vencidos = _resumoRec.itens
     .filter((x) => x.classe === "vencido")
-    .map((x) => ({ l: x.l, venc: new Date(x.venc.ano, x.venc.mes, x.venc.dia), dias: x.diasAtraso }))
+    .map((x) => ({ l: { ...x.l, valor: x.saldo }, venc: new Date(x.venc.ano, x.venc.mes, x.venc.dia), dias: x.diasAtraso }))
     .sort((a, b) => b.dias - a.dias);
   const inconsistentes = _resumoRec.itens.filter((x) => x.classe === "inconsistente").map((x) => x.l);
 
   // Conciliação sugerida (Fase B): recebíveis PREVISTOS que têm um PAGO de mesmo
   // cliente e valor — candidatos a já terem sido pagos (sem baixa). Sugestão para
   // revisão humana; nada é conciliado automaticamente.
-  const pagosPorChave = new Map();
-  for (const l of lancamentos) {
-    if (l.tipo === "entrada" && l.status === "pago" && l.clienteId) {
-      const k = `${l.clienteId}|${Number(l.valor)}`;
-      if (!pagosPorChave.has(k)) pagosPorChave.set(k, l);
-    }
-  }
-  const conciliaveis = lancamentos
-    .filter((l) => l.tipo === "entrada" && l.status === "previsto" && l.clienteId && pagosPorChave.has(`${l.clienteId}|${Number(l.valor)}`))
-    .map((l) => ({ previsto: l, pago: pagosPorChave.get(`${l.clienteId}|${Number(l.valor)}`) }));
+  const sugestoes = sugerirConciliacoes(lancamentos);
+  const conciliaveis = sugestoes.filter(x => !x.ambiguo).map(x => ({ previsto: x.previsto, pago: x.pagamentos[0] }));
+  const clientesEmAtraso = clientesVencidos(lancamentos, clientes, hojeRef);
   const conciliar = (previstoId, pagoId) => {
     if (window.confirm("Conciliar: marcar este previsto como já satisfeito pelo pagamento encontrado?\n\nO título sai de \"a receber\"/inadimplência e aponta o pagamento. Não cria lançamento novo e é reversível.")) {
-      store.conciliarPrevisto(previstoId, pagoId);
+      const resultado = store.conciliarPrevisto(previstoId, pagoId);
+      if (!resultado?.ok) window.alert(resultado?.erro || "Não foi possível conciliar. Atualize e confira os lançamentos.");
     }
   };
 
@@ -2509,7 +2511,7 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
   // Resumo por cliente.
   const porClienteMap = new Map();
   for (const x of vencidos) {
-    const chave = x.l.clienteId || nomeCli(x.l);
+    const chave = x.l.clienteId || `sem-cliente:${x.l.id}`;
     const g = porClienteMap.get(chave) || { nome: nomeCli(x.l), total: 0, titulos: 0, maior: 0 };
     g.total += x.l.valor; g.titulos += 1; g.maior = Math.max(g.maior, x.dias);
     porClienteMap.set(chave, g);
@@ -2562,7 +2564,7 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 12, marginBottom: 14 }}>
         <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Total vencido</div><div style={{ fontFamily: serif, fontSize: 26, color: C.red }}>{fmt(total)}</div></Card>
-        <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Clientes inadimplentes</div><div style={{ fontFamily: serif, fontSize: 26 }}>{porCliente.length}</div></Card>
+        <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Clientes inadimplentes</div><div style={{ fontFamily: serif, fontSize: 26 }}>{clientesEmAtraso.identificados}</div><div style={{ fontSize: 12, color: C.text3 }}>{clientesEmAtraso.semCliente} título(s) sem cliente válido</div></Card>
         <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Títulos vencidos</div><div style={{ fontFamily: serif, fontSize: 26 }}>{vencidos.length}</div></Card>
         <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Maior atraso</div><div style={{ fontFamily: serif, fontSize: 26 }}>{maiorAtraso} <span style={{ fontSize: 14, color: C.text3 }}>dias</span></div></Card>
       </div>
@@ -2613,7 +2615,7 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
         <Card style={{ marginBottom: 18, borderLeft: `4px solid ${C.teal}` }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
             <RefreshCw size={16} color={C.teal} />
-            <div style={{ fontFamily: serif, fontSize: 17 }}>Conciliação sugerida — {conciliaveis.length} previsto(s) com pagamento de mesmo cliente e valor</div>
+            <div style={{ fontFamily: serif, fontSize: 17 }}>Conciliação sugerida — {conciliaveis.length} previsto(s) com pagamento de mesmo cliente, competência e valor</div>
           </div>
           <div style={{ fontSize: 12.5, color: C.text3, marginBottom: 10 }}>
             Podem já ter sido pagos sem dar baixa. Confira caso a caso: ao conciliar, o previsto é marcado como satisfeito pelo pagamento (sai de “a receber”, não cria lançamento, reversível). Nada é conciliado automaticamente.
@@ -2829,6 +2831,7 @@ function LancarInadimplenciaModal({ clientes = [], categorias = [], contas = [],
 function Provisao({ store, activeUnit, lancamentos = [], categorias = [], unidadeNome = "", onNovaDespesa }) {
   const [incluirRealizado, setIncluirRealizado] = useState(false);
   const [anoSel, setAnoSel] = useState(ANO_ATUAL);
+  const cobertura = avaliarProjecao(lancamentos, anoSel);
   const contratos = store.contratosDe(activeUnit).filter((c) => c.status === "ativo");
   // Faixa de competências do contrato DENTRO do ano projetado (anoSel). Contratos
   // que atravessam a virada do ano aparecem só com os meses que caem neste ano.
@@ -2841,7 +2844,7 @@ function Provisao({ store, activeUnit, lancamentos = [], categorias = [], unidad
   // Base da provisão: lançamentos PREVISTOS (já incluem contratos recorrentes e
   // despesas recorrentes). Opcionalmente soma os realizados (pagos) p/ ver a
   // projeção total do ano.
-  const base = lancamentos.filter((l) => anoDoLancamento(l) === anoSel && (incluirRealizado ? true : l.status === "previsto"));
+  const base = baseContabil(lancamentos).filter((l) => anoDoLancamento(l) === anoSel && (incluirRealizado ? true : l.status === "previsto"));
 
   const linhasMes = MESES.map((lbl, m) => {
     const rec = base.filter((l) => l.tipo === "entrada" && l.mes === m).reduce((s, l) => s + l.valor, 0);
@@ -2909,7 +2912,7 @@ function Provisao({ store, activeUnit, lancamentos = [], categorias = [], unidad
         <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Receita provisionada ({anoSel})</div><div style={{ fontFamily: serif, fontSize: 24, color: C.green }}>{fmt(totRec)}</div></Card>
         <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Despesa provisionada ({anoSel})</div><div style={{ fontFamily: serif, fontSize: 24, color: C.red }}>{fmt(totDesp)}</div></Card>
         <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Resultado provisionado</div><div style={{ fontFamily: serif, fontSize: 24, color: totRes >= 0 ? C.teal : C.red }}>{fmt(totRes)}</div></Card>
-        <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Margem projetada</div><div style={{ fontFamily: serif, fontSize: 24 }}>{margem.toFixed(1)}%</div></Card>
+        <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Margem sobre dados cadastrados</div><div style={{ fontFamily: serif, fontSize: 24 }}>{cobertura.incompleta ? "Projeção incompleta" : `${margem.toFixed(1)}%`}</div><div style={{ fontSize: 12, color: C.text3 }}>{cobertura.incompleta ? `${cobertura.mesesSemDespesas.map(m => MESES[m]).join(", ")}: sem despesas previstas. Cadastre os compromissos antes de avaliar a margem.` : "Confirme todos os compromissos antes de decidir."}</div></Card>
       </div>
 
       <Card style={{ padding: 0, overflow: "hidden", marginBottom: 16 }}>
@@ -2990,6 +2993,7 @@ function Provisao({ store, activeUnit, lancamentos = [], categorias = [], unidad
 
 // ===== FORMULÁRIOS =========================================================
 function LancamentoForm({ inicial, contas, categorias, clientes = [], onSave }) {
+  const [erro, setErro] = useState("");
   const permite = (secaoKey, tipo) => {
     const s = SECOES.find((x) => x.key === secaoKey);
     return !s || s.tipo === "ambos" || s.tipo === tipo;
@@ -3005,7 +3009,7 @@ function LancamentoForm({ inicial, contas, categorias, clientes = [], onSave }) 
       tipo,
       descricao: init.descricao || "",
       categoria: cat,
-      subcategoria: init.subcategoria || subList[0] || "",
+      subcategoria: inicial.id ? (init.subcategoria || "") : (subList[0] || ""),
       valor: init.valor || 0,
       contaId: init.contaId || contas[0]?.id || "",
       dataCompetencia: init.dataCompetencia || init.data || "",
@@ -3070,7 +3074,7 @@ function LancamentoForm({ inicial, contas, categorias, clientes = [], onSave }) 
         </Field>
         <Field label="Subcategoria" style={{ marginBottom: 4 }}>
           <select value={f.subcategoria} onChange={(e) => setF({ ...f, subcategoria: e.target.value })} style={inp}>
-            {subs.length === 0 && <option value="">—</option>}
+            <option value="">Selecione a subcategoria</option>
             {subs.map((s) => <option key={s}>{s}</option>)}
           </select>
         </Field>
@@ -3101,8 +3105,16 @@ function LancamentoForm({ inicial, contas, categorias, clientes = [], onSave }) 
       <Field label="Anexo / comprovante (opcional)">
         <FileInput value={f.anexo} onChange={(v) => setF({ ...f, anexo: v })} label="Anexar comprovante" />
       </Field>
+      {erro && <p role="alert" style={{ color: C.red }}>{erro}</p>}
       <Btn style={{ width: "100%", justifyContent: "center", marginTop: 4 }} onClick={() => {
-        if (!f.descricao.trim() || !(f.valor > 0)) return;
+        setErro("");
+        if (!f.descricao.trim() || !Number.isFinite(f.valor) || !(f.valor > 0)) { setErro("Informe descrição e valor positivo."); return; }
+        if (!f.contaId) { setErro("Selecione a conta financeira."); return; }
+        if (!dataValidaCompleta(f.dataCompetencia)) { setErro("Informe uma competência completa e válida (DD/MM/AAAA)."); return; }
+        if (f.status === "previsto" && !dataValidaCompleta(f.dataVencimento)) { setErro("Informe um vencimento completo e válido."); return; }
+        if (f.status === "pago" && !dataValidaCompleta(f.dataPagamento)) { setErro("Informe a data efetiva do pagamento/recebimento."); return; }
+        if ([f.dataVencimento, f.dataPagamento].some(d => d && !dataValidaCompleta(d))) { setErro("Revise as datas: use DD/MM/AAAA e uma data existente."); return; }
+        if (subs.length && !f.subcategoria) { setErro("Escolha a subcategoria; ela não será presumida pelo sistema."); return; }
         const clienteId = f.tipo === "entrada" ? (f.clienteId || null) : null;
         const clienteNome = clienteId ? (clientes.find((c) => c.id === clienteId)?.nome || "") : null;
         // `data` (usado no extrato/dia) = pagamento, senão competência/vencimento.

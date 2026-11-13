@@ -6,10 +6,12 @@ import {
 import { Card, Badge, Btn, PageHead } from "../components/ui.jsx";
 import { C, serif, fmt, fmtShort } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
-import { getCurrentCompetencia, MESES_BR as MESES, noPeriodo } from "../lib/dateUtils.js";
-import { resumoRecebiveis, hojeSP, ehNaoComercial } from "../lib/financeiro.js";
+import { getCurrentCompetencia, MESES_BR as MESES } from "../lib/dateUtils.js";
+import { resumoRecebiveis, hojeSP, vencimentoReal } from "../lib/financeiro.js";
 import { cobrancasJaLancadas, competenciaBRT, receitaOnlineNoMes } from "../lib/recebimentosOnline.js";
 import { Store } from "lucide-react";
+import { clientesVencidos } from '../lib/conferenciaFinanceira.js';
+import { indicadoresUnidade } from '../lib/indicadoresUnidade.js';
 
 const ICONS = { fatura: Receipt, corresp: Mail, sala: DoorOpen, lead: Target, estoque: AlertCircle };
 
@@ -22,7 +24,7 @@ export default function Dashboard({ go }) {
   // KPIs executivos calculados dos DADOS REAIS (competência atual). Zeram sem movimento.
   const ativo = store.activeUnit;
   const comp = getCurrentCompetencia();
-  const daUnidade = (arr) => (arr || []).filter((x) => !x.unidadeId || x.unidadeId === ativo);
+  const daUnidade = (arr) => (arr || []).filter((x) => x.unidadeId === ativo);
   const lancs = daUnidade(store.lancamentos);
   const todosClientes = store.clientes || [];
   const clientes = daUnidade(store.clientes);
@@ -46,9 +48,7 @@ export default function Dashboard({ go }) {
   const asaasNoMes = (ano, mes) => receitaOnlineNoMes(cobrancasUnidade, lancs, ano, mes, jaLancadas).valor;
   // Receita exclui movimentos NÃO comerciais (transferências entre contas,
   // aportes, investimentos) — eles não são faturamento, só não inflam a receita.
-  const entradasPagas = (ano, mes) => lancs
-    .filter((l) => noPeriodo(l, ano, mes) && l.tipo === "entrada" && l.status === "pago" && !ehNaoComercial(l))
-    .reduce((s, l) => s + (l.valor || 0), 0) + asaasNoMes(ano, mes);
+  const entradasPagas = (ano, mes) => indicadoresUnidade({ unidadeId: ativo, clientes: todosClientes, lancamentos: lancs, cobrancas: cobrancasUnidade, ano, mes }).receita;
   const fluxo = MESES.map((label, m) => ({ label, valor: entradasPagas(comp.ano, m) }));
   const receitaAsaasMes = asaasNoMes(comp.ano, comp.mes);
   const maxFluxo = Math.max(1, ...fluxo.map((f) => f.valor));
@@ -66,11 +66,12 @@ export default function Dashboard({ go }) {
   const aReceber = _receb.vencido.total + _receb.a_vencer.total;
   const aReceberFuturo = _receb.futuro.total;
   const vencidosInad = _receb.itens.filter((x) => x.classe === "vencido");
-  const inadimplentes = new Set(vencidosInad.map((x) => x.l.clienteId || ("semcli:" + x.l.id))).size;
+  const clientesAtrasados = clientesVencidos(lancs, clientes);
+  const inadimplentes = clientesAtrasados.identificados;
 
-  const hoje = new Date();
+  const hoje = hojeSP();
   // Boletos vencidos (tabela de boletos) — usados só nos alertas de fatura.
-  const boletosVencidos = boletos.filter((b) => b.status !== "pago" && b.status !== "cancelado" && b.vencimento && new Date(b.vencimento) < hoje);
+  const boletosVencidos = boletos.filter((b) => b.status !== "pago" && b.status !== "cancelado" && b.vencimento && (vencimentoReal({ dataVencimento: b.vencimento })?.chave ?? Infinity) < hoje.chave);
 
   const totalMembros = clientes.filter((c) => c.status !== "inativo").length;
   const salasTotal = salas.length;
@@ -96,7 +97,7 @@ export default function Dashboard({ go }) {
     { label: `Receita ${MESES[comp.mes]}`, val: fmtShort(receitaMes), delta: `${deltaMes >= 0 ? `▲ ${deltaMes}%` : `▼ ${Math.abs(deltaMes)}%`} vs mês anterior${receitaAsaasMes ? ` · ${fmtShort(receitaAsaasMes)} do Asaas` : ""}`, icon: DollarSign, cor: deltaMes >= 0 ? C.green : C.red },
     { label: "Receita recorrente", val: fmtShort(recorrenteMes), delta: `avulsa ${fmtShort(avulsaMes)}`, icon: TrendingUp, cor: C.teal },
     { label: "Contas a receber", val: fmtShort(aReceber), delta: aReceberFuturo > 0 ? `+ ${fmtShort(aReceberFuturo)} projeção futura` : `${vencidosInad.length} título(s) vencido(s)`, icon: Receipt, cor: vencidosInad.length ? C.red : C.cafe },
-    { label: "Inadimplentes", val: inadimplentes, delta: inadimplentes ? "acionar cobrança" : "em dia", icon: AlertCircle, cor: inadimplentes ? C.red : C.green },
+    { label: "Inadimplentes", val: inadimplentes, delta: clientesAtrasados.semCliente ? `${clientesAtrasados.semCliente} título(s) sem cliente; conferir` : inadimplentes ? "conferir antes de cobrar" : "sem clientes identificados em atraso", icon: AlertCircle, cor: inadimplentes ? C.red : C.green },
     { label: "Ocupação de salas", val: `${ocupacao}%`, delta: `${horasReservadas}h reservadas`, icon: DoorOpen, cor: C.cafe },
     { label: "Cafeteria (mês)", val: fmtShort(cafeteriaMes), delta: `margem ${margemCafe}% · tkt ${fmtShort(ticketCafe)}`, icon: Coffee, cor: C.amber },
     { label: "Clientes ativos", val: totalMembros, delta: totalMembros === 1 ? "1 cliente" : `${totalMembros} clientes`, icon: Users, cor: C.teal },
@@ -107,7 +108,7 @@ export default function Dashboard({ go }) {
   const alertas = [];
   boletosVencidos
     .slice(0, 3)
-    .forEach((b) => alertas.push({ id: "fat" + b.id, tipo: "fatura", cor: C.red, titulo: "Fatura vencida", sub: `${b.sacado} · ${fmt(b.valor)} · acionar cobrança` }));
+    .forEach((b) => alertas.push({ id: "fat" + b.id, tipo: "fatura", cor: C.red, titulo: "Boleto vencido a conferir", sub: `${b.sacado} · ${fmt(b.valor)} · confirmar baixa bancária` }));
   const baixo = store.estoqueBaixoDe ? store.estoqueBaixoDe(ativo) : [];
   if (baixo.length) alertas.push({ id: "estbaixo", tipo: "estoque", cor: C.amber, titulo: `${baixo.length} item(ns) no estoque mínimo`, sub: baixo.slice(0, 3).map((i) => i.nome).join(", ") });
   const corrAg = store.correspondenciasDe ? store.correspondenciasDe(ativo).filter((c) => c.status === "aguardando") : [];
@@ -323,11 +324,7 @@ export default function Dashboard({ go }) {
           const uOcup = uSalas ? Math.round((salasU.filter((s) => s.contratada).length / uSalas) * 100) : 0;
           // Usa as listas COMPLETAS: `clientes`/`lancs` já vêm filtrados pela
           // unidade ativa e zeravam o cartão das outras unidades.
-          const uMembros = todosClientes.filter((c) => c.unidadeId === u.id && c.status !== "inativo").length;
-          // Receita do mês corrente (o rótulo diz o mês), não "desde sempre".
-          const uReceita = (store.lancamentos || [])
-            .filter((l) => l.unidadeId === u.id && l.tipo === "entrada" && l.status === "pago" && noPeriodo(l, comp.ano, comp.mes))
-            .reduce((s, l) => s + (l.valor || 0), 0);
+          const { membros: uMembros, receita: uReceita } = indicadoresUnidade({ unidadeId: u.id, clientes: todosClientes, lancamentos: store.lancamentos, cobrancas: store.cobrancas, ano: comp.ano, mes: comp.mes });
           return (
           <Card
             key={u.id}
