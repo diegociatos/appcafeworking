@@ -2259,6 +2259,16 @@ function Controladoria({ lancamentos = [], contas = [], store, activeUnit, unida
   const faturadoMes = entradasCompMes.reduce((s, l) => s + l.valor, 0);
   const recebidoCompMes = entradasCompMes.filter((l) => l.status === "pago").reduce((s, l) => s + l.valor, 0);
 
+  // Receita por serviço (subcategoria) — recebido comercial no mês (regime caixa).
+  const porServicoMap = new Map();
+  for (const l of pagos) {
+    if (l.tipo !== "entrada" || ehNaoComercial(l) || !noMesCaixa(l)) continue;
+    const k = (l.subcategoria || l.categoria || "Outros").trim() || "Outros";
+    porServicoMap.set(k, (porServicoMap.get(k) || 0) + (l.valor || 0));
+  }
+  const porServico = [...porServicoMap.entries()].map(([servico, total]) => ({ servico, total: Math.round(total * 100) / 100 })).sort((a, b) => b.total - a.total);
+  const totalServicos = porServico.reduce((s, x) => s + x.total, 0);
+
   const KPI = ({ titulo, valor, cor, sub, onClick, aberto }) => (
     <Card onClick={onClick} style={{ cursor: onClick ? "pointer" : "default", outline: aberto ? `2px solid ${C.cafe}` : "none" }}>
       <div style={{ fontSize: 12.5, color: C.text3 }}>{titulo}</div>
@@ -2328,6 +2338,31 @@ function Controladoria({ lancamentos = [], contas = [], store, activeUnit, unida
           </div>
         </Card>
       </div>
+
+      <Card style={{ padding: 0, overflow: "hidden", marginBottom: 14 }}>
+        <div style={{ padding: "12px 18px", borderBottom: `1px solid ${C.border2}`, display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+          <span style={{ fontWeight: 700, fontSize: 13.5 }}>Receita por serviço · {MESES[mesSel]}/{anoSel}</span>
+          <span style={{ fontSize: 12.5, color: C.text3 }}>recebido {fmt(totalServicos)}</span>
+        </div>
+        {porServico.length === 0 ? (
+          <div style={{ padding: 18, fontSize: 13, color: C.text4 }}>Nenhuma receita comercial recebida neste mês.</div>
+        ) : (
+          <div style={{ padding: "6px 18px 12px" }}>
+            {porServico.map((s) => {
+              const pct = totalServicos > 0 ? (s.total / totalServicos) * 100 : 0;
+              return (
+                <div key={s.servico} style={{ padding: "8px 0", borderTop: `1px solid ${C.border2}` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 4 }}>
+                    <span style={{ color: C.text2, fontWeight: 600 }}>{s.servico}</span>
+                    <span style={{ fontWeight: 700 }}>{fmt(s.total)} <span style={{ fontSize: 11, color: C.text4, fontWeight: 400 }}>· {pct.toFixed(0)}%</span></span>
+                  </div>
+                  <div style={{ height: 7, background: C.cream, borderRadius: 4, overflow: "hidden" }}><div style={{ width: `${Math.min(100, pct)}%`, height: "100%", background: C.cafe }} /></div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
 
       {drill && (
         <Card style={{ padding: 0, overflow: "hidden" }}>
