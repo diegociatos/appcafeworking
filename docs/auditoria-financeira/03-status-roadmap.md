@@ -93,11 +93,24 @@ auditoria/saneamento financeiro. Legenda: ✅ feito · 🟡 parcial · ⬜ pende
 régua de cobrança como tarefa com responsável.
 
 ## P2 · Operação
-- Cafeteria/estoque/patrimônio — 🟡 (PDV existe; falta vincular fechamento ao caixa
-  por forma de pagamento; alertas de estoque → tarefa de reposição; bem↔documento).
-- Impressões — 🟡 (Fase 1 cobra por folha com marcação de "impressa"; conferir se
-  desconta só folhas físicas efetivamente impressas e amarra excedente ao fechamento).
-- Auditório — ⬜ (reunir reserva/sinal/saldo/cancelamento/NF na mesma operação).
+> **Em produção 2026-11-17 (autônomo):** fechamento de caixa do PDV por forma de
+> pagamento (resumo/conferência, sem recriar lançamento) e lista de reposição de
+> estoque (sugestão de compra + custo estimado + botão Repor).
+- Cafeteria (PDV) — ✅ **fechamento de caixa por forma de pagamento** (Dinheiro/
+  Pix/Cartão/plano, com contado × diferença). As vendas já lançam o caixa.
+- Estoque — ✅ **lista de reposição** (tarefa de compra com sugestão de quantidade
+  e custo estimado). Alerta já existia; virou worklist acionável.
+- Patrimônio ↔ documento — ✅ já existia (campo `anexo`: contrato/NF por bem).
+- Impressões — ✅ **conferido:** a cobrança usa só as folhas EFETIVAMENTE impressas
+  (`folhas_impressas` em `impressao-concluida`); impressão com falha não cobra.
+  🟡 Falta (Fase 3): apurar/faturar o excedente no fechamento do mês — gera
+  lançamento/cobrança por cliente; **precisa de decisão** (regra de franquia por
+  plano, proração) antes de automatizar, por mexer em valores/cobrança reais.
+- Auditório — ⬜ **não construído (precisa de decisão).** Hoje "auditório" é só um
+  valor de `sala` num evento (display-only); não há sinal/saldo/cancelamento/NF.
+  Um fluxo de reserva-com-sinal deve espelhar o de salas (addReserva/criarReserva/
+  cancelarReserva em store.jsx), mas depende de regras de negócio (preço, % de
+  sinal, política de reembolso, quando emite NF) — não dá para definir sozinho.
 
 ## Primeira entrega — 3 cenários a validar
 1. **Reserva avulsa confirmada após pagamento, vencimento na mesma data** — 🟡
