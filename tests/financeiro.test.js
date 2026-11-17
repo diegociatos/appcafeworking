@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   ehNaoComercial, ehReservaPendente, chaveDia, hojeSP, dataValidaCompleta, vencimentoReal, dataCaixa,
-  classificarRecebivel, saldoResidual, montarParcela, resumoRecebiveis,
+  classificarRecebivel, saldoResidual, montarParcela, resumoRecebiveis, mesesSemProvisao,
 } from "../src/lib/financeiro.js";
 
 // Hoje fixo para os testes: 15/11/2026 (SP).
@@ -52,6 +52,15 @@ test("vencimentoReal devolve null quando não há dia (— ou vazio)", () => {
   assert.equal(vencimentoReal({ data: "—", mes: 3, ano: 2026 }), null);
   assert.equal(vencimentoReal({ data: "", mes: 3, ano: 2026 }), null);
   assert.equal(vencimentoReal({ data: "20" }), null); // sem competência (mes)
+});
+
+test("mesesSemProvisao aponta só os buracos no meio da recorrência", () => {
+  assert.deepEqual(mesesSemProvisao([0, 1, 2, 3]), []);          // sequência completa
+  assert.deepEqual(mesesSemProvisao([0, 1, 3]), [2]);            // falta março (mes 2)
+  assert.deepEqual(mesesSemProvisao([2, 3, 4, 5, 6, 7]), []);    // mar–ago sem buraco
+  assert.deepEqual(mesesSemProvisao([2, 7]), [3, 4, 5, 6]);      // só extremos presentes
+  assert.deepEqual(mesesSemProvisao([5]), []);                   // 1 mês: nada a cobrar fora do intervalo
+  assert.deepEqual(mesesSemProvisao([]), []);
 });
 
 test("cenário 1: reserva avulsa PENDENTE fica fora de a-receber/inadimplência", () => {

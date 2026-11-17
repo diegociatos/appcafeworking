@@ -184,6 +184,19 @@ export function montarParcela(base, compMes0, compAno, offset, diaVencimento) {
   };
 }
 
+/** Meses (0..11) SEM provisão dentro do intervalo coberto por uma recorrência.
+ *  Recebe os meses já provisionados; devolve só os buracos entre o primeiro e o
+ *  último (fora do intervalo não é buraco — a recorrência ainda não começou ou
+ *  já terminou). Ex.: [0,1,3] → [2]. */
+export function mesesSemProvisao(mesesPresentes = []) {
+  const ms = [...new Set(mesesPresentes.map(Number))].filter((m) => m >= 0 && m <= 11).sort((a, b) => a - b);
+  if (ms.length < 2) return [];
+  const set = new Set(ms);
+  const faltas = [];
+  for (let m = ms[0]; m <= ms[ms.length - 1]; m++) if (!set.has(m)) faltas.push(m);
+  return faltas;
+}
+
 /** Agrega recebíveis previstos por classe, com soma e contagem. Fonte única
  *  para Dashboard, Contas a Receber, Inadimplência e relatórios. */
 export function resumoRecebiveis(lancamentos = [], hoje = hojeSP()) {

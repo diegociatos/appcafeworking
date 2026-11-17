@@ -12,7 +12,7 @@ import { useStore, SECOES, COBRANCA_TEMPLATE_DEFAULT, MODO_REAL } from "../lib/s
 import {
   getCurrentCompetencia, anoDoLancamento, chaveDoLancamento, noPeriodo, anosDisponiveis, competenciaComAno,
 } from "../lib/dateUtils.js";
-import { resumoRecebiveis, hojeSP, ehNaoComercial, dataCaixa } from "../lib/financeiro.js";
+import { resumoRecebiveis, hojeSP, ehNaoComercial, dataCaixa, mesesSemProvisao } from "../lib/financeiro.js";
 import { gerarModeloFluxo, lerPlanilhaFluxo, validarLinhas, exportarExtratoExcel, exportarProvisaoExcel } from "../lib/fluxoImport.js";
 import { resumoOnline, cobrancasJaLancadas, competenciaDaCobranca, situacaoCobranca, hojeBRT, repassesDoAno, extratoGarantia, ROTULO_GARANTIA } from "../lib/recebimentosOnline.js";
 import { fetchGarantiasDb } from "../lib/supabaseDb.js";
@@ -2876,10 +2876,14 @@ function Provisao({ store, activeUnit, lancamentos = [], categorias = [], unidad
   const despRecMap = new Map();
   base.filter((l) => l.tipo === "saida" && l.recorrente).forEach((l) => {
     const k = l.grupoRecorrencia || l.descricao;
-    const g = despRecMap.get(k) || { descricao: l.descricao, categoria: l.categoria, valorMensal: l.valor, meses: 0, total: 0 };
-    g.meses += 1; g.total += l.valor; despRecMap.set(k, g);
+    const g = despRecMap.get(k) || { descricao: l.descricao, categoria: l.categoria, valorMensal: l.valor, meses: 0, total: 0, mesesSet: new Set() };
+    g.meses += 1; g.total += l.valor; g.mesesSet.add(Number(l.mes) || 0); despRecMap.set(k, g);
   });
-  const despRec = [...despRecMap.values()].sort((a, b) => b.total - a.total);
+  // Meses SEM provisão: buracos dentro do intervalo coberto pela recorrência
+  // (ex.: aluguel provisionado jan–dez mas faltando maio). Fora do intervalo
+  // (antes do início ou depois do fim) não é buraco.
+  const despRec = [...despRecMap.values()].map((g) => ({ ...g, gaps: mesesSemProvisao([...g.mesesSet]) })).sort((a, b) => b.total - a.total);
+  const despComGap = despRec.filter((g) => g.gaps.length > 0);
   const totContratos = contratos.reduce((s, c) => s + c.valorMensal * faixaAno(c).meses, 0);
   const totDespRec = despRec.reduce((s, g) => s + g.total, 0);
 
@@ -2978,6 +2982,21 @@ function Provisao({ store, activeUnit, lancamentos = [], categorias = [], unidad
         </Card>
       </div>
 
+      {despComGap.length > 0 && (
+        <Card style={{ marginBottom: 16, padding: 14, borderLeft: `4px solid ${C.amber}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <AlertTriangle size={16} color={C.amber} />
+            <div style={{ fontWeight: 700, fontSize: 13.5 }}>{despComGap.length} despesa(s) recorrente(s) com mês sem provisão em {anoSel}</div>
+          </div>
+          <div style={{ fontSize: 12.5, color: C.text3 }}>
+            Há buracos no meio da recorrência — provável parcela não gerada. Revise a despesa e complete os meses faltantes:
+            <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+              {despComGap.map((g, i) => <li key={i}><b>{g.descricao}</b>: falta {g.gaps.map((m) => `${MESES[m]}`).join(", ")}</li>)}
+            </ul>
+          </div>
+        </Card>
+      )}
+
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <div style={{ padding: "12px 18px", borderBottom: `1px solid ${C.border2}`, fontWeight: 700, fontSize: 13.5, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span>Despesas recorrentes</span>
@@ -2990,14 +3009,28 @@ function Provisao({ store, activeUnit, lancamentos = [], categorias = [], unidad
             <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 80px 120px", gap: 8, padding: "10px 18px", background: C.cream, fontSize: 11, fontWeight: 700, color: C.text3 }}>
               <div>DESCRIÇÃO · CATEGORIA</div><div style={{ textAlign: "right" }}>VALOR/MÊS</div><div style={{ textAlign: "right" }}>MESES</div><div style={{ textAlign: "right" }}>TOTAL</div>
             </div>
-            {despRec.map((g, i) => (
+            {despRec.map((g, i) => {
+              const ms = [...g.mesesSet].sort((a, b) => a - b);
+              const ini = ms[0], fim = ms[ms.length - 1];
+              return (
               <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 120px 80px 120px", gap: 8, padding: "9px 18px", borderTop: `1px solid ${C.border2}`, alignItems: "center" }}>
-                <Cel><div style={{ fontWeight: 600 }}>{g.descricao}</div><div style={{ fontSize: 11.5, color: C.text3 }}>{g.categoria || "—"}</div></Cel>
+                <Cel>
+                  <div style={{ fontWeight: 600 }}>{g.descricao}{g.gaps.length > 0 && <span style={{ marginLeft: 8, fontSize: 10.5, fontWeight: 700, color: C.amber }}>● falta {g.gaps.map((m) => MESES[m]).join(", ")}</span>}</div>
+                  <div style={{ fontSize: 11.5, color: C.text3, marginBottom: 3 }}>{g.categoria || "—"}</div>
+                  <div style={{ display: "flex", gap: 2 }} title="Meses provisionados no ano; vermelho = buraco na recorrência">
+                    {MESES.map((lbl, m) => {
+                      const dentro = ms.length > 0 && m >= ini && m <= fim;
+                      const tem = g.mesesSet.has(m);
+                      const cor = tem ? C.teal : dentro ? C.red : C.border;
+                      return <span key={m} title={`${lbl}${tem ? "" : dentro ? " — sem provisão" : ""}`} style={{ width: 9, height: 9, borderRadius: 2, background: cor, opacity: tem || dentro ? 1 : 0.4 }} />;
+                    })}
+                  </div>
+                </Cel>
                 <Cel style={{ textAlign: "right" }}>{fmt(g.valorMensal)}</Cel>
                 <Cel style={{ textAlign: "right" }}>{g.meses}</Cel>
                 <Cel style={{ textAlign: "right", fontWeight: 700, color: C.red }}>{fmt(g.total)}</Cel>
               </div>
-            ))}
+            ); })}
           </div></div>
         )}
       </Card>
