@@ -918,6 +918,13 @@ function Contratos({ store, activeUnit, clientesUnidade = [] }) {
   const [faturar, setFaturar] = useState(null);
   const [renovar, setRenovar] = useState(null);
   const venceuIds = new Set(vencendo.map((c) => c.id));
+  // Fila de renovação PROATIVA: contratos ativos que vencem no mês atual ou nos
+  // próximos 2 meses (ainda não venceram — esses já estão no alerta acima). Deixa
+  // renovar antes de a parcela deixar de ser provisionada.
+  const venceuSet = new Set(vencendo.map((c) => c.id));
+  const renovacaoProxima = contratos
+    .filter((c) => c.status === "ativo" && !venceuSet.has(c.id) && store.compFimContrato(c) > COMP_ATUAL && store.compFimContrato(c) <= COMP_ATUAL + 2)
+    .sort((a, b) => store.compFimContrato(a) - store.compFimContrato(b));
   const [buscaC, setBuscaC] = useState("");
   const normTxt = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   const qc = normTxt(buscaC.trim());
@@ -942,6 +949,24 @@ function Contratos({ store, activeUnit, clientesUnidade = [] }) {
             <b>{vencendo.length} contrato{vencendo.length > 1 ? "s" : ""} chegou ao fim do prazo.</b> {MODO_REAL ? "As parcelas deixaram de ser provisionadas" : "A emissão de boletos foi interrompida"} — revise e <b>atualize os valores</b> para renovar.
           </div>
         </div>
+      )}
+
+      {renovacaoProxima.length > 0 && (
+        <Card style={{ marginBottom: 16, padding: 0, overflow: "hidden", borderLeft: `4px solid ${C.teal}` }}>
+          <div style={{ padding: "11px 16px", borderBottom: `1px solid ${C.border2}`, display: "flex", alignItems: "center", gap: 8 }}>
+            <RefreshCw size={16} color={C.teal} />
+            <span style={{ fontWeight: 700, fontSize: 13.5 }}>Fila de renovação — {renovacaoProxima.length} contrato(s) vencem em breve</span>
+          </div>
+          {renovacaoProxima.map((c) => (
+            <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "10px 16px", borderTop: `1px solid ${C.border2}`, flexWrap: "wrap" }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 13.5 }}>{c.cliente}</div>
+                <div style={{ fontSize: 11.5, color: C.text3 }}>{c.plano} · {fmt(c.valorMensal)}/mês · vence em <b>{MESES[store.mesFimContrato(c)]}/{store.anoFimContrato(c)}</b></div>
+              </div>
+              <Btn variant="soft" style={{ padding: "6px 12px", fontSize: 12.5 }} onClick={() => setRenovar(c)}><RefreshCw size={14} /> Renovar</Btn>
+            </div>
+          ))}
+        </Card>
       )}
 
       {contratos.length > 0 && (
