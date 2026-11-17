@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   LayoutDashboard, KanbanSquare, Building2, CalendarDays, Mail, Coffee,
   Users, Wallet, Mic2, MessageSquare, UserCircle, Settings,
-  Search, Bell, Menu, X, ChevronDown, Check, Store, Eye, LogOut, ShieldCheck, Package, Home, FileText, Barcode, Boxes, Landmark, Tags, DoorOpen, ScrollText, ChefHat, Briefcase, Handshake, Printer,
+  Search, Bell, Menu, X, ChevronDown, Check, Store, Eye, LogOut, ShieldCheck, Package, Home, FileText, Barcode, Boxes, Landmark, Tags, DoorOpen, ScrollText, ChefHat, Briefcase, Handshake, Printer, BarChart3,
 } from "lucide-react";
 import { C, sans, serif, fmt, shadow } from "./lib/theme.js";
 import { useStore, PERFIS } from "./lib/store.jsx";
@@ -23,6 +23,7 @@ import Correspondencias from "./pages/Correspondencias.jsx";
 import PDV from "./pages/PDV.jsx";
 import Clientes from "./pages/Clientes.jsx";
 import Financeiro, { FIN_GRUPOS } from "./pages/Financeiro.jsx";
+import ControladoriaGrupo from "./pages/ControladoriaGrupo.jsx";
 import Boletos from "./pages/Boletos.jsx";
 import NotaFiscal from "./pages/NotaFiscal.jsx";
 import Cobrancas from "./pages/Cobrancas.jsx";
@@ -87,6 +88,7 @@ const NAV = [
   { id: "estoque", label: "Estoque", icon: Boxes, group: "operacao" },
   { id: "eventos", label: "Eventos", icon: Mic2, group: "operacao" },
   { id: "clientes", label: "Clientes", icon: Users, group: "relacionamento" },
+  { id: "controladoria_grupo", label: "Controladoria do grupo", icon: BarChart3, group: "financeiro" },
   { id: "financeiro", label: "Financeiro", icon: Wallet, group: "financeiro" },
   { id: "boletos", label: "Boletos", icon: Barcode, group: "financeiro" },
   { id: "cobrancas", label: "Cobranças (cartão/PIX)", icon: CreditCard, group: "financeiro" },
@@ -109,7 +111,7 @@ const PAGES = {
   painel_parceiro: PainelParceiro, minha_unidade_parceira: MinhaUnidadeParceira, conversas_unidade: ConversasUnidade,
   dash: Dashboard, franqueados: Franqueados, crm: CRM, unidades: Unidades,
   reservas: Reservas, corresp: Correspondencias, pdv: PDV, clientes: Clientes, impressoes: Impressoes,
-  financeiro: Financeiro, boletos: Boletos, cobrancas: Cobrancas, notafiscal: NotaFiscal, estoque: Estoque, patrimonio: Patrimonio, eventos: Eventos,
+  financeiro: Financeiro, controladoria_grupo: ControladoriaGrupo, boletos: Boletos, cobrancas: Cobrancas, notafiscal: NotaFiscal, estoque: Estoque, patrimonio: Patrimonio, eventos: Eventos,
   area: AreaCliente, equipe: Equipe, catalogo: Catalogo, planos: Planos, tabela_nacional: PlanosNacionais, parceiros: Parceiros, salas: Salas, config: Configuracoes, auditoria: Auditoria, kds: KDS,
   assinaturas: Assinaturas, aberturas: Aberturas, cli_plano: MeuPlano, cli_abertura: AberturaEmpresaCliente,
   cli_inicio: InicioCliente, cli_reservar: ReservarCliente, cli_faturas: FaturasCliente, cli_docs: CorrespondenciasCliente,

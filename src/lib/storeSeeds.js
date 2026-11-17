@@ -16,11 +16,11 @@ const NOME_TO_ID = { Luxemburgo: "lux", Estoril: "est" };
 // Perfis de acesso (RBAC). `modules: null` = vê tudo. `landing` = página inicial.
 export const PERFIS = {
   sem_acesso: { label: 'Sem vínculo de acesso', cor: '#6E4E3B', modules: [], landing: 'dash' },
-  franqueador: { label: "Administrador (plataforma)", cor: "#0E4B4F", modules: ["dash", "franqueados", "parceiros", "minha_unidade_parceira", "conversas_unidade", "tabela_nacional", "auditoria"], landing: "dash" },
+  franqueador: { label: "Administrador (plataforma)", cor: "#0E4B4F", modules: ["dash", "franqueados", "parceiros", "minha_unidade_parceira", "conversas_unidade", "tabela_nacional", "controladoria_grupo", "auditoria"], landing: "dash" },
   master: {
     label: "Master (coworking)",
     cor: "#B8862F",
-    modules: ["painel_parceiro", "minha_unidade_parceira", "conversas_unidade", "dash", "equipe", "crm", "planos", "assinaturas", "aberturas", "unidades", "salas", "patrimonio", "reservas", "corresp", "impressoes", "pdv", "kds", "catalogo", "estoque", "clientes", "financeiro", "boletos", "cobrancas", "notafiscal", "eventos", "auditoria"],
+    modules: ["painel_parceiro", "minha_unidade_parceira", "conversas_unidade", "dash", "equipe", "crm", "planos", "assinaturas", "aberturas", "unidades", "salas", "patrimonio", "reservas", "corresp", "impressoes", "pdv", "kds", "catalogo", "estoque", "clientes", "financeiro", "controladoria_grupo", "boletos", "cobrancas", "notafiscal", "eventos", "auditoria"],
     landing: "dash",
   },
   recepcao: {
@@ -32,7 +32,7 @@ export const PERFIS = {
   financeiro: {
     label: "Financeiro",
     cor: "#3D7A5A",
-    modules: ["dash", "financeiro", "boletos", "cobrancas", "notafiscal", "planos", "assinaturas", "patrimonio", "estoque", "catalogo", "clientes", "impressoes", "crm"],
+    modules: ["dash", "financeiro", "controladoria_grupo", "boletos", "cobrancas", "notafiscal", "planos", "assinaturas", "patrimonio", "estoque", "catalogo", "clientes", "impressoes", "crm"],
     landing: "financeiro",
   },
   cliente: {
