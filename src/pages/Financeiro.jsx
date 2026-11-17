@@ -12,7 +12,7 @@ import { useStore, SECOES, COBRANCA_TEMPLATE_DEFAULT, MODO_REAL } from "../lib/s
 import {
   getCurrentCompetencia, anoDoLancamento, chaveDoLancamento, noPeriodo, anosDisponiveis, competenciaComAno,
 } from "../lib/dateUtils.js";
-import { resumoRecebiveis, hojeSP, ehNaoComercial } from "../lib/financeiro.js";
+import { resumoRecebiveis, hojeSP, ehNaoComercial, dataCaixa } from "../lib/financeiro.js";
 import { gerarModeloFluxo, lerPlanilhaFluxo, validarLinhas, exportarExtratoExcel, exportarProvisaoExcel } from "../lib/fluxoImport.js";
 import { resumoOnline, cobrancasJaLancadas, competenciaDaCobranca, situacaoCobranca, hojeBRT, repassesDoAno, extratoGarantia, ROTULO_GARANTIA } from "../lib/recebimentosOnline.js";
 import { fetchGarantiasDb } from "../lib/supabaseDb.js";
@@ -1360,17 +1360,14 @@ function Extrato({ contas, lancamentos, onAbrir, onEditar, onDuplicar, onExcluir
   const contaDe = (id) => contas.find((c) => c.id === id);
   const nomeConta = (id) => { const c = contaDe(id); return c ? (c.banco || c.apelido || "—") : "—"; };
 
-  // Data real do lançamento (ano/mês da competência + dia do campo `data`).
-  const dataDoLanc = (l) => {
-    const y = anoDoLancamento(l), m = Number(l.mes) || 0;
-    const dia = Math.min(Math.max(1, diaDe(l.data) || 1), ultimoDiaDoMes(y, m));
-    return new Date(y, m, dia);
-  };
-  const dataBRdoLanc = (l) => {
-    const y = anoDoLancamento(l), m = Number(l.mes) || 0;
-    const dia = Math.min(Math.max(1, diaDe(l.data) || 1), ultimoDiaDoMes(y, m));
-    return `${pad2(dia)}/${pad2(m + 1)}/${y}`;
-  };
+  // Data do EVENTO DE CAIXA: para um lançamento pago, é a data do pagamento
+  // (regime de caixa) — não a competência. É o que a operação pediu: conta
+  // vencida paga neste mês tem que aparecer no caixa deste mês. Fallback para
+  // a competência (dia 1) quando nenhuma data é derivável, para não sumir com
+  // um movimento que já é dinheiro pago.
+  const caixaDoLanc = (l) => dataCaixa(l) || { ano: anoDoLancamento(l), mes: Number(l.mes) || 0, dia: 1, date: new Date(anoDoLancamento(l), Number(l.mes) || 0, 1) };
+  const dataDoLanc = (l) => caixaDoLanc(l).date;
+  const dataBRdoLanc = (l) => { const c = caixaDoLanc(l); return `${pad2(c.dia)}/${pad2(c.mes + 1)}/${c.ano}`; };
   const deD = new Date(`${de}T00:00:00`), ateD = new Date(`${ate}T23:59:59`);
   const periodoLabel = `${de.split("-").reverse().join("/")} a ${ate.split("-").reverse().join("/")}`;
 
@@ -1631,9 +1628,15 @@ function DRE({ lancamentos, categorias }) {
   const [triSel, setTriSel] = useState(1);
 
   const porRegime = (l) => (regime === "caixa" ? l.status === "pago" : true);
+  // No regime de CAIXA o lançamento é alocado pelo mês/ano do PAGAMENTO
+  // (quando o dinheiro entrou/saiu); em COMPETÊNCIA, pelo mês/ano do lançamento.
+  const mesAnoRegime = (l) => {
+    if (regime === "caixa") { const c = dataCaixa(l); if (c) return { ano: c.ano, mes: c.mes }; }
+    return { ano: anoDoLancamento(l), mes: Number(l.mes) || 0 };
+  };
   const mesesVisao = visao === "mes" ? [mesSel] : visao === "trimestre" ? TRIMESTRES[triSel].meses : TODOS_MESES;
-  const doAno = lancamentos.filter((l) => anoDoLancamento(l) === anoSel);
-  const base = doAno.filter((l) => porRegime(l) && mesesVisao.includes(l.mes));
+  const doAno = lancamentos.filter((l) => porRegime(l) && mesAnoRegime(l).ano === anoSel);
+  const base = doAno.filter((l) => mesesVisao.includes(mesAnoRegime(l).mes));
   const dre = calcDRE(base, categorias);
   const margem = dre.rb > 0 ? (dre.lucroLiq / dre.rb) * 100 : 0;
 
@@ -1682,7 +1685,7 @@ function DRE({ lancamentos, categorias }) {
 
   // ---- Visão mensal (matriz: linhas × meses) ----
   if (visao === "mensal") {
-    const cols = TODOS_MESES.map((m) => calcDRE(doAno.filter((l) => porRegime(l) && l.mes === m), categorias));
+    const cols = TODOS_MESES.map((m) => calcDRE(doAno.filter((l) => mesAnoRegime(l).mes === m), categorias));
     const ROWS = [
       { label: "Receita Operacional Bruta", get: (d) => d.rb, t: "n" },
       { label: "(−) Tributos", get: (d) => -d.trib, t: "n" },
@@ -2456,6 +2459,9 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
   const [filtro, setFiltro] = useState("todos"); // todos | sem | hoje
   const [editarMsg, setEditarMsg] = useState(false);
   const [buscaInad, setBuscaInad] = useState("");
+  const [faixaSel, setFaixaSel] = useState(null); // drill-down por faixa de atraso {min,max,lbl}
+  // Drill-down: clicar num indicador abre a lista de títulos que o compõem.
+  const irParaTitulos = () => { const el = document.getElementById("inad-titulos"); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
   const template = store.cobrancaTemplate || COBRANCA_TEMPLATE_DEFAULT;
   const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
   const d2 = (n) => String(n).padStart(2, "0");
@@ -2537,7 +2543,8 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
   const cobrarWhats = (l, dias) => { const link = waLink(l, dias); if (!link) return; window.open(link, "_blank", "noopener"); registrarCobranca(l, "WhatsApp"); };
   const ultimaCobranca = (l) => (l.cobrancas || []).slice(-1)[0];
   const cobradoHoje = (l) => (l.cobrancas || []).some((c) => c.data === hojeBR);
-  const vencidosFiltrados = vencidos.filter(({ l }) => (filtro === "sem" ? !(l.cobrancas || []).length : filtro === "hoje" ? !cobradoHoje(l) : true));
+  const naFaixa = ({ dias }) => !faixaSel || (dias >= faixaSel.min && dias <= faixaSel.max);
+  const vencidosFiltrados = vencidos.filter((x) => naFaixa(x) && (filtro === "sem" ? !(x.l.cobrancas || []).length : filtro === "hoje" ? !cobradoHoje(x.l) : true));
   const normTxtI = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   const qi = normTxtI(buscaInad.trim());
   const porClienteExib = qi ? porCliente.filter((g) => normTxtI(g.nome).includes(qi)) : porCliente;
@@ -2561,19 +2568,25 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 12, marginBottom: 14 }}>
-        <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Total vencido</div><div style={{ fontFamily: serif, fontSize: 26, color: C.red }}>{fmt(total)}</div></Card>
+        <Card onClick={vencidos.length ? () => { setFaixaSel(null); irParaTitulos(); } : undefined} title={vencidos.length ? "Ver os títulos que somam este total" : undefined} style={{ cursor: vencidos.length ? "pointer" : "default" }}><div style={{ fontSize: 12.5, color: C.text3 }}>Total vencido</div><div style={{ fontFamily: serif, fontSize: 26, color: C.red }}>{fmt(total)}</div>{vencidos.length > 0 && <div style={{ fontSize: 11, color: C.text4, marginTop: 2 }}>ver {vencidos.length} título(s) →</div>}</Card>
         <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Clientes inadimplentes</div><div style={{ fontFamily: serif, fontSize: 26 }}>{porCliente.length}</div></Card>
-        <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Títulos vencidos</div><div style={{ fontFamily: serif, fontSize: 26 }}>{vencidos.length}</div></Card>
+        <Card onClick={vencidos.length ? () => { setFaixaSel(null); irParaTitulos(); } : undefined} title={vencidos.length ? "Ver a lista de títulos" : undefined} style={{ cursor: vencidos.length ? "pointer" : "default" }}><div style={{ fontSize: 12.5, color: C.text3 }}>Títulos vencidos</div><div style={{ fontFamily: serif, fontSize: 26 }}>{vencidos.length}</div></Card>
         <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Maior atraso</div><div style={{ fontFamily: serif, fontSize: 26 }}>{maiorAtraso} <span style={{ fontSize: 14, color: C.text3 }}>dias</span></div></Card>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, marginBottom: 18 }}>
-        {FAIXAS.map((f, i) => (
-          <Card key={i} style={{ borderLeft: `4px solid ${f.cor}` }}>
-            <div style={{ fontSize: 12, color: C.text3 }}>{f.lbl}</div>
-            <div style={{ fontFamily: serif, fontSize: 19, color: faixaTot[i] ? f.cor : C.text4 }}>{fmt(faixaTot[i])}</div>
-          </Card>
-        ))}
+        {FAIXAS.map((f, i) => {
+          const ativa = faixaSel && faixaSel.min === f.min && faixaSel.max === f.max;
+          const clicavel = faixaTot[i] > 0;
+          return (
+            <Card key={i} onClick={clicavel ? () => { setFaixaSel(ativa ? null : { min: f.min, max: f.max, lbl: f.lbl }); irParaTitulos(); } : undefined}
+              title={clicavel ? `Ver os títulos de ${f.lbl}` : undefined}
+              style={{ borderLeft: `4px solid ${f.cor}`, cursor: clicavel ? "pointer" : "default", outline: ativa ? `2px solid ${f.cor}` : "none" }}>
+              <div style={{ fontSize: 12, color: C.text3 }}>{f.lbl}</div>
+              <div style={{ fontFamily: serif, fontSize: 19, color: faixaTot[i] ? f.cor : C.text4 }}>{fmt(faixaTot[i])}</div>
+            </Card>
+          );
+        })}
       </div>
 
       {inconsistentes.length > 0 && (
@@ -2663,7 +2676,8 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
               </div>
               {porClienteExib.length === 0 && <div style={{ padding: "12px 18px", fontSize: 13, color: C.text4 }}>Nenhum cliente com esse nome.</div>}
               {porClienteExib.map((g, i) => (
-                <div key={i} style={{ display: "grid", gridTemplateColumns: colCli, gap: 8, padding: "10px 18px", borderTop: `1px solid ${C.border2}`, alignItems: "center" }}>
+                <div key={i} onClick={() => { setBuscaInad(g.nome); setFaixaSel(null); irParaTitulos(); }} title="Ver os títulos deste cliente" className="cw-row-hover"
+                  style={{ display: "grid", gridTemplateColumns: colCli, gap: 8, padding: "10px 18px", borderTop: `1px solid ${C.border2}`, alignItems: "center", cursor: "pointer" }}>
                   <Cel style={{ fontWeight: 600 }}>{g.nome}</Cel>
                   <Cel style={{ textAlign: "right" }}>{g.titulos}</Cel>
                   <Cel style={{ textAlign: "right", color: corAtraso(g.maior), fontWeight: 600 }}>{g.maior} dias</Cel>
@@ -2673,9 +2687,12 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
             </div></div>
           </Card>
 
-          <Card style={{ padding: 0, overflow: "hidden" }}>
+          <Card id="inad-titulos" style={{ padding: 0, overflow: "hidden", scrollMarginTop: 12 }}>
             <div style={{ padding: "12px 18px", borderBottom: `1px solid ${C.border2}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-              <span style={{ fontWeight: 700, fontSize: 13.5 }}>Títulos vencidos ({vencidosExib.length}{(filtro !== "todos" || qi) ? ` de ${vencidos.length}` : ""})</span>
+              <span style={{ fontWeight: 700, fontSize: 13.5, display: "inline-flex", alignItems: "center", gap: 8 }}>
+                Títulos vencidos ({vencidosExib.length}{(filtro !== "todos" || qi || faixaSel) ? ` de ${vencidos.length}` : ""})
+                {faixaSel && <button onClick={() => setFaixaSel(null)} className="cw-btn" title="Limpar faixa de atraso" style={{ fontSize: 11, fontWeight: 600, color: C.cafe, background: C.cafePale, border: "none", borderRadius: 999, padding: "3px 9px" }}>{faixaSel.lbl} ✕</button>}
+              </span>
               <div style={{ display: "flex", background: C.cream, borderRadius: 9, padding: 3, gap: 2 }}>
                 {[["todos", "Todos"], ["sem", "Sem cobrança"], ["hoje", "A cobrar hoje"]].map(([v, lb]) => (
                   <button key={v} onClick={() => setFiltro(v)} className="cw-btn"
@@ -2687,7 +2704,7 @@ function Inadimplencia({ clientes = [], lancamentos = [], contas = [], categoria
               <div style={{ display: "grid", gridTemplateColumns: colTit, gap: 8, padding: "10px 18px", background: C.cream, fontSize: 11, fontWeight: 700, color: C.text3 }}>
                 <div>CLIENTE · DESCRIÇÃO</div><div style={{ textAlign: "right" }}>VENCIMENTO</div><div style={{ textAlign: "right" }}>ATRASO</div><div style={{ textAlign: "right" }}>VALOR</div><div style={{ textAlign: "right" }}>AÇÕES</div>
               </div>
-              {vencidosExib.length === 0 && <div style={{ padding: 22, textAlign: "center", fontSize: 13, color: C.text4 }}>{qi ? "Nenhum título para esse cliente." : filtro === "sem" ? "Todos os títulos já têm ao menos uma cobrança registrada." : filtro === "hoje" ? "Nenhum título pendente de cobrança hoje. 👏" : "Nenhum título."}</div>}
+              {vencidosExib.length === 0 && <div style={{ padding: 22, textAlign: "center", fontSize: 13, color: C.text4 }}>{qi ? "Nenhum título para esse cliente." : faixaSel ? `Nenhum título na faixa ${faixaSel.lbl}.` : filtro === "sem" ? "Todos os títulos já têm ao menos uma cobrança registrada." : filtro === "hoje" ? "Nenhum título pendente de cobrança hoje. 👏" : "Nenhum título."}</div>}
               {vencidosExib.map(({ l, dias }) => { const uc = ultimaCobranca(l); const temTel = !!telDe(l); return (
                 <div key={l.id} style={{ display: "grid", gridTemplateColumns: colTit, gap: 8, padding: "10px 18px", borderTop: `1px solid ${C.border2}`, alignItems: "center" }}>
                   <Cel>
