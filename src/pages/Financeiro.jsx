@@ -4,7 +4,7 @@ import {
   Wallet, TrendingUp, Landmark, BarChart3, FileText, Tags,
   Plus, Edit3, Trash2, Check, X, ArrowUpRight, ArrowDownRight, Receipt, Paperclip, Download, Barcode, Copy, QrCode,
   FileSignature, RefreshCw, AlertTriangle, Upload, CheckCircle2, AlertCircle, MessageSquare, Phone, CreditCard, PiggyBank, ExternalLink, Mail,
-  Eye, SlidersHorizontal, Search,
+  Eye, SlidersHorizontal, Search, ListChecks,
 } from "lucide-react";
 import { Card, Badge, Btn, PageHead, Modal, Field, Empty, FileInput } from "../components/ui.jsx";
 import { C, serif, sans, fmt, fmtShort, inp } from "../lib/theme.js";
@@ -70,6 +70,7 @@ export const FIN_GRUPOS = [
   { titulo: "Movimento", itens: [
     { id: "visao", label: "Visão Geral", icon: BarChart3 },
     { id: "extrato", label: "Fluxo de Caixa", icon: Wallet },
+    { id: "conciliacao", label: "Conciliação bancária", icon: ListChecks },
     { id: "receber", label: "Contas a Receber", icon: ArrowUpRight },
     { id: "pagar", label: "Contas a Pagar", icon: ArrowDownRight },
     { id: "inadimplencia", label: "Inadimplência", icon: AlertTriangle },
@@ -189,6 +190,7 @@ export default function Financeiro({ finTab }) {
         {tab === "recebimentos" && <RecebimentosCliente clientes={clientesUnidade} lancamentos={lancamentos} updateLancamento={store.updateLancamento} unidadeNome={unidadeAtiva?.nome} />}
         {tab === "inadimplencia" && <Inadimplencia clientes={clientesUnidade} lancamentos={lancamentos} contas={contas} categorias={categorias} store={store} activeUnit={activeUnit} />}
         {tab === "provisao" && <Provisao store={store} activeUnit={activeUnit} lancamentos={lancamentos} categorias={categorias} unidadeNome={unidadeAtiva?.nome} onNovaDespesa={() => setContaPRModal({ tipo: "saida" })} />}
+        {tab === "conciliacao" && <ConciliacaoBancaria contas={contas} lancamentos={lancamentos} updateLancamento={store.updateLancamento} onAbrir={setDetalheLanc} />}
         {tab === "bancos" && <Bancos contas={contas} lancamentos={lancamentos} saldoTotal={saldoTotal} onNovo={() => setContaModal({})} onEditar={(c) => setContaModal(c)} onExcluir={(c) => store.removeConta(c.id)} />}
         {tab === "categorias" && <Categorias categorias={categorias} lancamentos={lancamentos} store={store} />}
         {tab === "anexos" && <Anexos lancamentos={lancamentos} contas={contas} onAbrir={setDetalheLanc} />}
@@ -1938,6 +1940,138 @@ function CategoriaForm({ onSave }) {
         A seção define onde a categoria entra no DRE (e se soma ou subtrai no resultado).
       </div>
       <Btn style={{ width: "100%", justifyContent: "center" }} onClick={() => f.nome.trim() && onSave({ ...f, subs: [] })}>Criar categoria</Btn>
+    </>
+  );
+}
+
+// ===== CONCILIAÇÃO BANCÁRIA ================================================
+// Conciliação manual: confronta os movimentos pagos lançados no sistema (regime
+// de caixa, pela data do pagamento) com o extrato real que o operador confere.
+// Cada movimento ganha um ✓ "conferido no extrato" (campo aditivo no doc, grava
+// via updateLancamento). No topo: saldo do sistema × saldo do extrato informado
+// × diferença. Sem feed automático — os lançamentos são manuais.
+function ConciliacaoBancaria({ contas = [], lancamentos = [], updateLancamento, onAbrir }) {
+  const [contaSel, setContaSel] = useState(contas[0]?.id || "");
+  const [periodo, setPeriodo] = useState(() => `${ANO_ATUAL}-${String(MES_ATUAL + 1).padStart(2, "0")}`);
+  const [saldoExtrato, setSaldoExtrato] = useState("");
+  const [filtro, setFiltro] = useState("todos"); // todos | pendentes | conferidos
+
+  const [anoSel, mesSel] = (() => { const [y, m] = periodo.split("-").map(Number); return [y, (m || 1) - 1]; })();
+  const conta = contas.find((c) => c.id === contaSel);
+  const movDate = (l) => { const c = dataCaixa(l); return c ? c.date : null; };
+  const chaveMes = (l) => { const c = dataCaixa(l); return c ? { ano: c.ano, mes: c.mes } : null; };
+  const sinal = (l) => (l.tipo === "entrada" ? 1 : -1);
+
+  const pagosConta = lancamentos.filter((l) => l.contaId === contaSel && l.status === "pago");
+  const noMes = pagosConta.filter((l) => { const k = chaveMes(l); return k && k.ano === anoSel && k.mes === mesSel; });
+  const inicioMes = new Date(anoSel, mesSel, 1);
+  const antes = pagosConta.filter((l) => { const d = movDate(l); return d && d < inicioMes; }).reduce((s, l) => s + sinal(l) * (l.valor || 0), 0);
+  const saldoAbertura = (conta?.saldo || 0) + antes;
+  const movimentoMes = noMes.reduce((s, l) => s + sinal(l) * (l.valor || 0), 0);
+  const saldoSistema = saldoAbertura + movimentoMes;
+
+  const conferidos = noMes.filter((l) => l.conferidoExtrato);
+  const pendentes = noMes.filter((l) => !l.conferidoExtrato);
+  const saldoConferido = saldoAbertura + conferidos.reduce((s, l) => s + sinal(l) * (l.valor || 0), 0);
+
+  const saldoExtNum = parseFloat(saldoExtrato);
+  const temExtrato = String(saldoExtrato).trim() !== "" && !Number.isNaN(saldoExtNum);
+  const diferenca = temExtrato ? Math.round((saldoSistema - saldoExtNum) * 100) / 100 : null;
+  const bate = diferenca != null && Math.abs(diferenca) < 0.005;
+
+  const ordenados = noMes.slice().sort((a, b) => (movDate(a) - movDate(b)));
+  const visiveis = filtro === "pendentes" ? ordenados.filter((l) => !l.conferidoExtrato)
+    : filtro === "conferidos" ? ordenados.filter((l) => l.conferidoExtrato) : ordenados;
+
+  const hojeISO = () => new Date().toISOString().slice(0, 10);
+  const toggle = (l) => updateLancamento && updateLancamento(l.id, { conferidoExtrato: !l.conferidoExtrato, conferidoExtratoEm: !l.conferidoExtrato ? hojeISO() : null });
+  const marcarTodos = (val) => {
+    if (!updateLancamento || !noMes.length) return;
+    if (!window.confirm(val ? `Marcar os ${pendentes.length} movimento(s) pendente(s) como conferidos no extrato?` : `Desmarcar os ${conferidos.length} movimento(s) conferido(s)?`)) return;
+    (val ? pendentes : conferidos).forEach((l) => updateLancamento(l.id, { conferidoExtrato: val, conferidoExtratoEm: val ? hojeISO() : null }));
+  };
+
+  const nomeConta = conta ? (conta.banco || conta.apelido || "conta") : "—";
+  const col = "40px 92px minmax(180px,1fr) 120px 120px";
+  const Cel = ({ children, style }) => <div style={{ fontSize: 13, minWidth: 0, ...style }}>{children}</div>;
+
+  return (
+    <>
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontFamily: serif, fontSize: 20 }}>Conciliação bancária</div>
+        <div style={{ fontSize: 12.5, color: C.text3, maxWidth: 680 }}>Confira, mês a mês, os movimentos lançados contra o extrato real do banco. Marque cada um no ✓ ao encontrá-lo no extrato; informe o saldo do extrato para ver a diferença. Os valores seguem a data do pagamento (regime de caixa).</div>
+      </div>
+
+      {contas.length === 0 ? (
+        <Card><Empty icon={Landmark} title="Nenhuma conta cadastrada" sub="Cadastre uma conta em Financeiro → Bancos para conciliar." /></Card>
+      ) : (
+        <>
+          <Card style={{ padding: 14, marginBottom: 14 }}>
+            <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+              <Field label="Banco / caixa">
+                <select value={contaSel} onChange={(e) => setContaSel(e.target.value)} style={{ ...inp, width: "auto" }}>
+                  {contas.map((c) => <option key={c.id} value={c.id}>{c.banco || c.apelido || "Conta"}</option>)}
+                </select>
+              </Field>
+              <Field label="Mês"><input type="month" value={periodo} onChange={(e) => e.target.value && setPeriodo(e.target.value)} style={{ ...inp, width: "auto" }} /></Field>
+              <Field label="Saldo do extrato (opcional)">
+                <input type="number" step="0.01" value={saldoExtrato} onChange={(e) => setSaldoExtrato(e.target.value)} placeholder="Saldo final no banco" style={{ ...inp, width: 180 }} inputMode="decimal" />
+              </Field>
+            </div>
+          </Card>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 12, marginBottom: 14 }}>
+            <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Saldo pelo sistema</div><div style={{ fontFamily: serif, fontSize: 23 }}>{fmt(saldoSistema)}</div><div style={{ fontSize: 11, color: C.text4, marginTop: 2 }}>abertura {fmt(saldoAbertura)}</div></Card>
+            <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Saldo só com conferidos</div><div style={{ fontFamily: serif, fontSize: 23, color: C.teal }}>{fmt(saldoConferido)}</div><div style={{ fontSize: 11, color: C.text4, marginTop: 2 }}>{conferidos.length}/{noMes.length} conferido(s)</div></Card>
+            <Card><div style={{ fontSize: 12.5, color: C.text3 }}>Saldo do extrato</div><div style={{ fontFamily: serif, fontSize: 23 }}>{temExtrato ? fmt(saldoExtNum) : "—"}</div></Card>
+            <Card style={{ borderLeft: `4px solid ${diferenca == null ? C.border : bate ? C.green : C.red}` }}>
+              <div style={{ fontSize: 12.5, color: C.text3 }}>Diferença</div>
+              <div style={{ fontFamily: serif, fontSize: 23, color: diferenca == null ? C.text4 : bate ? C.green : C.red }}>{diferenca == null ? "—" : fmt(diferenca)}</div>
+              <div style={{ fontSize: 11, color: C.text4, marginTop: 2 }}>{diferenca == null ? "informe o saldo do extrato" : bate ? "conciliado ✓" : "sistema − extrato"}</div>
+            </Card>
+          </div>
+
+          <Card style={{ padding: 0, overflow: "hidden" }}>
+            <div style={{ padding: "12px 18px", borderBottom: `1px solid ${C.border2}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+              <span style={{ fontWeight: 700, fontSize: 13.5 }}>Movimentos de {MESES[mesSel]}/{anoSel} · {nomeConta} ({visiveis.length})</span>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", background: C.cream, borderRadius: 9, padding: 3, gap: 2 }}>
+                  {[["todos", "Todos"], ["pendentes", `Pendentes (${pendentes.length})`], ["conferidos", `Conferidos (${conferidos.length})`]].map(([v, lb]) => (
+                    <button key={v} onClick={() => setFiltro(v)} className="cw-btn" style={{ padding: "5px 11px", borderRadius: 7, fontSize: 12, fontWeight: 600, border: "none", background: filtro === v ? C.white : "transparent", color: filtro === v ? C.cafe : C.text3, boxShadow: filtro === v ? "0 1px 3px rgba(0,0,0,.08)" : "none" }}>{lb}</button>
+                  ))}
+                </div>
+                {pendentes.length > 0 && <Btn variant="soft" style={{ padding: "6px 10px", fontSize: 12 }} onClick={() => marcarTodos(true)}><Check size={13} /> Conferir todos</Btn>}
+                {conferidos.length > 0 && <Btn variant="ghost" style={{ padding: "6px 10px", fontSize: 12 }} onClick={() => marcarTodos(false)}>Limpar</Btn>}
+              </div>
+            </div>
+            <div style={{ overflowX: "auto" }}><div style={{ minWidth: 560 }}>
+              <div style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "10px 18px", background: C.cream, fontSize: 11, fontWeight: 700, color: C.text3 }}>
+                <div>✓</div><div>DATA</div><div>DESCRIÇÃO</div><div style={{ textAlign: "right" }}>ENTRADA</div><div style={{ textAlign: "right" }}>SAÍDA</div>
+              </div>
+              {visiveis.length === 0 && <div style={{ padding: 22, textAlign: "center", fontSize: 13, color: C.text4 }}>{noMes.length === 0 ? "Nenhum movimento pago nesta conta e mês." : "Nada neste filtro."}</div>}
+              {visiveis.map((l) => {
+                const d = movDate(l);
+                const dataBR = d ? `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}` : "—";
+                return (
+                  <div key={l.id} style={{ display: "grid", gridTemplateColumns: col, gap: 8, padding: "9px 18px", borderTop: `1px solid ${C.border2}`, alignItems: "center", background: l.conferidoExtrato ? `${C.green}08` : undefined }}>
+                    <button onClick={() => toggle(l)} className="cw-btn" title={l.conferidoExtrato ? "Conferido no extrato — clique para desmarcar" : "Marcar como conferido no extrato"}
+                      style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${l.conferidoExtrato ? C.green : C.gray}`, background: l.conferidoExtrato ? C.green : "transparent", display: "grid", placeItems: "center", padding: 0 }}>
+                      {l.conferidoExtrato && <Check size={13} color="#fff" />}
+                    </button>
+                    <Cel style={{ color: C.text3, fontVariantNumeric: "tabular-nums" }}>{dataBR}</Cel>
+                    <Cel style={{ cursor: onAbrir ? "pointer" : "default" }} onClick={() => onAbrir && onAbrir(l)}>
+                      <div style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{l.descricao || l.categoria || "—"}</div>
+                      <div style={{ fontSize: 11, color: C.text4 }}>{l.subcategoria || l.categoria || ""}</div>
+                    </Cel>
+                    <Cel style={{ textAlign: "right", color: C.green }}>{l.tipo === "entrada" ? fmt(l.valor) : "—"}</Cel>
+                    <Cel style={{ textAlign: "right", color: C.red }}>{l.tipo === "saida" ? fmt(l.valor) : "—"}</Cel>
+                  </div>
+                );
+              })}
+            </div></div>
+          </Card>
+        </>
+      )}
     </>
   );
 }
