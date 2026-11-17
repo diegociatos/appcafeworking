@@ -89,8 +89,10 @@ auditoria/saneamento financeiro. Legenda: ✅ feito · 🟡 parcial · ⬜ pende
   inconsistências; cada bloco leva à aba onde se resolve. (Atribuição de
   responsável por item fica para um modelo de tarefas futuro.)
 
-**P1 financeiro essencial concluído.** Resta (menor): DRE por unidade/serviço,
-régua de cobrança como tarefa com responsável.
+**P1 financeiro essencial concluído.** ✅ **DRE/receita por serviço** (card no
+painel da Controladoria, por subcategoria). DRE por unidade é coberto pela
+Controladoria do grupo (resultado lado a lado). Resta (precisa de decisão):
+régua de cobrança como **tarefa com responsável** (modelo de atribuição).
 
 ## P2 · Operação
 > **Em produção 2026-11-17 (autônomo):** fechamento de caixa do PDV por forma de
@@ -103,9 +105,11 @@ régua de cobrança como tarefa com responsável.
 - Patrimônio ↔ documento — ✅ já existia (campo `anexo`: contrato/NF por bem).
 - Impressões — ✅ **conferido:** a cobrança usa só as folhas EFETIVAMENTE impressas
   (`folhas_impressas` em `impressao-concluida`); impressão com falha não cobra.
-  🟡 Falta (Fase 3): apurar/faturar o excedente no fechamento do mês — gera
-  lançamento/cobrança por cliente; **precisa de decisão** (regra de franquia por
-  plano, proração) antes de automatizar, por mexer em valores/cobrança reais.
+  ✅ **Apuração do excedente por cliente** exibida no painel (franquia do plano,
+  excedente em folhas e valor a R$1,50/folha, total do mês, colunas no Excel) —
+  só mostra, não cobra. 🟡 Falta (Fase 3): **faturar** o excedente no fechamento
+  (gera lançamento/cobrança) — **precisa de decisão** (franquia/proração, e se
+  vira cobrança real no Asaas ou lançamento interno).
 - Auditório — ⬜ **não construído (precisa de decisão).** Hoje "auditório" é só um
   valor de `sala` num evento (display-only); não há sinal/saldo/cancelamento/NF.
   Um fluxo de reserva-com-sinal deve espelhar o de salas (addReserva/criarReserva/
