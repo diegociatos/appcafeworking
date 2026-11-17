@@ -8,6 +8,7 @@ import { Card, Badge, Btn, PageHead, Modal, Field, Empty } from "../components/u
 import { C, serif, sans, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 import { parseDateBR } from "../lib/dateUtils.js";
+import { listaReposicao } from "../lib/estoqueReposicao.js";
 
 const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const ANO = new Date().getFullYear();
@@ -101,21 +102,39 @@ export default function Estoque() {
         })}
       </div>
 
-      {baixos.length > 0 && filtro === "todos" && (
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 10, background: C.amberPale, border: `1px solid ${C.amber}55`, borderRadius: 12, padding: "12px 14px", marginBottom: 16 }}>
-          <AlertTriangle size={18} color={C.amber} style={{ flexShrink: 0, marginTop: 1 }} />
-          {/* Nada é enviado por e-mail ou WhatsApp: o alerta vive nas telas
-              (aqui, no Centro de Comando e no PDV). Antes o texto dizia que a
-              recepção tinha sido avisada, o que nunca aconteceu. */}
-          <div style={{ fontSize: 13, color: C.text2 }}>
-            <b>{baixos.length} {baixos.length > 1 ? "itens precisam" : "item precisa"} de reposição.</b>{" "}
-            {baixos.map((b) => b.nome).join(", ")}.
-            <div style={{ fontSize: 12, color: C.text3, marginTop: 2 }}>
-              O alerta aparece aqui, no Centro de Comando e no PDV — não sai aviso por e-mail.
+      {baixos.length > 0 && (() => {
+        const { linhas, totalEstimado } = listaReposicao(baixos);
+        return (
+          <Card style={{ padding: 0, overflow: "hidden", marginBottom: 16, borderLeft: `4px solid ${C.amber}` }}>
+            <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border2}`, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <AlertTriangle size={18} color={C.amber} />
+              <span style={{ fontWeight: 700, fontSize: 14, flex: 1 }}>Lista de reposição — {baixos.length} {baixos.length > 1 ? "itens" : "item"} abaixo do mínimo</span>
+              <span style={{ fontSize: 12.5, color: C.text3 }}>compra estimada <b style={{ color: C.cafe }}>{fmt(totalEstimado)}</b></span>
             </div>
-          </div>
-        </div>
-      )}
+            <div style={{ overflowX: "auto" }}><div style={{ minWidth: 560 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 110px 110px 90px", gap: 8, padding: "8px 16px", background: C.cream, fontSize: 11, fontWeight: 700, color: C.text3 }}>
+                <div>ITEM</div><div style={{ textAlign: "right" }}>ATUAL</div><div style={{ textAlign: "right" }}>MÍNIMO</div><div style={{ textAlign: "right" }}>COMPRAR</div><div style={{ textAlign: "right" }}>CUSTO EST.</div><div></div>
+              </div>
+              {linhas.map(({ item, sugestao, custoEstimado }) => (
+                <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 110px 110px 90px", gap: 8, padding: "9px 16px", borderTop: `1px solid ${C.border2}`, alignItems: "center", fontSize: 13 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.nome}</div>
+                    {item.categoria && <div style={{ fontSize: 11, color: C.text4 }}>{item.categoria}</div>}
+                  </div>
+                  <div style={{ textAlign: "right", color: C.red, fontWeight: 600 }}>{item.quantidade} {item.unidade}</div>
+                  <div style={{ textAlign: "right", color: C.text3 }}>{item.estoqueMinimo} {item.unidade}</div>
+                  <div style={{ textAlign: "right", fontWeight: 700, color: C.cafe }}>{sugestao} {item.unidade}</div>
+                  <div style={{ textAlign: "right" }}>{fmt(custoEstimado)}</div>
+                  <div style={{ textAlign: "right" }}>
+                    <button onClick={() => setCompra(item)} className="cw-btn" title="Registrar a compra deste item" style={{ fontSize: 12, fontWeight: 600, color: C.cafe, border: `1px solid ${C.cafe}55`, borderRadius: 8, padding: "4px 9px" }}>Repor</button>
+                  </div>
+                </div>
+              ))}
+            </div></div>
+            <div style={{ padding: "8px 16px", fontSize: 11.5, color: C.text4 }}>Sugestão de compra para repor até o dobro do mínimo. “Repor” abre o registro de compra (que lança no financeiro). Alerta aparece aqui, no Centro de Comando e no PDV — sem e-mail.</div>
+          </Card>
+        );
+      })()}
 
       {itens.length === 0 ? (
         <Card><Empty icon={PackageSearch} title={termo ? "Nada encontrado" : "Nada por aqui"} sub={termo ? `Nenhum item para “${busca.trim()}”. Ajuste a busca ou o filtro.` : "Cadastre itens de cafeteria, revenda (loja) e uso interno."} /></Card>
