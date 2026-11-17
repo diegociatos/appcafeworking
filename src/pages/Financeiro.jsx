@@ -416,9 +416,27 @@ function LancamentoDetalhe({ lanc, contas, boleto, onClose, onEditar, onBaixar, 
       {linha("Categoria", lanc.categoria || "—")}
       {linha("Subcategoria", lanc.subcategoria || "—")}
       {linha("Conta", conta?.banco || "—")}
+      {ent && lanc.pagadorNome && linha("Pagador", lanc.pagadorNome)}
+      {ent && (lanc.clienteNome || lanc.pagadorNome) && linha("Cliente vinculado", lanc.clienteNome || "— sem cliente —")}
       {linha("Data", lanc.data || "—")}
-      {linha("Situação", lanc.status === "previsto" ? "Previsto (a receber/pagar)" : "Pago / recebido")}
+      {linha("Situação", lanc.status === "previsto" ? "Previsto (a receber/pagar)" : lanc.status === "conciliado" ? "Conciliado" : "Pago / recebido")}
       {lanc.grupoRecorrencia && linha("Recorrência", "Lançamento recorrente")}
+
+      {Array.isArray(lanc.historico) && lanc.historico.length > 0 && (
+        <div style={{ marginTop: 14, border: `1px solid ${C.border2}`, borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 14px", background: C.cream, fontSize: 12.5, fontWeight: 700, color: C.text2 }}>
+            <ListChecks size={14} color={C.text3} /> Histórico (auditoria)
+          </div>
+          <div style={{ padding: "4px 14px 8px" }}>
+            {lanc.historico.slice().reverse().map((h, i) => (
+              <div key={i} style={{ padding: "7px 0", borderTop: i === 0 ? "none" : `1px solid ${C.border2}`, fontSize: 12 }}>
+                <div style={{ fontWeight: 600, color: C.text2 }}>{h.acao}{(h.de != null || h.para != null) && h.acao === "alteração de valor" ? `: ${fmt(h.de || 0)} → ${fmt(h.para || 0)}` : ""}</div>
+                <div style={{ color: C.text4 }}>{h.quem || "—"}{h.perfil ? ` (${h.perfil})` : ""} · {h.quando ? new Date(h.quando).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {boleto && (
         <div style={{ marginTop: 14, border: `1px solid ${C.cafeLine}`, borderRadius: 12, overflow: "hidden" }}>

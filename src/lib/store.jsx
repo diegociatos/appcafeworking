@@ -687,7 +687,32 @@ export function StoreProvider({ children }) {
     if (novosBoletos.length) setBoletos((bs) => [...bs, ...novosBoletos]);
     return { lancamentos: novos, boletos: novosBoletos };
   };
-  const updateLancamento = (id, patch) => setLancamentos((ls) => ls.map((l) => (l.id === id ? _comAno({ ...l, ...patch }) : l)));
+  // Trilha de auditoria: anexa ao próprio lançamento um histórico (quem/quando/
+  // ação/antes→depois) quando há mudança SENSÍVEL — baixa (vira pago), estorno
+  // (volta a previsto), conciliação ou alteração de valor. Fica no doc do
+  // lançamento (persiste por unidade pela mesma via, sem tabela nova). Só a
+  // equipe mexe aqui (o portal do cliente não altera lançamento).
+  const _eventoAuditoria = (l, patch) => {
+    const quando = new Date().toISOString();
+    const quem = meuPerfil?.nome || "—";
+    const base = { quem, perfil: perfilRef.current, quando };
+    if (patch.status && patch.status !== l.status) {
+      const acao = patch.status === "pago" ? "baixa (marcado como pago)"
+        : patch.status === "previsto" ? "estorno (voltou a previsto)"
+        : patch.status === "conciliado" ? "conciliação" : `status → ${patch.status}`;
+      return { ...base, acao, de: l.status, para: patch.status };
+    }
+    if (patch.valor != null && Number(patch.valor) !== Number(l.valor)) {
+      return { ...base, acao: "alteração de valor", de: l.valor, para: Number(patch.valor) };
+    }
+    return null;
+  };
+  const updateLancamento = (id, patch) => setLancamentos((ls) => ls.map((l) => {
+    if (l.id !== id) return l;
+    const ev = _eventoAuditoria(l, patch);
+    const historico = ev ? [...(l.historico || []), ev].slice(-50) : l.historico;
+    return _comAno({ ...l, ...patch, ...(historico ? { historico } : {}) });
+  }));
   const removeLancamento = (id) => setLancamentos((ls) => ls.filter((l) => l.id !== id));
   // Conciliação (Fase B): marca um recebível PREVISTO como satisfeito por um
   // pagamento JÁ existente, SEM criar lançamento novo nem apagar o título. O
@@ -696,7 +721,8 @@ export function StoreProvider({ children }) {
   // lançamento pago). Reversível por desconciliar.
   const conciliarPrevisto = (previstoId, pagoId) => setLancamentos((ls) => ls.map((l) =>
     (l.id === previstoId && l.status === "previsto"
-      ? { ...l, status: "conciliado", conciliadoCom: pagoId || null, conciliadoEm: new Date().toISOString() }
+      ? { ...l, status: "conciliado", conciliadoCom: pagoId || null, conciliadoEm: new Date().toISOString(),
+          historico: [...(l.historico || []), { quem: meuPerfil?.nome || "—", perfil: perfilRef.current, quando: new Date().toISOString(), acao: "conciliação", de: "previsto", para: "conciliado" }].slice(-50) }
       : l)));
   const desconciliarPrevisto = (previstoId) => setLancamentos((ls) => ls.map((l) =>
     (l.id === previstoId && l.status === "conciliado"
