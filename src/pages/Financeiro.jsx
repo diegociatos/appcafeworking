@@ -2138,7 +2138,7 @@ function RecebimentosCliente({ clientes = [], lancamentos = [], updateLancamento
     setPrevia({ vinculaveis, ambiguos, semMatch });
   };
   const aplicarVinculos = () => {
-    (previa?.vinculaveis || []).forEach(({ l, cliente }) => updateLancamento && updateLancamento(l.id, { clienteId: cliente.id, clienteNome: cliente.nome }));
+    (previa?.vinculaveis || []).forEach(({ l, cliente }) => updateLancamento && updateLancamento(l.id, { clienteId: cliente.id, clienteNome: cliente.nome, pagadorNome: l.pagadorNome || l.descricao || null }));
     setPrevia(null);
   };
   const [view, setView] = useState("mensal"); // "mensal" (mês a mês) | "consolidado"
@@ -2288,9 +2288,12 @@ td.b{font-weight:700}tr.zero td.l{color:#b23}tfoot td{font-weight:700;background
             {naoVinculados.map((l) => (
               <div key={l.id} style={{ display: "grid", gridTemplateColumns: "88px 1fr 110px 200px", gap: 10, alignItems: "center", padding: "7px 0", borderTop: `1px solid ${C.border2}` }}>
                 <span style={{ fontSize: 11.5, color: C.text3, fontVariantNumeric: "tabular-nums" }}>{l.dataPagamento || l.data || "—"}</span>
-                <span style={{ fontSize: 12.5, color: C.text2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={l.descricao}>{l.descricao || "—"}</span>
+                <span style={{ fontSize: 12.5, color: C.text2, overflow: "hidden", minWidth: 0 }} title={l.descricao}>
+                  <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.descricao || "—"}</span>
+                  {l.pagadorNome && <span style={{ display: "block", fontSize: 11, color: C.text4 }}>Pagou: {l.pagadorNome}</span>}
+                </span>
                 <span style={{ fontSize: 12.5, fontWeight: 600, color: C.green, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmt(l.valor)}</span>
-                <select defaultValue="" aria-label={`Vincular ${l.descricao} a um cliente`} onChange={(e) => { const c = clientes.find((x) => x.id === e.target.value); if (c && updateLancamento) updateLancamento(l.id, { clienteId: c.id, clienteNome: c.nome }); }} style={{ ...inp, padding: "6px 8px", fontSize: 12 }}>
+                <select defaultValue="" aria-label={`Vincular ${l.descricao} a um cliente`} onChange={(e) => { const c = clientes.find((x) => x.id === e.target.value); if (c && updateLancamento) updateLancamento(l.id, { clienteId: c.id, clienteNome: c.nome, pagadorNome: l.pagadorNome || l.descricao || null }); }} style={{ ...inp, padding: "6px 8px", fontSize: 12 }}>
                   <option value="">Vincular a…</option>
                   {clientesOrd.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
                 </select>
@@ -3197,6 +3200,7 @@ function LancamentoForm({ inicial, contas, categorias, clientes = [], onSave }) 
       dataPagamento: init.dataPagamento || (init.status !== "previsto" ? (init.data || "") : ""),
       status: init.status || "pago",
       clienteId: init.clienteId || "",
+      pagadorNome: init.pagadorNome || "",
       anexo: init.anexo || null,
     };
   });
@@ -3228,13 +3232,18 @@ function LancamentoForm({ inicial, contas, categorias, clientes = [], onSave }) 
         <input value={f.descricao} onChange={(e) => setF({ ...f, descricao: e.target.value })} style={inp} placeholder="Ex: Mensalidade da Sala 3 · Ciatos Log" />
       </Field>
       {f.tipo === "entrada" && (
-        <Field label="Cliente (opcional) — para o controle de recebimentos por cliente">
-          <select value={f.clienteId} onChange={(e) => setF({ ...f, clienteId: e.target.value })} style={inp}>
-            <option value="">— sem cliente —</option>
-            {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-          </select>
-          {clientes.length === 0 && <div style={{ fontSize: 11, color: C.text4, marginTop: 4 }}>Nenhum cliente cadastrado nesta unidade ainda.</div>}
-        </Field>
+        <>
+          <Field label="Pagador (quem pagou) — opcional, se for diferente do cliente">
+            <input value={f.pagadorNome} onChange={(e) => setF({ ...f, pagadorNome: e.target.value })} style={inp} placeholder="Nome de quem efetuou o pagamento" />
+          </Field>
+          <Field label="Cliente (opcional) — a quem o recebimento é atribuído">
+            <select value={f.clienteId} onChange={(e) => setF({ ...f, clienteId: e.target.value })} style={inp}>
+              <option value="">— sem cliente —</option>
+              {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+            </select>
+            {clientes.length === 0 && <div style={{ fontSize: 11, color: C.text4, marginTop: 4 }}>Nenhum cliente cadastrado nesta unidade ainda.</div>}
+          </Field>
+        </>
       )}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Field label="Valor (R$)">
@@ -3289,9 +3298,10 @@ function LancamentoForm({ inicial, contas, categorias, clientes = [], onSave }) 
         if (!f.descricao.trim() || !(f.valor > 0)) return;
         const clienteId = f.tipo === "entrada" ? (f.clienteId || null) : null;
         const clienteNome = clienteId ? (clientes.find((c) => c.id === clienteId)?.nome || "") : null;
+        const pagadorNome = f.tipo === "entrada" ? (f.pagadorNome || "").trim() || null : null;
         // `data` (usado no extrato/dia) = pagamento, senão competência/vencimento.
         const data = f.dataPagamento || f.dataCompetencia || f.dataVencimento || "";
-        onSave({ ...f, clienteId, clienteNome, data });
+        onSave({ ...f, clienteId, clienteNome, pagadorNome, data });
       }}>
         {inicial.id ? "Salvar lançamento" : "Adicionar lançamento"}
       </Btn>

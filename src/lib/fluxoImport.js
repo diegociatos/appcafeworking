@@ -198,6 +198,8 @@ export function validarLinhas(rows, { contas = [], categorias = [], contaForcada
       return "";
     };
     const descricao = String(get(["Descrição", "Descricao", "Histórico", "Historico"]) || "").trim();
+    // Pagador informado (quem pagou) — coluna opcional, separado do cliente vinculado.
+    const pagador = String(get(["Pagador", "Sacado", "Cliente", "Pagador/Cliente"]) || "").trim();
     const tipo = tipoDe(get(["Tipo"]));
     const valor = parseValorBR(get(["Valor"]));
     const dataStr = dataDe(get(["Data"]));
@@ -250,6 +252,7 @@ export function validarLinhas(rows, { contas = [], categorias = [], contaForcada
       tipo, descricao, valor: Math.round(valor * 100) / 100,
       categoria: cat.nome, subcategoria: subFinal, contaId: conta.id,
       data: dataStr, status, mes, ano, origem: "importacao",
+      pagadorNome: tipo === "entrada" ? (pagador || null) : null,
     });
   });
 
