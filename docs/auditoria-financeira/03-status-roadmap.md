@@ -3,11 +3,22 @@
 Conferido contra a versão atual (já em produção) + o que foi feito na
 auditoria/saneamento financeiro. Legenda: ✅ feito · 🟡 parcial · ⬜ pendente.
 
-> **Atualização 2026-11-17 (já em produção, branch main):** regime de caixa por
-> data de pagamento (Fluxo de Caixa + DRE Caixa), drill-down da inadimplência,
+> **Atualização 2026-11-17 (tudo já em produção, branch main):** regime de caixa
+> por data de pagamento (Fluxo de Caixa + DRE Caixa), drill-down da inadimplência,
 > reserva pendente fora de a-receber, once-only do Asaas coberto por teste,
-> alerta de clientes duplicados e aviso de meses sem provisão nas despesas
-> recorrentes. 63 testes verdes. PRs #18 + commits diretos no main.
+> alerta de clientes duplicados, aviso de meses sem provisão nas despesas
+> recorrentes, **conciliação bancária manual** (conferido no extrato × saldo do
+> extrato × diferença), **pagador informado × cliente vinculado** (manual +
+> importação) e **trilha de auditoria** no lançamento (baixa/estorno/conciliação/
+> alteração de valor, com quem/quando/antes→depois). 63 testes verdes.
+>
+> **Ainda pendente de DECISÃO do Diego (não executado):**
+> 1. **Auditoria de exclusão** — para registrar quem/quando excluiu um lançamento,
+>    é preciso trocar a exclusão física por **soft-delete** (lixeira) ou manter um
+>    registro à parte. Decisão de dados/produto.
+> 2. **Separar "lançar" de "aprovar"** — workflow de 2º olhar para baixa/estorno/
+>    exclusão/dados bancários: quem lança ≠ quem aprova. Decisão de fluxo (quais
+>    perfis aprovam o quê) antes de implementar.
 
 ## P0 · Reservas, financeiro e controle de acesso
 
