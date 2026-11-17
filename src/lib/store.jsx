@@ -713,7 +713,32 @@ export function StoreProvider({ children }) {
     const historico = ev ? [...(l.historico || []), ev].slice(-50) : l.historico;
     return _comAno({ ...l, ...patch, ...(historico ? { historico } : {}) });
   }));
-  const removeLancamento = (id) => setLancamentos((ls) => ls.filter((l) => l.id !== id));
+  // Exclusão = SOFT-DELETE (lixeira). Não apaga: marca `excluido` com quem/quando/
+  // motivo e registra no histórico. Sai de todas as telas (filtro central em
+  // `lancamentos`/`lancamentosDe`), mas é recuperável. Separação de poderes: quem
+  // é da operação manda para a lixeira; esvaziar em definitivo é só gerente/admin.
+  const PERFIS_APROVADOR = ["master", "franqueador"];
+  const removeLancamento = (id, motivo = "") => setLancamentos((ls) => ls.map((l) => {
+    if (l.id !== id || l.excluido) return l;
+    const ev = { quem: meuPerfil?.nome || "—", perfil: perfilRef.current, quando: new Date().toISOString(), acao: "envio para a lixeira", motivo: String(motivo || "").trim() || null };
+    return { ...l, excluido: true, excluidoEm: ev.quando, excluidoPor: ev.quem, excluidoMotivo: ev.motivo, historico: [...(l.historico || []), ev].slice(-50) };
+  }));
+  const restaurarLancamento = (id) => setLancamentos((ls) => ls.map((l) => {
+    if (l.id !== id || !l.excluido) return l;
+    const ev = { quem: meuPerfil?.nome || "—", perfil: perfilRef.current, quando: new Date().toISOString(), acao: "restaurado da lixeira" };
+    const { excluido: _e, excluidoEm: _em, excluidoPor: _p, excluidoMotivo: _m, ...resto } = l;
+    return { ...resto, historico: [...(l.historico || []), ev].slice(-50) };
+  }));
+  // Exclusão DEFINITIVA (apaga de vez) — só gerente/admin, e só o que já está na
+  // lixeira. Devolve false (sem efeito) para quem não tem poder ou item inválido.
+  const excluirLancamentoDefinitivo = (id) => {
+    if (!PERFIS_APROVADOR.includes(perfilRef.current)) return false;
+    const alvo = lancamentos.find((l) => l.id === id);
+    if (!alvo || !alvo.excluido) return false;
+    setLancamentos((ls) => ls.filter((l) => l.id !== id));
+    if (REAL) delAppState("lancamentos", alvo.unidadeId, id).catch(() => {});
+    return true;
+  };
   // Conciliação (Fase B): marca um recebível PREVISTO como satisfeito por um
   // pagamento JÁ existente, SEM criar lançamento novo nem apagar o título. O
   // previsto vira status "conciliado" (sai de "a receber" e da inadimplência) e
@@ -736,7 +761,12 @@ export function StoreProvider({ children }) {
     if (n) setLancamentos((ls) => ls.filter((l) => !alvo(l)));
     return n;
   };
-  const lancamentosDe = (unidadeId) => lancamentos.filter((l) => l.unidadeId === unidadeId);
+  // Lista ATIVA (sem lixeira) — é a que todas as telas enxergam. A lixeira é
+  // consultada à parte por lancamentosExcluidosDe.
+  const lancamentosAtivos = lancamentos.filter((l) => !l.excluido);
+  const lancamentosDe = (unidadeId) => lancamentosAtivos.filter((l) => l.unidadeId === unidadeId);
+  const lancamentosExcluidosDe = (unidadeId) => lancamentos.filter((l) => l.excluido && l.unidadeId === unidadeId);
+  const podeExcluirDefinitivo = () => PERFIS_APROVADOR.includes(perfilRef.current);
 
   // Financeiro: catálogo de produtos/serviços ------------------------------
   const addItemCatalogo = (unidadeId, it) => setCatalogo((c) => [...c, { id: "ct" + Date.now(), unidadeId, ativo: true, ...it }]);
@@ -1677,9 +1707,9 @@ export function StoreProvider({ children }) {
       pedidos, addPedido, updatePedido, removePedido, pedidosDe,
       correspondencias, addCorrespondencia, updateCorrespondencia, notificarCorrespondencia, removeCorrespondencia, correspondenciasDe,
       salasDe, produtosDe, unidadesDe,
-      contas, lancamentos, catalogo, categorias,
+      contas, lancamentos: lancamentosAtivos, catalogo, categorias,
       addConta, updateConta, removeConta, contasDe,
-      addLancamento, addLancamentosBulk, addContaRecorrente, updateLancamento, removeLancamento, conciliarPrevisto, desconciliarPrevisto, removerImportados, lancamentosDe,
+      addLancamento, addLancamentosBulk, addContaRecorrente, updateLancamento, removeLancamento, restaurarLancamento, excluirLancamentoDefinitivo, lancamentosExcluidosDe, podeExcluirDefinitivo, conciliarPrevisto, desconciliarPrevisto, removerImportados, lancamentosDe,
       addItemCatalogo, updateItemCatalogo, removeItemCatalogo, catalogoDe,
       addCategoria, updateCategoria, removeCategoria,
       bankAccounts, boletos,

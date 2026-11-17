@@ -89,6 +89,7 @@ export const FIN_GRUPOS = [
     { id: "bancos", label: "Bancos", icon: Landmark },
     { id: "categorias", label: "Categorias", icon: Tags },
     { id: "anexos", label: "Anexos", icon: Paperclip },
+    { id: "lixeira", label: "Lixeira", icon: Trash2 },
   ] },
 ];
 
@@ -180,7 +181,7 @@ export default function Financeiro({ finTab }) {
           onAbrir={setDetalheLanc}
           onEditar={(l) => setLancModal(l)}
           onDuplicar={(l) => { const { id: _id, boletoId: _b, cobrancaId: _c, grupoRecorrencia: _g, ...resto } = l; setLancModal({ ...resto, descricao: `${l.descricao || ""} (cópia)`.trim() }); }}
-          onExcluir={(l) => { if (window.confirm(`Excluir o lançamento "${l.descricao || l.categoria || ""}"?\n\nEsta ação não pode ser desfeita.`)) store.removeLancamento(l.id); }}
+          onExcluir={(l) => { if (window.confirm(`Enviar o lançamento "${l.descricao || l.categoria || ""}" para a lixeira?\n\nEle sai das telas, mas pode ser restaurado em Financeiro → Lixeira.`)) store.removeLancamento(l.id); }}
           onRemoverImportados={(contaId) => store.removerImportados(activeUnit, contaId)} />}
         {tab === "dre" && <DRE lancamentos={lancamentos} categorias={categorias} />}
         {tab === "online" && <RecebimentosOnline cobrancas={store.cobrancasDe(activeUnit)} lancamentos={lancamentos} />}
@@ -194,6 +195,7 @@ export default function Financeiro({ finTab }) {
         {tab === "bancos" && <Bancos contas={contas} lancamentos={lancamentos} saldoTotal={saldoTotal} onNovo={() => setContaModal({})} onEditar={(c) => setContaModal(c)} onExcluir={(c) => store.removeConta(c.id)} />}
         {tab === "categorias" && <Categorias categorias={categorias} lancamentos={lancamentos} store={store} />}
         {tab === "anexos" && <Anexos lancamentos={lancamentos} contas={contas} onAbrir={setDetalheLanc} />}
+        {tab === "lixeira" && <Lixeira itens={store.lancamentosExcluidosDe(activeUnit)} contas={contas} podeDefinitivo={store.podeExcluirDefinitivo()} onRestaurar={(id) => store.restaurarLancamento(id)} onExcluirDefinitivo={(id) => store.excluirLancamentoDefinitivo(id)} />}
       </div>
 
       {lancModal && (
@@ -238,7 +240,7 @@ export default function Financeiro({ finTab }) {
           onBaixar={() => { darBaixa(detalheLanc); setDetalheLanc(null); }}
           emissaoAtiva={!!store.configFiscalDe(activeUnit)?.emissaoAtiva}
           onEmitirNota={(dados) => store.emitirNFSe(activeUnit, dados)}
-          onExcluir={() => { store.removeLancamento(detalheLanc.id); setDetalheLanc(null); }}
+          onExcluir={() => { if (window.confirm("Enviar este lançamento para a lixeira?\n\nEle sai das telas, mas pode ser restaurado em Financeiro → Lixeira.")) { store.removeLancamento(detalheLanc.id); setDetalheLanc(null); } }}
         />
       )}
     </div>
@@ -2089,6 +2091,49 @@ function ConciliacaoBancaria({ contas = [], lancamentos = [], updateLancamento, 
             </div></div>
           </Card>
         </>
+      )}
+    </>
+  );
+}
+
+// ===== LIXEIRA (soft-delete) ==============================================
+// Lançamentos enviados à lixeira: recuperáveis. Qualquer perfil de finanças
+// restaura; excluir em definitivo é só gerente/admin (separação de poderes).
+function Lixeira({ itens = [], contas = [], podeDefinitivo, onRestaurar, onExcluirDefinitivo }) {
+  const nomeConta = (id) => contas.find((c) => c.id === id)?.banco || "—";
+  const dt = (iso) => (iso ? new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—");
+  const ordenados = itens.slice().sort((a, b) => String(b.excluidoEm || "").localeCompare(String(a.excluidoEm || "")));
+  return (
+    <>
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontFamily: serif, fontSize: 20 }}>Lixeira</div>
+        <div style={{ fontSize: 12.5, color: C.text3, maxWidth: 680 }}>Lançamentos excluídos ficam aqui e saem de todas as telas, mas podem ser restaurados. Excluir em definitivo apaga de vez — só gerente/administrador faz isso.</div>
+      </div>
+      {ordenados.length === 0 ? (
+        <Card><Empty icon={Trash2} title="Lixeira vazia" sub="Nenhum lançamento excluído. Ao excluir um lançamento, ele vem para cá e pode ser recuperado." /></Card>
+      ) : (
+        <Card style={{ padding: 0, overflow: "hidden" }}>
+          <div style={{ padding: "12px 18px", borderBottom: `1px solid ${C.border2}`, fontWeight: 700, fontSize: 13.5 }}>{ordenados.length} lançamento(s) na lixeira</div>
+          {ordenados.map((l) => (
+            <div key={l.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "11px 18px", borderTop: `1px solid ${C.border2}`, flexWrap: "wrap" }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 13.5 }}>{l.descricao || l.categoria || "—"} · <span style={{ color: l.tipo === "entrada" ? C.green : C.red }}>{l.tipo === "entrada" ? "+" : "−"}{fmt(l.valor)}</span></div>
+                <div style={{ fontSize: 11.5, color: C.text3 }}>{l.categoria || "—"} · {nomeConta(l.contaId)} · {l.data || "—"}</div>
+                <div style={{ fontSize: 11, color: C.text4, marginTop: 2 }}>Excluído por {l.excluidoPor || "—"} em {dt(l.excluidoEm)}{l.excluidoMotivo ? ` · motivo: ${l.excluidoMotivo}` : ""}</div>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                <Btn variant="soft" style={{ padding: "7px 12px", fontSize: 12.5 }} onClick={() => onRestaurar(l.id)}><RefreshCw size={14} /> Restaurar</Btn>
+                {podeDefinitivo && (
+                  <Btn variant="ghost" style={{ padding: "7px 12px", fontSize: 12.5, color: C.red, borderColor: C.redPale }}
+                    onClick={() => { if (window.confirm(`Excluir DEFINITIVAMENTE "${l.descricao || l.categoria || ""}"?\n\nIsto apaga de vez e NÃO pode ser desfeito.`)) onExcluirDefinitivo(l.id); }}>
+                    <Trash2 size={14} /> Excluir definitivo
+                  </Btn>
+                )}
+              </div>
+            </div>
+          ))}
+          {!podeDefinitivo && <div style={{ padding: "10px 18px", fontSize: 11.5, color: C.text4, borderTop: `1px solid ${C.border2}` }}>Só gerente/administrador pode excluir em definitivo.</div>}
+        </Card>
       )}
     </>
   );
