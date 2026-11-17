@@ -3,6 +3,12 @@
 Conferido contra a versão atual (já em produção) + o que foi feito na
 auditoria/saneamento financeiro. Legenda: ✅ feito · 🟡 parcial · ⬜ pendente.
 
+> **Atualização 2026-11-17 (já em produção, branch main):** regime de caixa por
+> data de pagamento (Fluxo de Caixa + DRE Caixa), drill-down da inadimplência,
+> reserva pendente fora de a-receber, once-only do Asaas coberto por teste,
+> alerta de clientes duplicados e aviso de meses sem provisão nas despesas
+> recorrentes. 63 testes verdes. PRs #18 + commits diretos no main.
+
 ## P0 · Reservas, financeiro e controle de acesso
 
 **1. Reservas e vencimento dos avulsos** — 🟡
