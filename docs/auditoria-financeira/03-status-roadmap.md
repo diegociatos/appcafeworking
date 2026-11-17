@@ -12,13 +12,16 @@ auditoria/saneamento financeiro. Legenda: ✅ feito · 🟡 parcial · ⬜ pende
 > importação) e **trilha de auditoria** no lançamento (baixa/estorno/conciliação/
 > alteração de valor, com quem/quando/antes→depois). 63 testes verdes.
 >
-> **Ainda pendente de DECISÃO do Diego (não executado):**
-> 1. **Auditoria de exclusão** — para registrar quem/quando excluiu um lançamento,
->    é preciso trocar a exclusão física por **soft-delete** (lixeira) ou manter um
->    registro à parte. Decisão de dados/produto.
-> 2. **Separar "lançar" de "aprovar"** — workflow de 2º olhar para baixa/estorno/
->    exclusão/dados bancários: quem lança ≠ quem aprova. Decisão de fluxo (quais
->    perfis aprovam o quê) antes de implementar.
+> **Decisões do Diego implementadas (2026-11-17, "faz o que for recomendado"):**
+> 1. **Exclusão = soft-delete (lixeira):** excluir manda para a Lixeira (sai das
+>    telas, recuperável), com quem/quando/motivo no histórico. Nova aba Lixeira.
+> 2. **Separação de poderes:** qualquer perfil de finanças manda para a lixeira;
+>    **excluir em definitivo** (apaga de vez) é só **gerente/admin** (master/
+>    franqueador). Baixa/estorno seguem com o financeiro, mas ficam auditados.
+>    Dados bancários já são restritos por RLS a master/financeiro/admin.
+>
+> **P0 financeiro concluído.** Próximo: P1 (contratos/faturamento, fila de
+> renovação, painel da controladoria).
 
 ## P0 · Reservas, financeiro e controle de acesso
 
