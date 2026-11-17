@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  ehNaoComercial, chaveDia, hojeSP, dataValidaCompleta, vencimentoReal,
+  ehNaoComercial, ehReservaPendente, chaveDia, hojeSP, dataValidaCompleta, vencimentoReal, dataCaixa,
   classificarRecebivel, saldoResidual, montarParcela, resumoRecebiveis,
 } from "../src/lib/financeiro.js";
 
@@ -52,6 +52,50 @@ test("vencimentoReal devolve null quando não há dia (— ou vazio)", () => {
   assert.equal(vencimentoReal({ data: "—", mes: 3, ano: 2026 }), null);
   assert.equal(vencimentoReal({ data: "", mes: 3, ano: 2026 }), null);
   assert.equal(vencimentoReal({ data: "20" }), null); // sem competência (mes)
+});
+
+test("cenário 1: reserva avulsa PENDENTE fica fora de a-receber/inadimplência", () => {
+  // Reserva criada dia 02/11 (previsto), ainda não paga. Hoje é 15/11 → "venceria"
+  // em 02/11, cairia como VENCIDO na inadimplência. Não deve: é booking pendente.
+  const reservaPendente = { tipo: "entrada", status: "previsto", origem: "reserva", reservaId: "r1", valor: 80, data: "2", mes: 10, ano: 2026 };
+  assert.equal(ehReservaPendente(reservaPendente), true);
+  const r = resumoRecebiveis([reservaPendente], HOJE);
+  assert.deepEqual([r.vencido.n, r.a_vencer.n, r.inconsistente.n], [0, 0, 0]);
+  assert.equal(r.itens.length, 0);
+});
+
+test("cenário 1: a MESMA reserva, uma vez paga, conta no mês do pagamento (uma linha)", () => {
+  // Mesma reserva (id determinístico), agora paga em 17/11 — vira receita no caixa
+  // de novembro. Vencimento = data do pagamento (mesma data), não envelhece.
+  const reservaPaga = { tipo: "entrada", status: "pago", origem: "reserva", reservaId: "r1", valor: 80, data: "17/11", mes: 10, ano: 2026 };
+  assert.equal(ehReservaPendente(reservaPaga), false);
+  const c = dataCaixa(reservaPaga); // compõe 17 + nov/2026
+  assert.deepEqual([c.ano, c.mes, c.dia], [2026, 10, 17]);
+  // Não aparece como recebível previsto (está paga).
+  const r = resumoRecebiveis([reservaPaga], HOJE);
+  assert.equal(r.itens.length, 0);
+});
+
+test("dataCaixa: conta vencida paga cai no MÊS DO PAGAMENTO (bug da Stephanie)", () => {
+  // Competência out/2026 (mes 9), vencimento out, mas paga em 17/11/2026.
+  const c = dataCaixa({ status: "pago", mes: 9, ano: 2026, data: "17/10/2026", dataVencimento: "17/10/2026", dataPagamento: "17/11/2026" });
+  assert.deepEqual([c.ano, c.mes, c.dia], [2026, 10, 17]); // novembro (mes 10)
+  assert.equal(c.origem, "pagamento");
+});
+
+test("dataCaixa: sem dataPagamento usa a data real do lançamento", () => {
+  const c = dataCaixa({ status: "pago", mes: 9, ano: 2026, data: "05/10/2026" });
+  assert.deepEqual([c.ano, c.mes, c.dia], [2026, 9, 5]);
+  assert.equal(c.origem, "competencia");
+});
+
+test("dataCaixa: compõe a partir do dia solto + competência quando falta data completa", () => {
+  const c = dataCaixa({ status: "pago", mes: 10, ano: 2026, data: "20" });
+  assert.deepEqual([c.ano, c.mes, c.dia], [2026, 10, 20]);
+});
+
+test("dataCaixa: null quando nenhuma data é derivável", () => {
+  assert.equal(dataCaixa({ status: "pago", mes: null, data: "—" }), null);
 });
 
 test("classificar: NÃO vence no próprio dia (vence hoje => a_vencer)", () => {

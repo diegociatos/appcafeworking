@@ -24,6 +24,15 @@ export function ehNaoComercial(l) {
   return CATEGORIAS_NAO_COMERCIAIS.includes(String(l?.categoria || ""));
 }
 
+/** Reserva ainda NÃO paga (booking tentativo). A reserva avulsa só vira receita
+ *  quando é paga — e aí, na MESMA linha (id determinístico lc_res_<id>), o status
+ *  vira "pago" com a data do pagamento. Enquanto previsto, é uma reserva
+ *  aguardando pagamento, acompanhada na agenda de Reservas, e NÃO deve envelhecer
+ *  como recebível vencido na inadimplência nem inflar "a receber". */
+export function ehReservaPendente(l) {
+  return l?.origem === "reserva" && l?.status === "previsto";
+}
+
 /** Chave inteira ordenável de uma data só-dia (ano*10000 + mes1a12*100 + dia). */
 export function chaveDia(ano, mes0, dia) {
   return ano * 10000 + (mes0 + 1) * 100 + dia;
@@ -84,6 +93,35 @@ export function vencimentoReal(l) {
   const ultimo = new Date(ano, mes0 + 1, 0).getDate();
   const diaOk = Math.min(dia, ultimo);
   return { ano, mes: mes0, dia: diaOk, chave: chaveDia(ano, mes0, diaOk), composto: true };
+}
+
+/**
+ * Data do EVENTO DE CAIXA (regime de caixa): o dia em que o dinheiro de fato
+ * entrou ou saiu. Regra pedida pela operação: uma conta vencida, ao ser marcada
+ * paga, cai no caixa (e no DRE por caixa) no mês do PAGAMENTO — não no mês de
+ * competência. Ordem de derivação, sem inventar nada:
+ *   1) `dataPagamento` se for DD/MM/AAAA completa  → dia do pagamento;
+ *   2) `data` se for DD/MM/AAAA completa            → data real do lançamento;
+ *   3) dia solto (de `data`/`dataVencimento`) + competência (mes+ano)  → compõe.
+ * Devolve { ano, mes, dia, chave, date, origem } ou null quando nada é
+ * derivável. `origem`: "pagamento" quando veio da dataPagamento, senão
+ * "competencia". Os chamadores já restringem a lançamentos pagos; a função não
+ * olha o status, só as datas.
+ */
+export function dataCaixa(l) {
+  for (const [campo, origem] of [[l?.dataPagamento, "pagamento"], [l?.data, "competencia"]]) {
+    if (dataValidaCompleta(campo)) {
+      const [dia, mes, ano] = String(campo).split("/").map(Number);
+      return { ano, mes: mes - 1, dia, chave: chaveDia(ano, mes - 1, dia), date: new Date(ano, mes - 1, dia), origem };
+    }
+  }
+  const dia = diaDoCampoData(l?.data) ?? diaDoCampoData(l?.dataVencimento);
+  const mes0 = Number.isInteger(+l?.mes) ? Math.max(0, Math.min(11, +l.mes)) : null;
+  if (dia == null || mes0 == null) return null;
+  const ano = anoDoLancamento(l);
+  const ultimo = new Date(ano, mes0 + 1, 0).getDate();
+  const diaOk = Math.min(dia, ultimo);
+  return { ano, mes: mes0, dia: diaOk, chave: chaveDia(ano, mes0, diaOk), date: new Date(ano, mes0, diaOk), origem: "competencia" };
 }
 
 /**
@@ -158,6 +196,7 @@ export function resumoRecebiveis(lancamentos = [], hoje = hojeSP()) {
   void base;
   for (const l of lancamentos) {
     if (l?.tipo !== "entrada" || l?.status !== "previsto") continue;
+    if (ehReservaPendente(l)) continue; // reserva não paga não é recebível vencido
     const saldo = saldoResidual(l);
     if (saldo <= 0) continue;
     const c = classificarRecebivel(l, hoje);
