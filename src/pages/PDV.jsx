@@ -9,6 +9,7 @@ import { useStore } from "../lib/store.jsx";
 import {
   cafeInclusoUsadoHoje, contaDaComanda, diaDoPedido, direitosDoCliente, hojeBRT, temCafeIncluso,
 } from "../lib/direitosPlano.js";
+import { agruparPorForma } from "../lib/pdvFechamento.js";
 
 // fluxo de status do pedido recebido do app
 const PROX_STATUS = { recebido: "preparo", preparo: "pronto", pronto: "entregue" };
@@ -26,6 +27,9 @@ export default function PDV() {
   const [pago, setPago] = useState(null);
   const [clienteId, setClienteId] = useState(""); // cliente identificado na comanda
   const [vendaOk, setVendaOk] = useState(null); // { total, conta } após finalizar
+  const [fechOpen, setFechOpen] = useState(false); // fechamento de caixa por forma de pagamento
+  const [fechData, setFechData] = useState(hojeBRT());
+  const [contado, setContado] = useState({}); // forma → valor contado (conferência, não persiste)
 
   // KPIs reais (do banco) — zeram quando ainda não há vendas/produtos.
   const pedidosUnidade = pedidosDe(activeUnit);
@@ -151,6 +155,65 @@ export default function PDV() {
           </Card>
         ))}
       </div>
+
+      {/* Fechamento de caixa por forma de pagamento (resumo; não cria lançamento) */}
+      {(() => {
+        const pedidosDia = pedidosUnidade.filter((p) => diaDoPedido(p) === fechData && p.status !== "aguardando_pagamento");
+        const resumo = agruparPorForma(pedidosDia);
+        const totalContado = resumo.linhas.reduce((s, l) => s + (parseFloat(contado[l.forma]) || 0), 0);
+        const difGeral = Math.round((totalContado - resumo.totalGeral) * 100) / 100;
+        const temContagem = resumo.linhas.some((l) => String(contado[l.forma] ?? "").trim() !== "");
+        return (
+          <Card style={{ padding: 0, overflow: "hidden", marginBottom: 20 }}>
+            <button onClick={() => setFechOpen((o) => !o)} className="cw-btn" style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "14px 20px", background: "transparent", border: "none", textAlign: "left" }}>
+              <Banknote size={19} color={C.cafe} />
+              <span style={{ fontFamily: serif, fontSize: 18, flex: 1 }}>Fechamento de caixa</span>
+              <span style={{ fontSize: 12.5, color: C.text3 }}>{resumo.qtd} venda(s) · {fmt(resumo.totalGeral)}</span>
+              <ArrowRight size={16} color={C.text4} style={{ transform: fechOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+            </button>
+            {fechOpen && (
+              <div style={{ padding: "0 20px 18px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+                  <label style={{ fontSize: 12.5, color: C.text3 }}>Dia</label>
+                  <input type="date" value={fechData} max={hoje} onChange={(e) => e.target.value && setFechData(e.target.value)} style={{ ...inp, width: "auto" }} />
+                  <span style={{ fontSize: 12, color: C.text4 }}>As vendas já entram no caixa quando concluídas — isto é só a conferência por forma de pagamento.</span>
+                </div>
+                {resumo.qtd === 0 ? (
+                  <div style={{ fontSize: 13, color: C.text4, padding: "8px 0" }}>Nenhuma venda registrada neste dia.</div>
+                ) : (
+                  <div style={{ overflowX: "auto" }}><div style={{ minWidth: 520 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 120px 130px 120px", gap: 8, padding: "8px 0", fontSize: 11, fontWeight: 700, color: C.text3, borderBottom: `1px solid ${C.border2}` }}>
+                      <div>FORMA</div><div style={{ textAlign: "right" }}>VENDAS</div><div style={{ textAlign: "right" }}>SISTEMA</div><div style={{ textAlign: "right" }}>CONTADO</div><div style={{ textAlign: "right" }}>DIFERENÇA</div>
+                    </div>
+                    {resumo.linhas.map((l) => {
+                      const cont = parseFloat(contado[l.forma]);
+                      const dif = Number.isNaN(cont) ? null : Math.round((cont - l.total) * 100) / 100;
+                      return (
+                        <div key={l.forma} style={{ display: "grid", gridTemplateColumns: "1fr 80px 120px 130px 120px", gap: 8, padding: "8px 0", alignItems: "center", borderBottom: `1px solid ${C.border2}`, fontSize: 13 }}>
+                          <div style={{ fontWeight: 600 }}>{l.rotulo}</div>
+                          <div style={{ textAlign: "right", color: C.text3 }}>{l.n}</div>
+                          <div style={{ textAlign: "right", fontWeight: 600 }}>{fmt(l.total)}</div>
+                          <div style={{ textAlign: "right" }}>
+                            <input type="number" step="0.01" value={contado[l.forma] ?? ""} onChange={(e) => setContado((c) => ({ ...c, [l.forma]: e.target.value }))} placeholder="—" style={{ ...inp, width: 110, textAlign: "right", padding: "6px 8px" }} inputMode="decimal" />
+                          </div>
+                          <div style={{ textAlign: "right", fontWeight: 600, color: dif == null ? C.text4 : Math.abs(dif) < 0.005 ? C.green : C.red }}>{dif == null ? "—" : fmt(dif)}</div>
+                        </div>
+                      );
+                    })}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 120px 130px 120px", gap: 8, padding: "10px 0", alignItems: "center", fontWeight: 700 }}>
+                      <div style={{ fontFamily: serif }}>TOTAL</div>
+                      <div style={{ textAlign: "right", color: C.text3 }}>{resumo.qtd}</div>
+                      <div style={{ textAlign: "right" }}>{fmt(resumo.totalGeral)}</div>
+                      <div style={{ textAlign: "right" }}>{temContagem ? fmt(totalContado) : "—"}</div>
+                      <div style={{ textAlign: "right", color: !temContagem ? C.text4 : Math.abs(difGeral) < 0.005 ? C.green : C.red }}>{temContagem ? fmt(difGeral) : "—"}</div>
+                    </div>
+                  </div></div>
+                )}
+              </div>
+            )}
+          </Card>
+        );
+      })()}
 
       {/* Pedidos recebidos do app (chegam na recepção) */}
       <Card style={{ padding: 0, overflow: "hidden", marginBottom: 20 }}>
