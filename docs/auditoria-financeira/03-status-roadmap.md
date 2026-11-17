@@ -78,16 +78,19 @@ auditoria/saneamento financeiro. Legenda: ✅ feito · 🟡 parcial · ⬜ pende
 > **Em produção 2026-11-17:** **Painel da Controladoria** (saldo/conciliado, caixa
 > 7/30d, aging, contratado×faturado×recebido, blocos clicáveis) e **fila de
 > renovação proativa** de contratos (vencem no mês/próximos 2 meses).
-- Contratos e faturamento — ✅ fila de renovação proativa entregue. 🟡 Falta:
-  destacar parcelas provisionadas sem cobrança emitida (ação de faturar em lote).
+- Contratos e faturamento — ✅ fila de renovação proativa + **parcelas a faturar**
+  destacadas na fila de Pendências (origem: previsto de contrato sem cobrança).
 - Painel da Controladoria — ✅ entregue (por unidade; aging/projeção clicáveis).
 - Visão por unidade — ✅ **Controladoria do grupo** (tela de nível principal)
   soma as unidades visíveis e compara lado a lado (saldo, recebido, resultado,
   a receber, vencido), com total do grupo. Visível a franqueador/master/financeiro.
-- Fila de trabalho e régua de cobrança — 🟡 (régua de cobrança na inadimplência
-  existe; falta a fila única de pendências com responsável/prazo/status).
-- Painel da Controladoria — ⬜ pendente (saldo conciliado, caixa 7/30d, aging por
-  unidade, contratado/faturado/recebido, DRE por unidade/serviço, tudo clicável).
+- Fila de trabalho — ✅ **Pendências** (aba Financeiro): fila única com
+  inadimplência, parcelas a faturar, renovações, sem cliente, a conferir e
+  inconsistências; cada bloco leva à aba onde se resolve. (Atribuição de
+  responsável por item fica para um modelo de tarefas futuro.)
+
+**P1 financeiro essencial concluído.** Resta (menor): DRE por unidade/serviço,
+régua de cobrança como tarefa com responsável.
 
 ## P2 · Operação
 - Cafeteria/estoque/patrimônio — 🟡 (PDV existe; falta vincular fechamento ao caixa
