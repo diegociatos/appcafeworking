@@ -12,7 +12,7 @@ import { useStore, SECOES, COBRANCA_TEMPLATE_DEFAULT, MODO_REAL } from "../lib/s
 import {
   getCurrentCompetencia, anoDoLancamento, chaveDoLancamento, noPeriodo, anosDisponiveis, competenciaComAno,
 } from "../lib/dateUtils.js";
-import { resumoRecebiveis, hojeSP, ehNaoComercial, dataCaixa, mesesSemProvisao } from "../lib/financeiro.js";
+import { resumoRecebiveis, hojeSP, ehNaoComercial, dataCaixa, mesesSemProvisao, vencimentosAte } from "../lib/financeiro.js";
 import { gerarModeloFluxo, lerPlanilhaFluxo, validarLinhas, exportarExtratoExcel, exportarProvisaoExcel } from "../lib/fluxoImport.js";
 import { resumoOnline, cobrancasJaLancadas, competenciaDaCobranca, situacaoCobranca, hojeBRT, repassesDoAno, extratoGarantia, ROTULO_GARANTIA } from "../lib/recebimentosOnline.js";
 import { fetchGarantiasDb } from "../lib/supabaseDb.js";
@@ -78,6 +78,7 @@ export const FIN_GRUPOS = [
     { id: "confirmacoes", label: "Confirmações de e-mail", icon: Mail },
   ] },
   { titulo: "Relatórios", itens: [
+    { id: "controladoria", label: "Controladoria", icon: BarChart3 },
     { id: "dre", label: "DRE", icon: FileText },
     { id: "provisao", label: "Provisão", icon: TrendingUp },
     { id: "recebimentos", label: "Recebimentos por Cliente", icon: Receipt },
@@ -183,6 +184,7 @@ export default function Financeiro({ finTab }) {
           onDuplicar={(l) => { const { id: _id, boletoId: _b, cobrancaId: _c, grupoRecorrencia: _g, ...resto } = l; setLancModal({ ...resto, descricao: `${l.descricao || ""} (cópia)`.trim() }); }}
           onExcluir={(l) => { if (window.confirm(`Enviar o lançamento "${l.descricao || l.categoria || ""}" para a lixeira?\n\nEle sai das telas, mas pode ser restaurado em Financeiro → Lixeira.`)) store.removeLancamento(l.id); }}
           onRemoverImportados={(contaId) => store.removerImportados(activeUnit, contaId)} />}
+        {tab === "controladoria" && <Controladoria lancamentos={lancamentos} contas={contas} store={store} activeUnit={activeUnit} unidadeNome={unidadeAtiva?.nome} />}
         {tab === "dre" && <DRE lancamentos={lancamentos} categorias={categorias} />}
         {tab === "online" && <RecebimentosOnline cobrancas={store.cobrancasDe(activeUnit)} lancamentos={lancamentos} />}
         {tab === "repasses" && (store.unidadeEhParceira(activeUnit)
@@ -2091,6 +2093,148 @@ function ConciliacaoBancaria({ contas = [], lancamentos = [], updateLancamento, 
             </div></div>
           </Card>
         </>
+      )}
+    </>
+  );
+}
+
+// ===== CONTROLADORIA ======================================================
+// Painel gerencial da unidade: saldo (total e conciliado), projeção de caixa
+// (7/30 dias), aging de recebíveis e contratado × faturado × recebido do mês.
+// Os blocos de aging e projeção são clicáveis — abrem a lista que os compõe.
+function Controladoria({ lancamentos = [], contas = [], store, activeUnit, unidadeNome = "" }) {
+  const [mesSel, setMesSel] = useState(MES_ATUAL);
+  const [anoSel, setAnoSel] = useState(ANO_ATUAL);
+  const [drill, setDrill] = useState(null); // "aging" | "prox7" | "prox30" | null
+  const hoje = hojeSP();
+  const nomeCli = (l) => l.clienteNome || store.clientes.find((c) => c.id === l.clienteId)?.nome || "—";
+
+  // Saldos
+  const saldoCaixa = contas.reduce((s, c) => s + saldoAtualConta(c, lancamentos), 0);
+  const saldoInicial = contas.reduce((s, c) => s + (c.saldo || 0), 0);
+  const pagos = lancamentos.filter((l) => l.status === "pago");
+  const sinal = (l) => (l.tipo === "entrada" ? 1 : -1);
+  const saldoConciliado = saldoInicial + pagos.filter((l) => l.conferidoExtrato).reduce((s, l) => s + sinal(l) * (l.valor || 0), 0);
+  const aConferir = pagos.filter((l) => !l.conferidoExtrato).reduce((s, l) => s + sinal(l) * (l.valor || 0), 0);
+
+  // Resultado do mês (regime de caixa, comercial)
+  const noMesCaixa = (l) => { const c = dataCaixa(l); return c && c.ano === anoSel && c.mes === mesSel; };
+  const recebidoMes = pagos.filter((l) => l.tipo === "entrada" && !ehNaoComercial(l) && noMesCaixa(l)).reduce((s, l) => s + l.valor, 0);
+  const pagoMes = pagos.filter((l) => l.tipo === "saida" && !ehNaoComercial(l) && noMesCaixa(l)).reduce((s, l) => s + l.valor, 0);
+  const resultadoMes = recebidoMes - pagoMes;
+
+  // Projeção de caixa
+  const prox7 = vencimentosAte(lancamentos, hoje, 7);
+  const prox30 = vencimentosAte(lancamentos, hoje, 30);
+
+  // Aging de recebíveis
+  const resumo = resumoRecebiveis(lancamentos, hoje);
+  const vencidos = resumo.itens.filter((x) => x.classe === "vencido");
+  const FAIXAS = [
+    { lbl: "1–30", min: 1, max: 30, cor: C.amber }, { lbl: "31–60", min: 31, max: 60, cor: "#e08a00" },
+    { lbl: "61–90", min: 61, max: 90, cor: C.red }, { lbl: "90+", min: 91, max: Infinity, cor: "#9a1414" },
+  ];
+  const faixaTot = FAIXAS.map((f) => vencidos.filter((x) => x.diasAtraso >= f.min && x.diasAtraso <= f.max).reduce((s, x) => s + x.saldo, 0));
+  const totalVencido = vencidos.reduce((s, x) => s + x.saldo, 0);
+
+  // Contratado × faturado × recebido (competência do mês)
+  const comp = anoSel * 12 + mesSel;
+  const contratos = store.contratosDe(activeUnit).filter((c) => c.status === "ativo");
+  const contratadoMes = contratos.filter((c) => store.compInicioContrato(c) <= comp && store.compFimContrato(c) >= comp).reduce((s, c) => s + (c.valorMensal || 0), 0);
+  const entradasCompMes = lancamentos.filter((l) => l.tipo === "entrada" && l.clienteId && !ehNaoComercial(l) && anoDoLancamento(l) === anoSel && l.mes === mesSel);
+  const faturadoMes = entradasCompMes.reduce((s, l) => s + l.valor, 0);
+  const recebidoCompMes = entradasCompMes.filter((l) => l.status === "pago").reduce((s, l) => s + l.valor, 0);
+
+  const KPI = ({ titulo, valor, cor, sub, onClick, aberto }) => (
+    <Card onClick={onClick} style={{ cursor: onClick ? "pointer" : "default", outline: aberto ? `2px solid ${C.cafe}` : "none" }}>
+      <div style={{ fontSize: 12.5, color: C.text3 }}>{titulo}</div>
+      <div style={{ fontFamily: serif, fontSize: 23, color: cor || C.text }}>{fmt(valor)}</div>
+      {sub && <div style={{ fontSize: 11, color: C.text4, marginTop: 2 }}>{sub}</div>}
+    </Card>
+  );
+  const listaDrill = drill === "aging" ? vencidos.map((x) => x.l) : drill === "prox7" ? prox7.itens.map((x) => x.l) : drill === "prox30" ? prox30.itens.map((x) => x.l) : [];
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
+        <div>
+          <div style={{ fontFamily: serif, fontSize: 20 }}>Controladoria{unidadeNome ? ` · ${unidadeNome}` : ""}</div>
+          <div style={{ fontSize: 12.5, color: C.text3, maxWidth: 680 }}>Visão gerencial: saldo em caixa e conciliado, projeção de caixa (7 e 30 dias), aging da inadimplência e o contratado × faturado × recebido do mês. Clique nos blocos de aging e projeção para ver o que os compõe.</div>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <select value={mesSel} onChange={(e) => setMesSel(+e.target.value)} style={{ ...inp, width: "auto", padding: "7px 10px", fontSize: 13 }}>{MESES.map((m, i) => <option key={i} value={i}>{m}</option>)}</select>
+          <SeletorAno valor={anoSel} onChange={setAnoSel} anos={anosDisponiveis(lancamentos)} />
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12, marginBottom: 14 }}>
+        <KPI titulo="Saldo em caixa" valor={saldoCaixa} />
+        <KPI titulo="Saldo conciliado" valor={saldoConciliado} cor={C.teal} sub="só movimentos conferidos no extrato" />
+        <KPI titulo="A conferir no extrato" valor={aConferir} cor={Math.abs(aConferir) > 0.005 ? C.amber : C.text4} sub="pagos ainda não conferidos" />
+        <KPI titulo={`Resultado de ${MESES[mesSel]} (caixa)`} valor={resultadoMes} cor={resultadoMes >= 0 ? C.green : C.red} sub={`recebido ${fmt(recebidoMes)} · pago ${fmt(pagoMes)}`} />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12, marginBottom: 14 }}>
+        <KPI titulo="A receber · 7 dias" valor={prox7.receber} cor={C.green} onClick={() => setDrill(drill === "prox7" ? null : "prox7")} aberto={drill === "prox7"} sub="vencendo em 7 dias" />
+        <KPI titulo="A pagar · 7 dias" valor={prox7.pagar} cor={C.red} onClick={() => setDrill(drill === "prox7" ? null : "prox7")} aberto={drill === "prox7"} sub={`saldo projetado ${fmt(prox7.saldo)}`} />
+        <KPI titulo="A receber · 30 dias" valor={prox30.receber} cor={C.green} onClick={() => setDrill(drill === "prox30" ? null : "prox30")} aberto={drill === "prox30"} sub="vencendo em 30 dias" />
+        <KPI titulo="A pagar · 30 dias" valor={prox30.pagar} cor={C.red} onClick={() => setDrill(drill === "prox30" ? null : "prox30")} aberto={drill === "prox30"} sub={`saldo projetado ${fmt(prox30.saldo)}`} />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 16, marginBottom: 14 }}>
+        <Card onClick={() => totalVencido > 0 && setDrill(drill === "aging" ? null : "aging")} style={{ cursor: totalVencido > 0 ? "pointer" : "default", outline: drill === "aging" ? `2px solid ${C.cafe}` : "none" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+            <div style={{ fontFamily: serif, fontSize: 16 }}>Aging da inadimplência</div>
+            <div style={{ fontFamily: serif, fontSize: 18, color: totalVencido > 0 ? C.red : C.text4 }}>{fmt(totalVencido)}</div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
+            {FAIXAS.map((f, i) => (
+              <div key={i} style={{ borderLeft: `3px solid ${f.cor}`, paddingLeft: 8 }}>
+                <div style={{ fontSize: 10.5, color: C.text3 }}>{f.lbl} dias</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: faixaTot[i] ? f.cor : C.text4 }}>{faixaTot[i] ? fmt(faixaTot[i]) : "—"}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card>
+          <div style={{ fontFamily: serif, fontSize: 16, marginBottom: 10 }}>Contratado × faturado × recebido · {MESES[mesSel]}/{anoSel}</div>
+          {[["Contratado", contratadoMes, C.text2], ["Faturado (lançado)", faturadoMes, C.cafe], ["Recebido", recebidoCompMes, C.green]].map(([lbl, val, cor]) => {
+            const max = Math.max(contratadoMes, faturadoMes, recebidoCompMes, 1);
+            return (
+              <div key={lbl} style={{ marginBottom: 9 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 3 }}><span style={{ color: C.text3 }}>{lbl}</span><span style={{ fontWeight: 700, color: cor }}>{fmt(val)}</span></div>
+                <div style={{ height: 7, background: C.cream, borderRadius: 4, overflow: "hidden" }}><div style={{ width: `${Math.min(100, (val / max) * 100)}%`, height: "100%", background: cor }} /></div>
+              </div>
+            );
+          })}
+          <div style={{ fontSize: 11, color: C.text4, marginTop: 6 }}>
+            {contratadoMes > faturadoMes + 0.005 ? `Faltam ${fmt(contratadoMes - faturadoMes)} de parcelas a lançar. ` : ""}
+            {faturadoMes > recebidoCompMes + 0.005 ? `${fmt(faturadoMes - recebidoCompMes)} faturado em aberto.` : (faturadoMes > 0 ? "Tudo recebido." : "")}
+          </div>
+        </Card>
+      </div>
+
+      {drill && (
+        <Card style={{ padding: 0, overflow: "hidden" }}>
+          <div style={{ padding: "12px 18px", borderBottom: `1px solid ${C.border2}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontWeight: 700, fontSize: 13.5 }}>{drill === "aging" ? "Títulos vencidos" : drill === "prox7" ? "Vencendo em 7 dias" : "Vencendo em 30 dias"} ({listaDrill.length})</span>
+            <button onClick={() => setDrill(null)} className="cw-btn" style={{ color: C.text3, padding: 4 }}><X size={16} /></button>
+          </div>
+          <div style={{ overflowX: "auto", maxHeight: 360 }}>
+            {listaDrill.length === 0 && <div style={{ padding: 22, textAlign: "center", fontSize: 13, color: C.text4 }}>Nada aqui.</div>}
+            {listaDrill.map((l) => (
+              <div key={l.id} style={{ display: "grid", gridTemplateColumns: "1fr 110px 120px", gap: 8, padding: "9px 18px", borderTop: `1px solid ${C.border2}`, alignItems: "center" }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{nomeCli(l)}</div>
+                  <div style={{ fontSize: 11.5, color: C.text3 }}>{l.descricao || l.categoria || "—"}</div>
+                </div>
+                <div style={{ fontSize: 12, color: C.text3, textAlign: "right" }}>{l.dataVencimento || l.data || "—"}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: l.tipo === "saida" ? C.red : C.green, textAlign: "right" }}>{l.tipo === "saida" ? "−" : ""}{fmt(l.valor)}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
       )}
     </>
   );

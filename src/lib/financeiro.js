@@ -197,6 +197,29 @@ export function mesesSemProvisao(mesesPresentes = []) {
   return faltas;
 }
 
+/** Projeção de caixa: previstos (a receber e a pagar) que vencem de HOJE até
+ *  hoje+dias (inclusive). Usa o vencimento real; ignora inconsistentes e reservas
+ *  pendentes. Vencidos (já passados) não entram — ficam no aging da inadimplência.
+ *  Devolve { receber, pagar, saldo, itens:[{l,venc,tipo}] }. */
+export function vencimentosAte(lancamentos = [], hoje = hojeSP(), dias = 7) {
+  const d = new Date(hoje.ano, hoje.mes, hoje.dia + dias);
+  const limite = chaveDia(d.getFullYear(), d.getMonth(), d.getDate());
+  const r = { receber: 0, pagar: 0, saldo: 0, itens: [] };
+  for (const l of lancamentos) {
+    if (l?.status !== "previsto" || ehReservaPendente(l)) continue;
+    const v = vencimentoReal(l);
+    if (!v || v.chave < hoje.chave || v.chave > limite) continue;
+    const val = saldoResidual(l);
+    if (l.tipo === "entrada") r.receber += val;
+    else if (l.tipo === "saida") r.pagar += val;
+    r.itens.push({ l, venc: v, tipo: l.tipo });
+  }
+  r.saldo = Math.round((r.receber - r.pagar) * 100) / 100;
+  r.receber = Math.round(r.receber * 100) / 100;
+  r.pagar = Math.round(r.pagar * 100) / 100;
+  return r;
+}
+
 /** Agrega recebíveis previstos por classe, com soma e contagem. Fonte única
  *  para Dashboard, Contas a Receber, Inadimplência e relatórios. */
 export function resumoRecebiveis(lancamentos = [], hoje = hojeSP()) {

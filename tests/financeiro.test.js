@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   ehNaoComercial, ehReservaPendente, chaveDia, hojeSP, dataValidaCompleta, vencimentoReal, dataCaixa,
-  classificarRecebivel, saldoResidual, montarParcela, resumoRecebiveis, mesesSemProvisao,
+  classificarRecebivel, saldoResidual, montarParcela, resumoRecebiveis, mesesSemProvisao, vencimentosAte,
 } from "../src/lib/financeiro.js";
 
 // Hoje fixo para os testes: 15/11/2026 (SP).
@@ -52,6 +52,27 @@ test("vencimentoReal devolve null quando não há dia (— ou vazio)", () => {
   assert.equal(vencimentoReal({ data: "—", mes: 3, ano: 2026 }), null);
   assert.equal(vencimentoReal({ data: "", mes: 3, ano: 2026 }), null);
   assert.equal(vencimentoReal({ data: "20" }), null); // sem competência (mes)
+});
+
+test("vencimentosAte projeta caixa dos previstos na janela (hoje..hoje+dias)", () => {
+  // Hoje 15/11/2026. Janela 7 dias => até 22/11.
+  const lanc = [
+    { tipo: "entrada", status: "previsto", valor: 500, data: "18", mes: 10, ano: 2026 }, // 18/11 dentro
+    { tipo: "saida", status: "previsto", valor: 200, data: "20", mes: 10, ano: 2026 },   // 20/11 dentro
+    { tipo: "entrada", status: "previsto", valor: 999, data: "28", mes: 10, ano: 2026 }, // 28/11 fora (>7d)
+    { tipo: "entrada", status: "previsto", valor: 300, data: "10", mes: 10, ano: 2026 }, // 10/11 vencido, fora
+    { tipo: "entrada", status: "pago", valor: 111, data: "19/11/2026", mes: 10, ano: 2026 }, // pago, ignora
+    { tipo: "entrada", status: "previsto", origem: "reserva", valor: 80, data: "19", mes: 10, ano: 2026 }, // reserva pendente, ignora
+  ];
+  const r = vencimentosAte(lanc, HOJE, 7);
+  assert.deepEqual([r.receber, r.pagar, r.saldo], [500, 200, 300]);
+  assert.equal(r.itens.length, 2);
+});
+
+test("vencimentosAte com janela maior inclui o que vence depois", () => {
+  const lanc = [{ tipo: "entrada", status: "previsto", valor: 999, data: "28", mes: 10, ano: 2026 }];
+  assert.equal(vencimentosAte(lanc, HOJE, 7).receber, 0);   // 28/11 fora de 7d
+  assert.equal(vencimentosAte(lanc, HOJE, 30).receber, 999); // dentro de 30d
 });
 
 test("mesesSemProvisao aponta só os buracos no meio da recorrência", () => {
