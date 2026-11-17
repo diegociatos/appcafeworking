@@ -75,10 +75,14 @@ auditoria/saneamento financeiro. Legenda: ✅ feito · 🟡 parcial · ⬜ pende
   depois); período fechado com reabertura autorizada.
 
 ## P1 · Contratos, equipe e gestão
-- Contratos e faturamento — 🟡 (tela de Contratos existe; falta destacar parcelas
-  aptas a faturar sem cobrança e **fila de renovação** com responsável/prazo).
-- Visão por unidade — 🟡 (há filtro por unidade; falta padronizar origem e a
-  consolidada vs por unidade de forma consistente).
+> **Em produção 2026-11-17:** **Painel da Controladoria** (saldo/conciliado, caixa
+> 7/30d, aging, contratado×faturado×recebido, blocos clicáveis) e **fila de
+> renovação proativa** de contratos (vencem no mês/próximos 2 meses).
+- Contratos e faturamento — ✅ fila de renovação proativa entregue. 🟡 Falta:
+  destacar parcelas provisionadas sem cobrança emitida (ação de faturar em lote).
+- Painel da Controladoria — ✅ entregue (por unidade; aging/projeção clicáveis).
+- Visão por unidade — 🟡 (há filtro por unidade; falta a **consolidada** entre
+  unidades vs por unidade de forma consistente).
 - Fila de trabalho e régua de cobrança — 🟡 (régua de cobrança na inadimplência
   existe; falta a fila única de pendências com responsável/prazo/status).
 - Painel da Controladoria — ⬜ pendente (saldo conciliado, caixa 7/30d, aging por
