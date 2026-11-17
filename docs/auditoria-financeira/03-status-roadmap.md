@@ -81,8 +81,9 @@ auditoria/saneamento financeiro. Legenda: ✅ feito · 🟡 parcial · ⬜ pende
 - Contratos e faturamento — ✅ fila de renovação proativa entregue. 🟡 Falta:
   destacar parcelas provisionadas sem cobrança emitida (ação de faturar em lote).
 - Painel da Controladoria — ✅ entregue (por unidade; aging/projeção clicáveis).
-- Visão por unidade — 🟡 (há filtro por unidade; falta a **consolidada** entre
-  unidades vs por unidade de forma consistente).
+- Visão por unidade — ✅ **Controladoria do grupo** (tela de nível principal)
+  soma as unidades visíveis e compara lado a lado (saldo, recebido, resultado,
+  a receber, vencido), com total do grupo. Visível a franqueador/master/financeiro.
 - Fila de trabalho e régua de cobrança — 🟡 (régua de cobrança na inadimplência
   existe; falta a fila única de pendências com responsável/prazo/status).
 - Painel da Controladoria — ⬜ pendente (saldo conciliado, caixa 7/30d, aging por
