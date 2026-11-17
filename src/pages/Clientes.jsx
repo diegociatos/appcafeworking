@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { validarEmailsCliente } from "../lib/contatosCliente.js";
+import { clientesDuplicados, canonicoDoGrupo, docDoCliente } from "../lib/clientesDuplicados.js";
 import {
   Plus, Users, Briefcase, ChevronRight, ChevronLeft, FileText,
   Building, Mail, Phone, FileCheck, PackageCheck,
@@ -30,11 +31,18 @@ const correspondenciasDoCliente = (lista, cli) => (lista || []).filter((c) => (c
   : c.unidadeId === cli.unidadeId && !!c.cliente && semAcento(c.cliente) === semAcento(cli.nome)));
 
 export default function Clientes({ go }) {
-  const { clientes, criarClienteConfirmado, atualizarClienteConfirmado, removeCliente, unidades, planosDe, perfil, correspondencias } = useStore();
+  const { clientes, criarClienteConfirmado, atualizarClienteConfirmado, removeCliente, unidades, planosDe, perfil, correspondencias, lancamentos } = useStore();
   const [sel, setSel] = useState(null);
   const [editar, setEditar] = useState(null); // null | {} novo | cliente em edição
   const [excluir, setExcluir] = useState(null);
   const [busca, setBusca] = useState("");
+  const [verDup, setVerDup] = useState(false); // abrir a lista de possíveis duplicados
+
+  // Clientes provavelmente cadastrados em duplicidade (mesmo doc ou mesmo nome
+  // na unidade). Dividem receita em dois cartões e inflam a base — por isso o
+  // alerta. A unificação é decisão humana; aqui só se identifica e mostra.
+  const duplicados = clientesDuplicados(clientes);
+  const lancDoCliente = (cid) => (lancamentos || []).filter((l) => l.clienteId === cid);
 
   // Acesso ao app: quem já tem login (por unidade) e envio do convite.
   const podeConvidar = acessoClienteApi.configured && PERFIS_QUE_CONVIDAM.includes(perfil);
@@ -142,6 +150,17 @@ export default function Clientes({ go }) {
               {lote.falhas.map((f, i) => <li key={i}><b>{f.nome}</b>: {f.erro}</li>)}
             </ul>
           )}
+        </Card>
+      )}
+      {duplicados.length > 0 && (
+        <Card style={{ marginBottom: 14, padding: 14, borderLeft: `4px solid ${C.amber}` }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: C.text2 }}>
+              <AlertCircle size={16} color={C.amber} />
+              <span><b>{duplicados.length}</b> possível(is) cadastro(s) em duplicidade — o mesmo cliente aparece mais de uma vez, o que divide a receita dele em cartões separados.</span>
+            </div>
+            <Btn variant="ghost" onClick={() => setVerDup(true)}>Revisar duplicados</Btn>
+          </div>
         </Card>
       )}
       {clientes.length > 0 && (
@@ -262,6 +281,50 @@ export default function Clientes({ go }) {
         onConfirmar={enviarLote}
         onCancelar={() => setConfirmarLote(false)}
       />
+
+      {verDup && (
+        <Modal title="Possíveis cadastros duplicados" onClose={() => setVerDup(false)} maxWidth={620}>
+          <div style={{ fontSize: 12.5, color: C.text3, marginBottom: 14 }}>
+            O mesmo cliente parece cadastrado mais de uma vez (mesmo documento ou mesmo nome na unidade). Confira e, se for o caso, edite ou remova o cadastro repetido — mantenha o que estiver mais completo (marcado como <b>sugerido manter</b>). Os lançamentos ficam no cadastro em que foram vinculados.
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, maxHeight: 460, overflowY: "auto" }}>
+            {duplicados.map((g, gi) => {
+              const canon = canonicoDoGrupo(g.membros);
+              return (
+                <div key={gi} style={{ border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+                  <div style={{ padding: "8px 12px", background: C.cream, fontSize: 11.5, fontWeight: 700, color: C.text3 }}>
+                    Agrupado por {g.motivos.map((m) => (m === "documento" ? "mesmo CPF/CNPJ" : "mesmo nome")).join(" e ")}
+                  </div>
+                  {g.membros.map((c) => {
+                    const doc = docDoCliente(c);
+                    const nLanc = lancDoCliente(c.id).length;
+                    const ehCanon = canon && c.id === canon.id;
+                    return (
+                      <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "10px 12px", borderTop: `1px solid ${C.border2}`, background: ehCanon ? C.greenPale : undefined }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, fontSize: 13.5, display: "flex", alignItems: "center", gap: 6 }}>
+                            {c.nome || "— sem nome —"}
+                            {ehCanon && <Badge color={C.green} bg="#fff">sugerido manter</Badge>}
+                          </div>
+                          <div style={{ fontSize: 11.5, color: C.text3 }}>
+                            {doc ? (doc.length === 14 ? "CNPJ " : "CPF ") + doc : "sem documento"}
+                            {c.email ? ` · ${c.email}` : ""}{c.telefone ? ` · ${c.telefone}` : ""}
+                          </div>
+                          <div style={{ fontSize: 11, color: C.text4, marginTop: 2 }}>{nLanc} lançamento(s) vinculado(s)</div>
+                        </div>
+                        <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                          <button onClick={() => { setVerDup(false); setEditar(c); }} className="cw-btn" title="Abrir / editar este cadastro" style={{ color: C.cafe, padding: 6 }}><Edit3 size={15} /></button>
+                          <button onClick={() => { setVerDup(false); setExcluir(c); }} className="cw-btn" title="Remover este cadastro" style={{ color: C.red, padding: 6 }}><Trash2 size={15} /></button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
