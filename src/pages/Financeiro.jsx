@@ -69,6 +69,7 @@ const saldoAtualConta = (conta, lancamentos) =>
 export const FIN_GRUPOS = [
   { titulo: "Movimento", itens: [
     { id: "visao", label: "Visão Geral", icon: BarChart3 },
+    { id: "pendencias", label: "Pendências", icon: AlertCircle },
     { id: "extrato", label: "Fluxo de Caixa", icon: Wallet },
     { id: "conciliacao", label: "Conciliação bancária", icon: ListChecks },
     { id: "receber", label: "Contas a Receber", icon: ArrowUpRight },
@@ -94,7 +95,7 @@ export const FIN_GRUPOS = [
   ] },
 ];
 
-export default function Financeiro({ finTab }) {
+export default function Financeiro({ finTab, setFinTab }) {
   const store = useStore();
   const { activeUnit, unidadeAtiva, categorias } = store;
   const [tabInner] = useState("visao");
@@ -165,6 +166,7 @@ export default function Financeiro({ finTab }) {
       {/* Conteúdo (seções navegadas pelo sidebar principal) */}
       <div style={{ minWidth: 0 }}>
         {tab === "visao" && <VisaoGeral lancamentos={lancamentos} contas={contas} onAbrir={setDetalheLanc} />}
+        {tab === "pendencias" && <Pendencias lancamentos={lancamentos} store={store} activeUnit={activeUnit} clientesUnidade={clientesUnidade} irPara={setFinTab} />}
         {(tab === "receber" || tab === "pagar") && (
           <Contas
             lancamentos={lancamentos}
@@ -2117,6 +2119,93 @@ function ConciliacaoBancaria({ contas = [], lancamentos = [], updateLancamento, 
               })}
             </div></div>
           </Card>
+        </>
+      )}
+    </>
+  );
+}
+
+// ===== PENDÊNCIAS (fila única de trabalho) ================================
+// Reúne numa tela só tudo que precisa de ação na unidade: inadimplência,
+// vencimentos inconsistentes, contratos a renovar, parcelas provisionadas sem
+// cobrança (a faturar), recebimentos sem cliente e movimentos a conferir no
+// extrato. Cada bloco leva (irPara) à aba onde se resolve.
+function Pendencias({ lancamentos = [], store, activeUnit, clientesUnidade = [], irPara }) {
+  const hoje = hojeSP();
+  const nomeCli = (l) => l.clienteNome || clientesUnidade.find((c) => c.id === l.clienteId)?.nome || "— sem cliente —";
+  const resumo = resumoRecebiveis(lancamentos, hoje);
+  const vencidos = resumo.itens.filter((x) => x.classe === "vencido");
+  const inconsistentes = resumo.itens.filter((x) => x.classe === "inconsistente");
+  const inadTotal = vencidos.reduce((s, x) => s + x.saldo, 0);
+
+  const contratos = store.contratosDe(activeUnit).filter((c) => c.status === "ativo");
+  const renovar = contratos.filter((c) => store.compFimContrato(c) <= COMP_ATUAL + 2).sort((a, b) => store.compFimContrato(a) - store.compFimContrato(b));
+
+  const semCliente = lancamentos.filter((l) => l.tipo === "entrada" && l.status === "pago" && !l.clienteId && !ehNaoComercial(l));
+  const semClienteTotal = semCliente.reduce((s, l) => s + (l.valor || 0), 0);
+
+  const noMesAtual = (l) => { const c = dataCaixa(l); return c && c.ano === ANO_ATUAL && c.mes === MES_ATUAL; };
+  const aConferir = lancamentos.filter((l) => l.status === "pago" && !l.conferidoExtrato && noMesAtual(l));
+
+  const aFaturar = lancamentos.filter((l) => l.tipo === "entrada" && l.status === "previsto" && l.contratoId && !l.cobrancaId && !l.boletoId && (anoDoLancamento(l) * 12 + (Number(l.mes) || 0)) <= COMP_ATUAL);
+  const aFaturarTotal = aFaturar.reduce((s, l) => s + (l.valor || 0), 0);
+
+  const cats = [
+    { show: vencidos.length > 0, icon: AlertTriangle, cor: C.red, titulo: "Inadimplência", n: vencidos.length, resumo: `${fmt(inadTotal)} vencido`, tab: "inadimplencia", acao: "Cobrar",
+      itens: vencidos.slice().sort((a, b) => b.diasAtraso - a.diasAtraso).map((x) => ({ nome: nomeCli(x.l), info: `${x.diasAtraso} dias`, valor: x.l.valor })) },
+    { show: aFaturar.length > 0, icon: Barcode, cor: C.cafe, titulo: "Parcelas a faturar", n: aFaturar.length, resumo: `${fmt(aFaturarTotal)} provisionado sem cobrança`, tab: "contratos", acao: "Faturar",
+      itens: aFaturar.map((l) => ({ nome: nomeCli(l), info: `${MESES[l.mes]}/${anoDoLancamento(l)}`, valor: l.valor })) },
+    { show: renovar.length > 0, icon: RefreshCw, cor: C.teal, titulo: "Contratos a renovar", n: renovar.length, resumo: "vencidos ou vencendo em breve", tab: "contratos", acao: "Renovar",
+      itens: renovar.map((c) => ({ nome: c.cliente, info: `vence ${MESES[store.mesFimContrato(c)]}/${store.anoFimContrato(c)}`, valor: c.valorMensal })) },
+    { show: semCliente.length > 0, icon: Receipt, cor: "#8a6550", titulo: "Recebimentos sem cliente", n: semCliente.length, resumo: `${fmt(semClienteTotal)} a vincular`, tab: "recebimentos", acao: "Vincular",
+      itens: semCliente.map((l) => ({ nome: l.descricao || "—", info: l.dataPagamento || l.data || "", valor: l.valor })) },
+    { show: aConferir.length > 0, icon: ListChecks, cor: C.blue, titulo: "A conferir no extrato", n: aConferir.length, resumo: `movimentos de ${MESES[MES_ATUAL]}`, tab: "conciliacao", acao: "Conferir",
+      itens: aConferir.map((l) => ({ nome: l.descricao || l.categoria || "—", info: "", valor: l.valor })) },
+    { show: inconsistentes.length > 0, icon: AlertCircle, cor: C.amber, titulo: "Vencimentos inconsistentes", n: inconsistentes.length, resumo: "sem data válida — revisar", tab: "inadimplencia", acao: "Revisar",
+      itens: inconsistentes.map((x) => ({ nome: nomeCli(x.l), info: x.l.descricao || "", valor: x.l.valor })) },
+  ].filter((c) => c.show);
+
+  const totalPend = cats.reduce((s, c) => s + c.n, 0);
+
+  return (
+    <>
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontFamily: serif, fontSize: 20 }}>Pendências</div>
+        <div style={{ fontSize: 12.5, color: C.text3, maxWidth: 680 }}>Fila única de trabalho da unidade: tudo que precisa de ação em um lugar. Cada bloco leva à tela onde se resolve.</div>
+      </div>
+      {cats.length === 0 ? (
+        <Card><Empty icon={CheckCircle2} title="Tudo em dia 👏" sub="Nenhuma pendência financeira nesta unidade: sem inadimplência, parcelas a faturar, renovações, recebimentos sem cliente ou movimentos a conferir." /></Card>
+      ) : (
+        <>
+          <div style={{ fontSize: 12.5, color: C.text3, marginBottom: 12 }}>{totalPend} item(ns) pendente(s) em {cats.length} categoria(s).</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 14 }}>
+            {cats.map((c) => (
+              <Card key={c.titulo} style={{ padding: 0, overflow: "hidden", borderLeft: `4px solid ${c.cor}` }}>
+                <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 10, borderBottom: `1px solid ${C.border2}` }}>
+                  <c.icon size={18} color={c.cor} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>{c.titulo}</div>
+                    <div style={{ fontSize: 11.5, color: C.text3 }}>{c.resumo}</div>
+                  </div>
+                  <span style={{ fontFamily: serif, fontSize: 20, color: c.cor }}>{c.n}</span>
+                </div>
+                <div style={{ padding: "6px 16px" }}>
+                  {c.itens.slice(0, 4).map((it, i) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "6px 0", borderTop: i === 0 ? "none" : `1px solid ${C.border2}`, fontSize: 12.5 }}>
+                      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: C.text2 }}>{it.nome}{it.info ? ` · ${it.info}` : ""}</span>
+                      <span style={{ fontWeight: 600, color: C.text, whiteSpace: "nowrap" }}>{fmt(it.valor)}</span>
+                    </div>
+                  ))}
+                  {c.itens.length > 4 && <div style={{ fontSize: 11, color: C.text4, padding: "4px 0" }}>+ {c.itens.length - 4} outro(s)</div>}
+                </div>
+                {irPara && (
+                  <div style={{ padding: "8px 16px 12px" }}>
+                    <Btn variant="soft" style={{ width: "100%", justifyContent: "center", fontSize: 12.5 }} onClick={() => irPara(c.tab)}>{c.acao} →</Btn>
+                  </div>
+                )}
+              </Card>
+            ))}
+          </div>
         </>
       )}
     </>
