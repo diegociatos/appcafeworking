@@ -8,6 +8,8 @@ import { C, serif, sans, fmt, inp } from "../lib/theme.js";
 import { useStore } from "../lib/store.jsx";
 import { impressoesApi } from "../lib/impressoesApi.js";
 import { mensagemDe } from "../lib/erros.js";
+import { direitosDoCliente } from "../lib/direitosPlano.js";
+import { apurarExcedente } from "../lib/impressaoExcedente.js";
 
 const STATUS = {
   fila: ["Na fila", C.amber],
@@ -19,7 +21,7 @@ const STATUS = {
 const dataBR = (iso) => (iso ? new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "");
 
 export default function Impressoes() {
-  const { activeUnit } = useStore();
+  const { activeUnit, unidadeAtiva, clientesDe, planosDe } = useStore();
   const [dados, setDados] = useState(null);
   const [competencia, setCompetencia] = useState("");
   const [carregando, setCarregando] = useState(true);
@@ -49,10 +51,24 @@ export default function Impressoes() {
   };
 
   const jobs = dados?.jobs || [];
-  const resumo = dados?.resumo || [];
+  const resumoBruto = dados?.resumo || [];
   const precoFolha = dados?.preco_folha || 1.5;
 
+  // Apuração do excedente por cliente (só exibe — não gera cobrança). Franquia =
+  // folhas/mês do plano do cliente (direitos.impressaoMensal). Casado por e-mail.
+  const clientes = (clientesDe ? clientesDe(unidadeAtiva?.nome) : []) || [];
+  const planos = (planosDe ? planosDe(activeUnit) : []) || [];
+  const franquiaDoEmail = (email) => {
+    const cli = clientes.find((c) => String(c.email || "").toLowerCase() === String(email || "").toLowerCase());
+    return Number(direitosDoCliente(planos, cli).impressaoMensal) || 0;
+  };
+  const resumo = resumoBruto.map((r) => {
+    const cli = clientes.find((c) => String(c.email || "").toLowerCase() === String(r.cliente_email || "").toLowerCase());
+    const ap = apurarExcedente(r.folhas, franquiaDoEmail(r.cliente_email), precoFolha);
+    return { ...r, nome: cli?.nome || null, ...ap };
+  });
   const totalFolhas = resumo.reduce((s, r) => s + Number(r.folhas || 0), 0);
+  const totalExcedente = Math.round(resumo.reduce((s, r) => s + r.valor, 0) * 100) / 100;
 
   const exportarExcel = async () => {
     const XLSX = await import("xlsx");
@@ -66,8 +82,8 @@ export default function Impressoes() {
     ];
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoaJobs), "Trabalhos");
     const aoaResumo = [
-      ["Cliente (e-mail)", "Folhas no mês", "Excedente (folhas)", "Valor excedente (R$)"],
-      ...resumo.map((r) => [r.cliente_email, r.folhas, "", ""]),
+      ["Cliente", "E-mail", "Folhas no mês", "Franquia (plano)", "Excedente (folhas)", "Valor excedente (R$)"],
+      ...resumo.map((r) => [r.nome || "", r.cliente_email, r.folhas, r.franquia, r.excedente, r.valor]),
     ];
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoaResumo), "Consumo por cliente");
     XLSX.writeFile(wb, `impressoes-${competencia || "mes"}.xlsx`);
@@ -150,22 +166,34 @@ export default function Impressoes() {
             )}
           </Card>
 
-          <Card>
-            <div style={{ fontFamily: serif, fontSize: 18, marginBottom: 10 }}>Consumo por cliente · {competencia}</div>
+          <Card style={{ padding: 0, overflow: "hidden" }}>
+            <div style={{ padding: "14px 18px", borderBottom: `1px solid ${C.border2}`, display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+              <span style={{ fontFamily: serif, fontSize: 18 }}>Consumo e excedente por cliente · {competencia}</span>
+              {totalExcedente > 0 && <span style={{ fontSize: 13 }}>excedente do mês: <b style={{ color: C.cafe }}>{fmt(totalExcedente)}</b></span>}
+            </div>
             {resumo.length === 0 ? (
-              <Empty icon={Printer} title="Sem consumo no mês" sub="Quando houver impressões, o total por cliente aparece aqui." />
+              <div style={{ padding: 18 }}><Empty icon={Printer} title="Sem consumo no mês" sub="Quando houver impressões, o total e o excedente por cliente aparecem aqui." /></div>
             ) : (
-              <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+              <div style={{ overflowX: "auto" }}><div style={{ minWidth: 600 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 90px 110px", gap: 8, padding: "9px 18px", background: C.cream, fontSize: 11, fontWeight: 700, color: C.text3 }}>
+                  <div>CLIENTE</div><div style={{ textAlign: "right" }}>FOLHAS</div><div style={{ textAlign: "right" }}>FRANQUIA</div><div style={{ textAlign: "right" }}>EXCEDENTE</div><div style={{ textAlign: "right" }}>VALOR</div>
+                </div>
                 {resumo.map((r) => (
-                  <li key={r.cliente_email} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "10px 0", borderTop: `1px solid ${C.border2}` }}>
-                    <span style={{ color: C.text2 }}>{r.cliente_email}</span>
-                    <span style={{ fontWeight: 600 }}>{r.folhas} folha{r.folhas !== 1 ? "s" : ""}</span>
-                  </li>
+                  <div key={r.cliente_email} style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 90px 110px", gap: 8, padding: "10px 18px", borderTop: `1px solid ${C.border2}`, alignItems: "center", fontSize: 13 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.nome || r.cliente_email}</div>
+                      {r.nome && <div style={{ fontSize: 11, color: C.text4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.cliente_email}</div>}
+                    </div>
+                    <div style={{ textAlign: "right" }}>{r.folhas}</div>
+                    <div style={{ textAlign: "right", color: C.text3 }}>{r.franquia || "—"}</div>
+                    <div style={{ textAlign: "right", color: r.excedente ? C.cafe : C.text4, fontWeight: r.excedente ? 600 : 400 }}>{r.excedente || "—"}</div>
+                    <div style={{ textAlign: "right", fontWeight: 700, color: r.valor ? C.cafe : C.text4 }}>{r.valor ? fmt(r.valor) : "—"}</div>
+                  </div>
                 ))}
-              </ul>
+              </div></div>
             )}
-            <div style={{ fontSize: 12.5, color: C.text3, marginTop: 10 }}>
-              A franquia de cada plano e o excedente a {fmt(precoFolha)}/folha são apurados no fechamento do mês (Fase 3).
+            <div style={{ padding: "10px 18px", fontSize: 12, color: C.text4 }}>
+              Excedente = folhas acima da franquia do plano × {fmt(precoFolha)}/folha. Conta só as folhas efetivamente impressas (falha não cobra). O faturamento automático do excedente no fechamento é a Fase 3.
             </div>
           </Card>
         </>
