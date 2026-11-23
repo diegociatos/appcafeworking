@@ -64,3 +64,32 @@ verify_jwt = false
 verify_jwt = false
 [functions.impressao-concluida]
 verify_jwt = false
+# Site público + rede de unidades parceiras (candidatura "Seja parceiro",
+# reserva/catálogo/planos/disponibilidade pelo site, status de pagamento,
+# contrato vigente). Autenticam no código (Turnstile/segredo), não pelo gateway.
+[functions.parceiro-candidatura]
+verify_jwt = false
+[functions.reservar-sala-online]
+verify_jwt = false
+[functions.disponibilidade-salas]
+verify_jwt = false
+[functions.planos-publicos]
+verify_jwt = false
+[functions.cardapio-publico]
+verify_jwt = false
+[functions.contrato-vigente]
+verify_jwt = false
+[functions.status-pagamento]
+verify_jwt = false
+# Aprovação de parceiro e credenciais fiscais: conferem o papel/segredo no
+# próprio código (deploy --no-verify-jwt declarado no cabeçalho de cada uma).
+[functions.aprovar-parceiro]
+verify_jwt = false
+[functions.credenciais-fiscais]
+verify_jwt = false
+# Callback de OAuth bancário (o banco não envia JWT do Supabase) e rotina de
+# retornos do CRM (processador sem usuário).
+[functions.bank-oauth-callback]
+verify_jwt = false
+[functions.crm-retornos]
+verify_jwt = false
