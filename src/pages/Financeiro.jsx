@@ -406,18 +406,34 @@ function LancamentoDetalhe({ lanc, contas, boleto, onClose, onEditar, onBaixar, 
       <span style={{ fontWeight: 600, color: C.text, textAlign: "right" }}>{val}</span>
     </div>
   );
+  // Descrição organizada: quebra os pedaços separados por " · " (ou quebras de
+  // linha) em linhas próprias, para não virar um texto corrido numa linha só.
+  const partesDesc = String(lanc.descricao || "").split(/\s*·\s*|\s*\n+\s*/).map((s) => s.trim()).filter(Boolean);
+  const tituloCurto = partesDesc[0] || lanc.categoria || "Lançamento";
   return (
     <Modal title="Lançamento" onClose={onClose}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 14 }}>
         <div style={{ width: 40, height: 40, borderRadius: 10, background: ent ? C.greenPale : C.redPale, display: "grid", placeItems: "center", flexShrink: 0 }}>
           {ent ? <ArrowUpRight size={20} color={C.green} /> : <ArrowDownRight size={20} color={C.red} />}
         </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 16, fontWeight: 700 }}>{lanc.descricao}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.3, wordBreak: "break-word" }}>{tituloCurto}</div>
           <div style={{ fontSize: 12, color: C.text3 }}>{ent ? "Entrada" : "Saída"}{lanc.status === "previsto" ? " · previsto" : " · realizado"}</div>
         </div>
-        <div style={{ fontFamily: serif, fontSize: 22, color: ent ? C.green : C.red }}>{ent ? "+" : "−"} {fmt(lanc.valor || 0)}</div>
+        <div style={{ fontFamily: serif, fontSize: 22, color: ent ? C.green : C.red, whiteSpace: "nowrap" }}>{ent ? "+" : "−"} {fmt(lanc.valor || 0)}</div>
       </div>
+
+      {partesDesc.length > 1 && (
+        <div style={{ marginBottom: 14, background: C.cream, border: `1px solid ${C.border2}`, borderRadius: 12, padding: "10px 14px" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.text3, marginBottom: 6, letterSpacing: 0.3 }}>DESCRIÇÃO</div>
+          {partesDesc.map((p, i) => (
+            <div key={i} style={{ display: "flex", gap: 8, padding: "3px 0", fontSize: 13.5, color: C.text2, lineHeight: 1.45 }}>
+              <span style={{ color: C.cafe, flexShrink: 0 }}>•</span>
+              <span style={{ wordBreak: "break-word" }}>{p}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {linha("Categoria", lanc.categoria || "—")}
       {linha("Subcategoria", lanc.subcategoria || "—")}
@@ -3539,7 +3555,10 @@ function LancamentoForm({ inicial, contas, categorias, clientes = [], onSave }) 
   };
   const catsDoTipo = (tipo) => categorias.filter((c) => permite(c.secao, tipo));
   const subsDe = (catNome) => categorias.find((c) => c.nome === catNome)?.subs || [];
-  const init = inicial.id ? inicial : {};
+  // `inicial` é usado tanto na edição (tem id) quanto na DUPLICAÇÃO (vem com os
+  // dados, mas sem id) e no novo lançamento (objeto vazio {}). Antes isto
+  // descartava `inicial` quando não havia id, zerando a duplicação.
+  const init = inicial || {};
   const [f, setF] = useState(() => {
     const tipo = init.tipo || "entrada";
     const cat = init.categoria || catsDoTipo(tipo)[0]?.nome || "";
